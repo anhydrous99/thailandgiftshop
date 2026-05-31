@@ -1,0 +1,19 @@
+.DS_Store
+
+# Go
+bin/
+coverage.out
+
+# CDK
+cdk.out/
+*.jsii
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Local environment
+.env
+.env.*
+!.env.example
+

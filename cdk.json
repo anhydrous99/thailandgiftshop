@@ -1,0 +1,18 @@
+{
+  "app": "go run .",
+  "watch": {
+    "include": [
+      "**"
+    ],
+    "exclude": [
+      "README.md",
+      "cdk*.json",
+      "go.sum",
+      "go.mod",
+      "node_modules",
+      "cdk.out",
+      ".git"
+    ]
+  }
+}
+
