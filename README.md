@@ -39,6 +39,12 @@ Check Go formatting:
 gofmt -l $(git ls-files '*.go')
 ```
 
+## Observability
+
+The CDK stack provisions the SSR Lambda with its own CloudWatch Logs group at `/aws/lambda/thailandgiftshop-ssr` and 30-day retention. The HTTP API stage writes access logs to `/aws/apigateway/thailandgiftshop-ssr`, also with 30-day retention.
+
+Lambda emits AWS-managed CloudWatch metrics automatically, and the HTTP API default stage has detailed metrics enabled. Lambda X-Ray tracing is active and the Lambda role includes the X-Ray write permissions required to publish trace data.
+
 ## Bootstrap
 
 Before deploying to an AWS account/region for the first time, bootstrap CDK:
