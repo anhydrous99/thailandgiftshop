@@ -1,4 +1,4 @@
-module github.com/arxherre/thailandgiftshop-infra
+module github.com/arxherre/thailandgiftshop-infra/infra
 
 go 1.25.0
 

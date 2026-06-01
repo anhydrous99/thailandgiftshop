@@ -24,6 +24,9 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     environment: production
+    defaults:
+      run:
+        working-directory: infra
     env:
       AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
 
@@ -36,14 +39,16 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: infra/go.mod
           cache: true
+          cache-dependency-path: infra/go.sum
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: infra/package-lock.json
 
       - name: Install Node dependencies
         run: npm ci

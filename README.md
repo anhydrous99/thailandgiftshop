@@ -1,8 +1,8 @@
 # thailandgiftshop-infra
 
-AWS CDK v2 infrastructure for `thailandgiftshop.com`, written in Go.
+Monorepo for `thailandgiftshop.com`.
 
-This repository currently contains a deployable CDK skeleton and GitHub Actions CI/CD. Website resources will be added in a later stack change.
+The AWS CDK v2 infrastructure package lives in `infra/` and is written in Go. Future Go Lambda, HTMX, Tailwind CSS, and static asset code should live outside `infra/` so application code can evolve separately from deployment code.
 
 ## Prerequisites
 
@@ -15,26 +15,30 @@ This repository currently contains a deployable CDK skeleton and GitHub Actions 
 Install dependencies:
 
 ```sh
-npm install
+cd infra
+npm ci
 go mod download
 ```
 
 Synthesize the CloudFormation template:
 
 ```sh
+cd infra
 npx cdk synth
 ```
 
 Run tests:
 
 ```sh
-go test .
+cd infra
+go test $(git ls-files '*.go' | xargs -n1 dirname | sort -u)
 ```
 
 Check Go formatting:
 
 ```sh
-gofmt -l main.go main_test.go
+cd infra
+gofmt -l $(git ls-files '*.go')
 ```
 
 ## Bootstrap
@@ -42,6 +46,7 @@ gofmt -l main.go main_test.go
 Before deploying to an AWS account/region for the first time, bootstrap CDK:
 
 ```sh
+cd infra
 npx cdk bootstrap aws://ACCOUNT_ID/us-east-1
 ```
 
@@ -52,6 +57,7 @@ Replace `ACCOUNT_ID` and the region as needed.
 Deploy locally:
 
 ```sh
+cd infra
 npx cdk deploy --all
 ```
 
@@ -59,9 +65,11 @@ npx cdk deploy --all
 
 CI runs on pull requests and pushes to `main`:
 
-- `go test .`
+- Go tests for tracked infra packages
 - `gofmt` check
 - `npx cdk synth`
+
+The CI workflow is path-aware and runs for infrastructure or workflow changes.
 
 Deployment runs after the `CI` workflow completes successfully on `main`, and can also be run manually with workflow dispatch.
 
