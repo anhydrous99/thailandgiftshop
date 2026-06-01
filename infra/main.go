@@ -31,10 +31,10 @@ func main() {
 
 	app := awscdk.NewApp(nil)
 
-	// Keep this construct ID stable; changing it creates a new CloudFormation stack.
-	NewThailandGiftshopStack(app, "ThailandGiftshopInfraStack", &ThailandGiftshopStackProps{
+	// The construct ID is used as the default CloudFormation stack name.
+	NewThailandGiftshopStack(app, "ThailandGiftshopStack", &ThailandGiftshopStackProps{
 		StackProps: awscdk.StackProps{
-			Description: jsii.String("Infrastructure for thailandgiftshop.com"),
+			Description: jsii.String("CDK stack for thailandgiftshop.com"),
 			Env:         env(),
 		},
 	})

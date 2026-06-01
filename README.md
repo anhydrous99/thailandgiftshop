@@ -4,7 +4,7 @@ Monorepo for `thailandgiftshop.com`.
 
 The AWS CDK v2 infrastructure package lives in `infra/` and is written in Go. Go Lambda entrypoints, shared Go packages, HTMX templates, Tailwind CSS, and static asset code should live outside `infra/` so application code can evolve separately from deployment code.
 
-The deployed CDK stack ID remains `ThailandGiftshopInfraStack` so existing CloudFormation deployments continue to be updated in place.
+The deployed CDK stack ID is `ThailandGiftshopStack`.
 
 ## Prerequisites
 
