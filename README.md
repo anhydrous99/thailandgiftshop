@@ -7,7 +7,7 @@ The AWS CDK v2 infrastructure package lives in `infra/` and is written in Go. Fu
 ## Prerequisites
 
 - Go 1.25 or newer
-- Node.js 22 or newer
+- Node.js 24 LTS
 - AWS credentials for local bootstrap/deploy
 
 ## Local Setup

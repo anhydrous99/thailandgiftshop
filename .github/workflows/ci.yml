@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - infra/**
+      - .nvmrc
       - .github/workflows/ci.yml
       - .github/workflows/deploy.yml
   push:
@@ -11,6 +12,7 @@ on:
       - main
     paths:
       - infra/**
+      - .nvmrc
       - .github/workflows/ci.yml
       - .github/workflows/deploy.yml
 
@@ -39,7 +41,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: infra/package-lock.json
 
