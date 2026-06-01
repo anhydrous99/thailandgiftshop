@@ -1,8 +1,10 @@
-# thailandgiftshop-infra
+# thailandgiftshop
 
 Monorepo for `thailandgiftshop.com`.
 
-The AWS CDK v2 infrastructure package lives in `infra/` and is written in Go. Future Go Lambda, HTMX, Tailwind CSS, and static asset code should live outside `infra/` so application code can evolve separately from deployment code.
+The AWS CDK v2 infrastructure package lives in `infra/` and is written in Go. Go Lambda entrypoints, shared Go packages, HTMX templates, Tailwind CSS, and static asset code should live outside `infra/` so application code can evolve separately from deployment code.
+
+The deployed CDK stack ID remains `ThailandGiftshopInfraStack` so existing CloudFormation deployments continue to be updated in place.
 
 ## Prerequisites
 
@@ -15,29 +17,25 @@ The AWS CDK v2 infrastructure package lives in `infra/` and is written in Go. Fu
 Install dependencies:
 
 ```sh
-cd infra
-npm ci
 go mod download
+npm --prefix infra ci
 ```
 
 Synthesize the CloudFormation template:
 
 ```sh
-cd infra
-npx cdk synth
+npm --prefix infra run synth
 ```
 
 Run tests:
 
 ```sh
-cd infra
-go test $(git ls-files '*.go' | xargs -n1 dirname | sort -u)
+go test $(git ls-files '*.go' | xargs -n1 dirname | sort -u | sed 's#^#./#')
 ```
 
 Check Go formatting:
 
 ```sh
-cd infra
 gofmt -l $(git ls-files '*.go')
 ```
 
@@ -65,11 +63,11 @@ npx cdk deploy --all
 
 CI runs on pull requests and pushes to `main`:
 
-- Go tests for tracked infra packages
+- Go tests for tracked Go package directories
 - `gofmt` check
 - `npx cdk synth`
 
-The CI workflow is path-aware and runs for infrastructure or workflow changes.
+The CI workflow is path-aware and runs for Go, infrastructure, or workflow changes.
 
 Deployment runs after the `CI` workflow completes successfully on `main`, and can also be run manually with workflow dispatch.
 
@@ -80,4 +78,4 @@ Configure these GitHub settings before the first deployment:
 
 The deployment workflow uses GitHub OIDC through `aws-actions/configure-aws-credentials`, so long-lived AWS access keys are not required.
 
-The AWS role used by `AWS_ROLE_TO_ASSUME` must trust GitHub's OIDC provider and should be scoped to this repository's `production` GitHub environment, for example `repo:OWNER/thailandgiftshop-infra:environment:production`.
+The AWS role used by `AWS_ROLE_TO_ASSUME` must trust GitHub's OIDC provider and should be scoped to this repository's `production` GitHub environment, for example `repo:anhydrous99/thailandgiftshop:environment:production`.

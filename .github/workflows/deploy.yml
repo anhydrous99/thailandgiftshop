@@ -24,9 +24,6 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     environment: production
-    defaults:
-      run:
-        working-directory: infra
     env:
       AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
 
@@ -39,9 +36,9 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: infra/go.mod
+          go-version-file: go.mod
           cache: true
-          cache-dependency-path: infra/go.sum
+          cache-dependency-path: go.sum
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -51,6 +48,7 @@ jobs:
           cache-dependency-path: infra/package-lock.json
 
       - name: Install Node dependencies
+        working-directory: infra
         run: npm ci
 
       - name: Download Go dependencies
@@ -61,7 +59,8 @@ jobs:
         with:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-          role-session-name: thailandgiftshop-infra-deploy
+          role-session-name: thailandgiftshop-deploy
 
       - name: Deploy CDK app
+        working-directory: infra
         run: npx cdk deploy --all --require-approval never

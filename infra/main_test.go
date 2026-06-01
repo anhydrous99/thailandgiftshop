@@ -11,7 +11,7 @@ func TestStackSynthesizes(t *testing.T) {
 	defer jsii.Close()
 
 	app := awscdk.NewApp(nil)
-	stack := NewThailandGiftshopInfraStack(app, "TestStack", nil)
+	stack := NewThailandGiftshopStack(app, "TestStack", nil)
 
 	if stack == nil {
 		t.Fatal("expected stack to be created")

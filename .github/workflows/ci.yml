@@ -3,7 +3,10 @@ name: CI
 on:
   pull_request:
     paths:
-      - infra/**
+      - "**/*.go"
+      - go.mod
+      - go.sum
+      - "infra/**"
       - .nvmrc
       - .github/workflows/ci.yml
       - .github/workflows/deploy.yml
@@ -11,7 +14,10 @@ on:
     branches:
       - main
     paths:
-      - infra/**
+      - "**/*.go"
+      - go.mod
+      - go.sum
+      - "infra/**"
       - .nvmrc
       - .github/workflows/ci.yml
       - .github/workflows/deploy.yml
@@ -23,9 +29,6 @@ jobs:
   validate:
     name: Validate
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: infra
 
     steps:
       - name: Checkout
@@ -34,9 +37,9 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: infra/go.mod
+          go-version-file: go.mod
           cache: true
-          cache-dependency-path: infra/go.sum
+          cache-dependency-path: go.sum
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -46,6 +49,7 @@ jobs:
           cache-dependency-path: infra/package-lock.json
 
       - name: Install Node dependencies
+        working-directory: infra
         run: npm ci
 
       - name: Download Go dependencies
@@ -61,8 +65,9 @@ jobs:
 
       - name: Run Go tests
         run: |
-          packages="$(git ls-files '*.go' | xargs -n1 dirname | sort -u)"
+          packages="$(git ls-files '*.go' | xargs -n1 dirname | sort -u | sed 's#^#./#')"
           go test $packages
 
       - name: Synthesize CDK app
+        working-directory: infra
         run: npx cdk synth

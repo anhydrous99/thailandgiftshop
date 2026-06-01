@@ -8,11 +8,11 @@ import (
 	"github.com/aws/jsii-runtime-go"
 )
 
-type ThailandGiftshopInfraStackProps struct {
+type ThailandGiftshopStackProps struct {
 	awscdk.StackProps
 }
 
-func NewThailandGiftshopInfraStack(scope constructs.Construct, id string, props *ThailandGiftshopInfraStackProps) awscdk.Stack {
+func NewThailandGiftshopStack(scope constructs.Construct, id string, props *ThailandGiftshopStackProps) awscdk.Stack {
 	var stackProps awscdk.StackProps
 	if props != nil {
 		stackProps = props.StackProps
@@ -31,7 +31,8 @@ func main() {
 
 	app := awscdk.NewApp(nil)
 
-	NewThailandGiftshopInfraStack(app, "ThailandGiftshopInfraStack", &ThailandGiftshopInfraStackProps{
+	// Keep this construct ID stable; changing it creates a new CloudFormation stack.
+	NewThailandGiftshopStack(app, "ThailandGiftshopInfraStack", &ThailandGiftshopStackProps{
 		StackProps: awscdk.StackProps{
 			Description: jsii.String("Infrastructure for thailandgiftshop.com"),
 			Env:         env(),
