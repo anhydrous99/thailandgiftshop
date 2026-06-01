@@ -17,3 +17,8 @@ npm-debug.log*
 .env.*
 !.env.example
 
+# AI environment
+.omo
+.claude
+AGENTS.md
+CLAUDE.md
