@@ -7,7 +7,24 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 )
 
-const htmlContentType = "text/html; charset=utf-8"
+const (
+	htmlContentType = "text/html; charset=utf-8"
+	homeHTML        = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Thailand Gift Shop</title>
+  <link rel="icon" href="/static/favicon.ico" sizes="any">
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" sizes="180x180">
+  <link rel="manifest" href="/static/site.webmanifest">
+</head>
+<body>
+  <h1>Hello, world!</h1>
+</body>
+</html>`
+)
 
 // Handle renders HTML responses for API Gateway HTTP API requests.
 func Handle(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
@@ -23,7 +40,7 @@ func Handle(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events
 		}), nil
 	}
 
-	return htmlResponse(http.StatusOK, "Hello, world!", nil), nil
+	return htmlResponse(http.StatusOK, homeHTML, nil), nil
 }
 
 func requestMethod(request events.APIGatewayV2HTTPRequest) string {

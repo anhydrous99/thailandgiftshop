@@ -8,6 +8,22 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 )
 
+const expectedHomeHTML = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Thailand Gift Shop</title>
+  <link rel="icon" href="/static/favicon.ico" sizes="any">
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" sizes="180x180">
+  <link rel="manifest" href="/static/site.webmanifest">
+</head>
+<body>
+  <h1>Hello, world!</h1>
+</body>
+</html>`
+
 func TestHandle(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -27,7 +43,7 @@ func TestHandle(t *testing.T) {
 				},
 			},
 			statusCode: http.StatusOK,
-			body:       "Hello, world!",
+			body:       expectedHomeHTML,
 			headers: map[string]string{
 				"Content-Type": htmlContentType,
 			},
