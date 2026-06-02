@@ -26,14 +26,24 @@ func TestStackIncludesObservabilityResources(t *testing.T) {
 	stack := NewThailandGiftshopStack(app, "TestStack", nil)
 	template := assertions.Template_FromStack(stack, nil)
 
+	template.ResourceCountIs(jsii.String("AWS::Logs::LogGroup"), jsii.Number(3))
+	template.AllResourcesProperties(jsii.String("AWS::Logs::LogGroup"), map[string]interface{}{
+		"RetentionInDays": 90,
+	})
+
 	template.HasResourceProperties(jsii.String("AWS::Logs::LogGroup"), map[string]interface{}{
 		"LogGroupName":    "/aws/lambda/thailandgiftshop-ssr",
-		"RetentionInDays": 30,
+		"RetentionInDays": 90,
 	})
 
 	template.HasResourceProperties(jsii.String("AWS::Logs::LogGroup"), map[string]interface{}{
 		"LogGroupName":    "/aws/apigateway/thailandgiftshop-ssr",
-		"RetentionInDays": 30,
+		"RetentionInDays": 90,
+	})
+
+	template.HasResourceProperties(jsii.String("AWS::Logs::LogGroup"), map[string]interface{}{
+		"LogGroupName":    "/aws/lambda/thailandgiftshop-static-assets-deployment",
+		"RetentionInDays": 90,
 	})
 
 	template.HasResourceProperties(jsii.String("AWS::Lambda::Function"), map[string]interface{}{
@@ -45,6 +55,15 @@ func TestStackIncludesObservabilityResources(t *testing.T) {
 		},
 		"TracingConfig": map[string]interface{}{
 			"Mode": "Active",
+		},
+	})
+
+	template.HasResourceProperties(jsii.String("AWS::Lambda::Function"), map[string]interface{}{
+		"Handler": "index.handler",
+		"LoggingConfig": map[string]interface{}{
+			"LogGroup": assertions.Match_ObjectLike(&map[string]interface{}{
+				"Ref": assertions.Match_StringLikeRegexp(jsii.String("StaticAssetsDeploymentLogGroup")),
+			}),
 		},
 	})
 

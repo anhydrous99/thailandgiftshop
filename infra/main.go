@@ -40,7 +40,7 @@ func NewThailandGiftshopStack(scope constructs.Construct, id string, props *Thai
 func addSSR(stack awscdk.Stack) awsapigatewayv2.HttpApi {
 	lambdaLogGroup := awslogs.NewLogGroup(stack, jsii.String("SsrLambdaLogGroup"), &awslogs.LogGroupProps{
 		LogGroupName: jsii.String("/aws/lambda/thailandgiftshop-ssr"),
-		Retention:    awslogs.RetentionDays_ONE_MONTH,
+		Retention:    awslogs.RetentionDays_THREE_MONTHS,
 	})
 
 	ssrFunction := awslambda.NewFunction(stack, jsii.String("SsrLambda"), &awslambda.FunctionProps{
@@ -80,7 +80,7 @@ func addSSR(stack awscdk.Stack) awsapigatewayv2.HttpApi {
 
 	accessLogGroup := awslogs.NewLogGroup(stack, jsii.String("SsrHttpApiAccessLogGroup"), &awslogs.LogGroupProps{
 		LogGroupName: jsii.String("/aws/apigateway/thailandgiftshop-ssr"),
-		Retention:    awslogs.RetentionDays_ONE_MONTH,
+		Retention:    awslogs.RetentionDays_THREE_MONTHS,
 	})
 
 	stage := awsapigatewayv2.NewCfnStage(stack, jsii.String("SsrHttpApiDefaultStage"), &awsapigatewayv2.CfnStageProps{
@@ -115,6 +115,11 @@ func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi) {
 		RemovalPolicy:     awscdk.RemovalPolicy_RETAIN,
 	})
 
+	staticAssetsDeploymentLogGroup := awslogs.NewLogGroup(stack, jsii.String("StaticAssetsDeploymentLogGroup"), &awslogs.LogGroupProps{
+		LogGroupName: jsii.String("/aws/lambda/thailandgiftshop-static-assets-deployment"),
+		Retention:    awslogs.RetentionDays_THREE_MONTHS,
+	})
+
 	distribution := awscloudfront.NewDistribution(stack, jsii.String("SiteDistribution"), &awscloudfront.DistributionProps{
 		Comment: jsii.String("CloudFront distribution for thailandgiftshop.com SSR and static assets"),
 		DefaultBehavior: &awscloudfront.BehaviorOptions{
@@ -146,7 +151,8 @@ func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi) {
 		DistributionPaths: &[]*string{
 			jsii.String("/static/*"),
 		},
-		Prune: jsii.Bool(true),
+		LogGroup: staticAssetsDeploymentLogGroup,
+		Prune:    jsii.Bool(true),
 		Sources: &[]awss3deployment.ISource{
 			awss3deployment.Source_Asset(jsii.String("../web/static"), nil),
 		},
