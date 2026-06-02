@@ -6,8 +6,12 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsapigatewayv2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsapigatewayv2integrations"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfront"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfrontorigins"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awslambda"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awslogs"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awss3"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awss3deployment"
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
 )
@@ -27,12 +31,13 @@ func NewThailandGiftshopStack(scope constructs.Construct, id string, props *Thai
 	awscdk.Tags_Of(stack).Add(jsii.String("Project"), jsii.String("thailandgiftshop"), nil)
 	awscdk.Tags_Of(stack).Add(jsii.String("ManagedBy"), jsii.String("aws-cdk"), nil)
 
-	addSSR(stack)
+	httpAPI := addSSR(stack)
+	addSite(stack, httpAPI)
 
 	return stack
 }
 
-func addSSR(stack awscdk.Stack) {
+func addSSR(stack awscdk.Stack) awsapigatewayv2.HttpApi {
 	lambdaLogGroup := awslogs.NewLogGroup(stack, jsii.String("SsrLambdaLogGroup"), &awslogs.LogGroupProps{
 		LogGroupName: jsii.String("/aws/lambda/thailandgiftshop-ssr"),
 		Retention:    awslogs.RetentionDays_ONE_MONTH,
@@ -96,6 +101,81 @@ func addSSR(stack awscdk.Stack) {
 	awscdk.NewCfnOutput(stack, jsii.String("SsrHttpApiUrl"), &awscdk.CfnOutputProps{
 		Description: jsii.String("Base URL for the SSR HTTP API"),
 		Value:       httpAPI.ApiEndpoint(),
+	})
+
+	return httpAPI
+}
+
+func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi) {
+	staticBucket := awss3.NewBucket(stack, jsii.String("StaticAssetsBucket"), &awss3.BucketProps{
+		BlockPublicAccess: awss3.BlockPublicAccess_BLOCK_ALL(),
+		Encryption:        awss3.BucketEncryption_S3_MANAGED,
+		EnforceSSL:        jsii.Bool(true),
+		ObjectOwnership:   awss3.ObjectOwnership_BUCKET_OWNER_ENFORCED,
+		RemovalPolicy:     awscdk.RemovalPolicy_RETAIN,
+	})
+
+	distribution := awscloudfront.NewDistribution(stack, jsii.String("SiteDistribution"), &awscloudfront.DistributionProps{
+		Comment: jsii.String("CloudFront distribution for thailandgiftshop.com SSR and static assets"),
+		DefaultBehavior: &awscloudfront.BehaviorOptions{
+			AllowedMethods:       awscloudfront.AllowedMethods_ALLOW_ALL(),
+			CachePolicy:          awscloudfront.CachePolicy_CACHING_DISABLED(),
+			Compress:             jsii.Bool(true),
+			Origin:               ssrOrigin(httpAPI),
+			OriginRequestPolicy:  awscloudfront.OriginRequestPolicy_ALL_VIEWER_EXCEPT_HOST_HEADER(),
+			ViewerProtocolPolicy: awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
+		},
+		AdditionalBehaviors: &map[string]*awscloudfront.BehaviorOptions{
+			"static/*": {
+				AllowedMethods:       awscloudfront.AllowedMethods_ALLOW_GET_HEAD(),
+				CachePolicy:          awscloudfront.CachePolicy_CACHING_OPTIMIZED(),
+				Compress:             jsii.Bool(true),
+				Origin:               awscloudfrontorigins.S3BucketOrigin_WithOriginAccessControl(staticBucket, nil),
+				ViewerProtocolPolicy: awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
+			},
+		},
+	})
+
+	awss3deployment.NewBucketDeployment(stack, jsii.String("StaticAssetsDeployment"), &awss3deployment.BucketDeploymentProps{
+		CacheControl: &[]awss3deployment.CacheControl{
+			awss3deployment.CacheControl_MaxAge(awscdk.Duration_Hours(jsii.Number(1))),
+		},
+		DestinationBucket:    staticBucket,
+		DestinationKeyPrefix: jsii.String("static"),
+		Distribution:         distribution,
+		DistributionPaths: &[]*string{
+			jsii.String("/static/*"),
+		},
+		Prune: jsii.Bool(true),
+		Sources: &[]awss3deployment.ISource{
+			awss3deployment.Source_Asset(jsii.String("../web/static"), nil),
+		},
+	})
+
+	awscdk.NewCfnOutput(stack, jsii.String("SiteDistributionDomainName"), &awscdk.CfnOutputProps{
+		Description: jsii.String("CloudFront domain name for thailandgiftshop.com"),
+		Value:       distribution.DistributionDomainName(),
+	})
+
+	awscdk.NewCfnOutput(stack, jsii.String("SiteUrl"), &awscdk.CfnOutputProps{
+		Description: jsii.String("CloudFront URL for thailandgiftshop.com"),
+		Value:       awscdk.Fn_Join(jsii.String(""), &[]*string{jsii.String("https://"), distribution.DistributionDomainName()}),
+	})
+}
+
+func ssrOrigin(httpAPI awsapigatewayv2.HttpApi) awscloudfront.IOrigin {
+	return awscloudfrontorigins.NewHttpOrigin(apiGatewayDomainName(httpAPI), &awscloudfrontorigins.HttpOriginProps{
+		ProtocolPolicy: awscloudfront.OriginProtocolPolicy_HTTPS_ONLY,
+	})
+}
+
+func apiGatewayDomainName(httpAPI awsapigatewayv2.HttpApi) *string {
+	return awscdk.Fn_Join(jsii.String(""), &[]*string{
+		httpAPI.HttpApiId(),
+		jsii.String(".execute-api."),
+		awscdk.Aws_REGION(),
+		jsii.String("."),
+		awscdk.Aws_URL_SUFFIX(),
 	})
 }
 

@@ -7,6 +7,7 @@ on:
       - go.mod
       - go.sum
       - "infra/**"
+      - "web/**"
       - .nvmrc
       - .github/workflows/ci.yml
       - .github/workflows/deploy.yml
@@ -18,6 +19,7 @@ on:
       - go.mod
       - go.sum
       - "infra/**"
+      - "web/**"
       - .nvmrc
       - .github/workflows/ci.yml
       - .github/workflows/deploy.yml

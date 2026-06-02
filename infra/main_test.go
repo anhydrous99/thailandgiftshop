@@ -73,3 +73,145 @@ func TestStackIncludesObservabilityResources(t *testing.T) {
 		},
 	})
 }
+
+func TestStackIncludesStaticAssetsDistribution(t *testing.T) {
+	defer jsii.Close()
+
+	app := awscdk.NewApp(nil)
+	stack := NewThailandGiftshopStack(app, "TestStack", nil)
+	template := assertions.Template_FromStack(stack, nil)
+
+	template.HasResourceProperties(jsii.String("AWS::S3::Bucket"), map[string]interface{}{
+		"BucketEncryption": map[string]interface{}{
+			"ServerSideEncryptionConfiguration": assertions.Match_ArrayWith(&[]interface{}{
+				assertions.Match_ObjectLike(&map[string]interface{}{
+					"ServerSideEncryptionByDefault": map[string]interface{}{
+						"SSEAlgorithm": "AES256",
+					},
+				}),
+			}),
+		},
+		"OwnershipControls": map[string]interface{}{
+			"Rules": assertions.Match_ArrayWith(&[]interface{}{
+				map[string]interface{}{
+					"ObjectOwnership": "BucketOwnerEnforced",
+				},
+			}),
+		},
+		"PublicAccessBlockConfiguration": map[string]interface{}{
+			"BlockPublicAcls":       true,
+			"BlockPublicPolicy":     true,
+			"IgnorePublicAcls":      true,
+			"RestrictPublicBuckets": true,
+		},
+	})
+
+	template.HasResourceProperties(jsii.String("AWS::S3::BucketPolicy"), map[string]interface{}{
+		"PolicyDocument": map[string]interface{}{
+			"Statement": assertions.Match_ArrayWith(&[]interface{}{
+				assertions.Match_ObjectLike(&map[string]interface{}{
+					"Action": "s3:*",
+					"Condition": map[string]interface{}{
+						"Bool": map[string]interface{}{
+							"aws:SecureTransport": "false",
+						},
+					},
+					"Effect": "Deny",
+				}),
+				assertions.Match_ObjectLike(&map[string]interface{}{
+					"Action": "s3:GetObject",
+					"Condition": map[string]interface{}{
+						"StringEquals": map[string]interface{}{
+							"AWS:SourceArn": assertions.Match_AnyValue(),
+						},
+					},
+					"Effect": "Allow",
+					"Principal": map[string]interface{}{
+						"Service": "cloudfront.amazonaws.com",
+					},
+				}),
+			}),
+		},
+	})
+
+	template.HasResourceProperties(jsii.String("AWS::CloudFront::OriginAccessControl"), map[string]interface{}{
+		"OriginAccessControlConfig": map[string]interface{}{
+			"OriginAccessControlOriginType": "s3",
+			"SigningBehavior":               "always",
+			"SigningProtocol":               "sigv4",
+		},
+	})
+
+	template.HasResourceProperties(jsii.String("AWS::CloudFront::Distribution"), map[string]interface{}{
+		"DistributionConfig": map[string]interface{}{
+			"CacheBehaviors": assertions.Match_ArrayWith(&[]interface{}{
+				assertions.Match_ObjectLike(&map[string]interface{}{
+					"AllowedMethods": assertions.Match_ArrayWith(&[]interface{}{
+						"GET",
+						"HEAD",
+					}),
+					"CachePolicyId":        "658327ea-f89d-4fab-a63d-7e88639e58f6",
+					"Compress":             true,
+					"PathPattern":          "static/*",
+					"ViewerProtocolPolicy": "redirect-to-https",
+				}),
+			}),
+			"DefaultCacheBehavior": map[string]interface{}{
+				"AllowedMethods": assertions.Match_ArrayWith(&[]interface{}{
+					"GET",
+					"HEAD",
+					"OPTIONS",
+					"PUT",
+					"PATCH",
+					"POST",
+					"DELETE",
+				}),
+				"CachePolicyId":         "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",
+				"Compress":              true,
+				"OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
+				"ViewerProtocolPolicy":  "redirect-to-https",
+			},
+			"Origins": assertions.Match_ArrayWith(&[]interface{}{
+				assertions.Match_ObjectLike(&map[string]interface{}{
+					"CustomOriginConfig": map[string]interface{}{
+						"OriginProtocolPolicy": "https-only",
+					},
+					"DomainName": map[string]interface{}{
+						"Fn::Join": assertions.Match_ArrayWith(&[]interface{}{
+							"",
+							assertions.Match_ArrayWith(&[]interface{}{
+								".execute-api.",
+							}),
+						}),
+					},
+				}),
+				assertions.Match_ObjectLike(&map[string]interface{}{
+					"OriginAccessControlId": assertions.Match_AnyValue(),
+					"S3OriginConfig": map[string]interface{}{
+						"OriginAccessIdentity": "",
+					},
+				}),
+			}),
+		},
+	})
+
+	template.HasResourceProperties(jsii.String("Custom::CDKBucketDeployment"), map[string]interface{}{
+		"DestinationBucketKeyPrefix": "static",
+		"DistributionPaths": assertions.Match_ArrayWith(&[]interface{}{
+			"/static/*",
+		}),
+		"Prune": true,
+		"SystemMetadata": map[string]interface{}{
+			"cache-control": "max-age=3600",
+		},
+	})
+
+	template.HasOutput(jsii.String("SiteDistributionDomainName"), map[string]interface{}{
+		"Description": "CloudFront domain name for thailandgiftshop.com",
+		"Value":       assertions.Match_AnyValue(),
+	})
+	template.HasOutput(jsii.String("SiteUrl"), map[string]interface{}{
+		"Description": "CloudFront URL for thailandgiftshop.com",
+		"Value":       assertions.Match_AnyValue(),
+	})
+}

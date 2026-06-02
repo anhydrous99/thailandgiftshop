@@ -6,6 +6,8 @@ The AWS CDK v2 infrastructure package lives in `infra/` and is written in Go. Go
 
 The deployed CDK stack ID is `ThailandGiftshopStack`.
 
+Static assets belong in `web/static/`. CDK deploys that folder to a private S3 bucket behind the site CloudFront distribution and serves it under `/static/`, so `web/static/logo.svg` is available as `/static/logo.svg`.
+
 ## Prerequisites
 
 - Go 1.25 or newer
@@ -65,6 +67,8 @@ cd infra
 npx cdk deploy --all
 ```
 
+The stack outputs `SiteUrl` and `SiteDistributionDomainName` for the CloudFront entrypoint. The existing `SsrHttpApiUrl` output remains available for direct API Gateway access while CloudFront handles normal site traffic.
+
 ## GitHub Actions
 
 CI runs on pull requests and pushes to `main`:
@@ -73,7 +77,7 @@ CI runs on pull requests and pushes to `main`:
 - `gofmt` check
 - `npx cdk synth`
 
-The CI workflow is path-aware and runs for Go, infrastructure, or workflow changes.
+The CI workflow is path-aware and runs for Go, infrastructure, static asset, or workflow changes.
 
 Deployment runs after the `CI` workflow completes successfully on `main`, and can also be run manually with workflow dispatch.
 
