@@ -55,6 +55,22 @@ func TestHandle(t *testing.T) {
 			},
 		},
 		{
+			name: "root supports head without body",
+			request: events.APIGatewayV2HTTPRequest{
+				RawPath: "/",
+				RequestContext: events.APIGatewayV2HTTPRequestContext{
+					HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+						Method: http.MethodHead,
+					},
+				},
+			},
+			statusCode: http.StatusOK,
+			body:       "",
+			headers: map[string]string{
+				"Content-Type": htmlContentType,
+			},
+		},
+		{
 			name: "root rejects unsupported methods",
 			request: events.APIGatewayV2HTTPRequest{
 				RawPath: "/",
@@ -67,7 +83,7 @@ func TestHandle(t *testing.T) {
 			statusCode: http.StatusMethodNotAllowed,
 			body:       "Method not allowed",
 			headers: map[string]string{
-				"Allow":        http.MethodGet,
+				"Allow":        allowedMethods,
 				"Content-Type": htmlContentType,
 			},
 		},

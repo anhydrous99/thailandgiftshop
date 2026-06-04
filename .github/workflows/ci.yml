@@ -8,6 +8,7 @@ on:
       - go.mod
       - go.sum
       - "infra/**"
+      - "scripts/**"
       - "web/**"
       - .nvmrc
       - .github/workflows/ci.yml
@@ -21,6 +22,7 @@ on:
       - go.mod
       - go.sum
       - "infra/**"
+      - "scripts/**"
       - "web/**"
       - .nvmrc
       - .github/workflows/ci.yml
@@ -33,6 +35,8 @@ jobs:
   validate:
     name: Validate
     runs-on: ubuntu-latest
+    env:
+      AWS_REGION: us-east-1
 
     steps:
       - name: Checkout
@@ -79,7 +83,7 @@ jobs:
 
       - name: Run Go tests
         run: |
-          packages="$(git ls-files '*.go' | xargs -n1 dirname | sort -u | sed 's#^#./#')"
+          packages="$(sh scripts/go-packages.sh)"
           go test $packages
 
       - name: Synthesize CDK app

@@ -6,14 +6,23 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsapigatewayv2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsapigatewayv2integrations"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awscertificatemanager"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfront"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfrontorigins"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awslambda"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awslogs"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awsroute53"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awsroute53targets"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awss3"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awss3deployment"
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
+)
+
+const (
+	productionRegion = "us-east-1"
+	siteDomainName   = "thailandgiftshop.com"
+	wwwDomainName    = "www.thailandgiftshop.com"
 )
 
 type ThailandGiftshopStackProps struct {
@@ -107,6 +116,16 @@ func addSSR(stack awscdk.Stack) awsapigatewayv2.HttpApi {
 }
 
 func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi) {
+	hostedZone := siteHostedZone(stack)
+	certificate := awscertificatemanager.NewCertificate(stack, jsii.String("SiteCertificate"), &awscertificatemanager.CertificateProps{
+		DomainName: jsii.String(siteDomainName),
+		SubjectAlternativeNames: &[]*string{
+			jsii.String(wwwDomainName),
+		},
+		Validation: awscertificatemanager.CertificateValidation_FromDns(hostedZone),
+	})
+	securityHeadersPolicy := siteSecurityHeaders(stack)
+
 	staticBucket := awss3.NewBucket(stack, jsii.String("StaticAssetsBucket"), &awss3.BucketProps{
 		BlockPublicAccess: awss3.BlockPublicAccess_BLOCK_ALL(),
 		Encryption:        awss3.BucketEncryption_S3_MANAGED,
@@ -121,25 +140,34 @@ func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi) {
 	})
 
 	distribution := awscloudfront.NewDistribution(stack, jsii.String("SiteDistribution"), &awscloudfront.DistributionProps{
-		Comment: jsii.String("CloudFront distribution for thailandgiftshop.com SSR and static assets"),
+		Certificate: certificate,
+		Comment:     jsii.String("CloudFront distribution for thailandgiftshop.com SSR and static assets"),
+		DomainNames: &[]*string{
+			jsii.String(siteDomainName),
+			jsii.String(wwwDomainName),
+		},
 		DefaultBehavior: &awscloudfront.BehaviorOptions{
-			AllowedMethods:       awscloudfront.AllowedMethods_ALLOW_ALL(),
-			CachePolicy:          awscloudfront.CachePolicy_CACHING_DISABLED(),
-			Compress:             jsii.Bool(true),
-			Origin:               ssrOrigin(httpAPI),
-			OriginRequestPolicy:  awscloudfront.OriginRequestPolicy_ALL_VIEWER_EXCEPT_HOST_HEADER(),
-			ViewerProtocolPolicy: awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
+			AllowedMethods:        awscloudfront.AllowedMethods_ALLOW_GET_HEAD(),
+			CachePolicy:           awscloudfront.CachePolicy_CACHING_DISABLED(),
+			Compress:              jsii.Bool(true),
+			Origin:                ssrOrigin(httpAPI),
+			OriginRequestPolicy:   awscloudfront.OriginRequestPolicy_ALL_VIEWER_EXCEPT_HOST_HEADER(),
+			ResponseHeadersPolicy: securityHeadersPolicy,
+			ViewerProtocolPolicy:  awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
 		},
 		AdditionalBehaviors: &map[string]*awscloudfront.BehaviorOptions{
 			"static/*": {
-				AllowedMethods:       awscloudfront.AllowedMethods_ALLOW_GET_HEAD(),
-				CachePolicy:          awscloudfront.CachePolicy_CACHING_OPTIMIZED(),
-				Compress:             jsii.Bool(true),
-				Origin:               awscloudfrontorigins.S3BucketOrigin_WithOriginAccessControl(staticBucket, nil),
-				ViewerProtocolPolicy: awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
+				AllowedMethods:        awscloudfront.AllowedMethods_ALLOW_GET_HEAD(),
+				CachePolicy:           awscloudfront.CachePolicy_CACHING_OPTIMIZED(),
+				Compress:              jsii.Bool(true),
+				Origin:                awscloudfrontorigins.S3BucketOrigin_WithOriginAccessControl(staticBucket, nil),
+				ResponseHeadersPolicy: securityHeadersPolicy,
+				ViewerProtocolPolicy:  awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
 			},
 		},
 	})
+
+	addSiteAliasRecords(stack, hostedZone, distribution)
 
 	awss3deployment.NewBucketDeployment(stack, jsii.String("StaticAssetsDeployment"), &awss3deployment.BucketDeploymentProps{
 		CacheControl: &[]awss3deployment.CacheControl{
@@ -165,7 +193,68 @@ func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi) {
 
 	awscdk.NewCfnOutput(stack, jsii.String("SiteUrl"), &awscdk.CfnOutputProps{
 		Description: jsii.String("CloudFront URL for thailandgiftshop.com"),
-		Value:       awscdk.Fn_Join(jsii.String(""), &[]*string{jsii.String("https://"), distribution.DistributionDomainName()}),
+		Value:       jsii.String("https://" + siteDomainName),
+	})
+}
+
+func siteHostedZone(stack awscdk.Stack) awsroute53.IHostedZone {
+	hostedZoneID := awscdk.NewCfnParameter(stack, jsii.String("HostedZoneId"), &awscdk.CfnParameterProps{
+		Description: jsii.String("Route 53 public hosted zone ID for thailandgiftshop.com"),
+		Type:        jsii.String("String"),
+	})
+
+	return awsroute53.HostedZone_FromHostedZoneAttributes(stack, jsii.String("SiteHostedZone"), &awsroute53.HostedZoneAttributes{
+		HostedZoneId: hostedZoneID.ValueAsString(),
+		ZoneName:     jsii.String(siteDomainName),
+	})
+}
+
+func siteSecurityHeaders(stack awscdk.Stack) awscloudfront.ResponseHeadersPolicy {
+	return awscloudfront.NewResponseHeadersPolicy(stack, jsii.String("SiteSecurityHeadersPolicy"), &awscloudfront.ResponseHeadersPolicyProps{
+		Comment: jsii.String("Security headers for thailandgiftshop.com"),
+		SecurityHeadersBehavior: &awscloudfront.ResponseSecurityHeadersBehavior{
+			ContentSecurityPolicy: &awscloudfront.ResponseHeadersContentSecurityPolicy{
+				ContentSecurityPolicy: jsii.String("default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self'; manifest-src 'self'"),
+				Override:              jsii.Bool(true),
+			},
+			ContentTypeOptions: &awscloudfront.ResponseHeadersContentTypeOptions{
+				Override: jsii.Bool(true),
+			},
+			FrameOptions: &awscloudfront.ResponseHeadersFrameOptions{
+				FrameOption: awscloudfront.HeadersFrameOption_DENY,
+				Override:    jsii.Bool(true),
+			},
+			ReferrerPolicy: &awscloudfront.ResponseHeadersReferrerPolicy{
+				Override:       jsii.Bool(true),
+				ReferrerPolicy: awscloudfront.HeadersReferrerPolicy_STRICT_ORIGIN_WHEN_CROSS_ORIGIN,
+			},
+			StrictTransportSecurity: &awscloudfront.ResponseHeadersStrictTransportSecurity{
+				AccessControlMaxAge: awscdk.Duration_Days(jsii.Number(365)),
+				Override:            jsii.Bool(true),
+				Preload:             jsii.Bool(false),
+			},
+		},
+	})
+}
+
+func addSiteAliasRecords(stack awscdk.Stack, hostedZone awsroute53.IHostedZone, distribution awscloudfront.IDistribution) {
+	awsroute53.NewARecord(stack, jsii.String("SiteARecord"), &awsroute53.ARecordProps{
+		Target: awsroute53.RecordTarget_FromAlias(awsroute53targets.NewCloudFrontTarget(distribution)),
+		Zone:   hostedZone,
+	})
+	awsroute53.NewAaaaRecord(stack, jsii.String("SiteAAAARecord"), &awsroute53.AaaaRecordProps{
+		Target: awsroute53.RecordTarget_FromAlias(awsroute53targets.NewCloudFrontTarget(distribution)),
+		Zone:   hostedZone,
+	})
+	awsroute53.NewARecord(stack, jsii.String("WwwARecord"), &awsroute53.ARecordProps{
+		RecordName: jsii.String("www"),
+		Target:     awsroute53.RecordTarget_FromAlias(awsroute53targets.NewCloudFrontTarget(distribution)),
+		Zone:       hostedZone,
+	})
+	awsroute53.NewAaaaRecord(stack, jsii.String("WwwAAAARecord"), &awsroute53.AaaaRecordProps{
+		RecordName: jsii.String("www"),
+		Target:     awsroute53.RecordTarget_FromAlias(awsroute53targets.NewCloudFrontTarget(distribution)),
+		Zone:       hostedZone,
 	})
 }
 
@@ -203,7 +292,8 @@ func main() {
 
 func env() *awscdk.Environment {
 	account := os.Getenv("CDK_DEFAULT_ACCOUNT")
-	region := os.Getenv("CDK_DEFAULT_REGION")
+	region := configuredRegion()
+	enforceProductionRegion()
 
 	if account == "" && region == "" {
 		return nil
@@ -212,6 +302,28 @@ func env() *awscdk.Environment {
 	return &awscdk.Environment{
 		Account: stringOrNil(account),
 		Region:  stringOrNil(region),
+	}
+}
+
+func configuredRegion() string {
+	if region := os.Getenv("CDK_DEFAULT_REGION"); region != "" {
+		return region
+	}
+
+	return os.Getenv("AWS_REGION")
+}
+
+func enforceProductionRegion() {
+	for _, envVar := range []struct {
+		name  string
+		value string
+	}{
+		{name: "AWS_REGION", value: os.Getenv("AWS_REGION")},
+		{name: "CDK_DEFAULT_REGION", value: os.Getenv("CDK_DEFAULT_REGION")},
+	} {
+		if envVar.value != "" && envVar.value != productionRegion {
+			panic(envVar.name + " must be " + productionRegion + " for production deploys, got " + envVar.value)
+		}
 	}
 }
 

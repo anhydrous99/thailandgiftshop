@@ -10,6 +10,7 @@ import (
 )
 
 const htmlContentType = "text/html; charset=utf-8"
+const allowedMethods = http.MethodGet + ", " + http.MethodHead
 
 var homeCache struct {
 	sync.Mutex
@@ -23,15 +24,20 @@ func Handle(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events
 		return htmlResponse(http.StatusNotFound, "Not found", nil), nil
 	}
 
-	if method := requestMethod(request); method != http.MethodGet {
+	method := requestMethod(request)
+	if method != http.MethodGet && method != http.MethodHead {
 		return htmlResponse(http.StatusMethodNotAllowed, "Method not allowed", map[string]string{
-			"Allow": http.MethodGet,
+			"Allow": allowedMethods,
 		}), nil
 	}
 
 	body, err := renderHome(ctx)
 	if err != nil {
 		return htmlResponse(http.StatusInternalServerError, "Internal server error", nil), nil
+	}
+
+	if method == http.MethodHead {
+		body = ""
 	}
 
 	return htmlResponse(http.StatusOK, body, nil), nil

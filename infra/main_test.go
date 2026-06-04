@@ -100,6 +100,11 @@ func TestStackIncludesStaticAssetsDistribution(t *testing.T) {
 	stack := NewThailandGiftshopStack(app, "TestStack", nil)
 	template := assertions.Template_FromStack(stack, nil)
 
+	template.HasParameter(jsii.String("HostedZoneId"), map[string]interface{}{
+		"Type":        "String",
+		"Description": "Route 53 public hosted zone ID for thailandgiftshop.com",
+	})
+
 	template.HasResourceProperties(jsii.String("AWS::S3::Bucket"), map[string]interface{}{
 		"BucketEncryption": map[string]interface{}{
 			"ServerSideEncryptionConfiguration": assertions.Match_ArrayWith(&[]interface{}{
@@ -161,34 +166,70 @@ func TestStackIncludesStaticAssetsDistribution(t *testing.T) {
 		},
 	})
 
+	template.HasResourceProperties(jsii.String("AWS::CertificateManager::Certificate"), map[string]interface{}{
+		"DomainName": siteDomainName,
+		"SubjectAlternativeNames": assertions.Match_ArrayWith(&[]interface{}{
+			wwwDomainName,
+		}),
+		"ValidationMethod": "DNS",
+	})
+
+	template.HasResourceProperties(jsii.String("AWS::CloudFront::ResponseHeadersPolicy"), map[string]interface{}{
+		"ResponseHeadersPolicyConfig": map[string]interface{}{
+			"SecurityHeadersConfig": map[string]interface{}{
+				"ContentSecurityPolicy": map[string]interface{}{
+					"ContentSecurityPolicy": assertions.Match_StringLikeRegexp(jsii.String("default-src 'self'")),
+					"Override":              true,
+				},
+				"ContentTypeOptions": map[string]interface{}{
+					"Override": true,
+				},
+				"FrameOptions": map[string]interface{}{
+					"FrameOption": "DENY",
+					"Override":    true,
+				},
+				"ReferrerPolicy": map[string]interface{}{
+					"Override":       true,
+					"ReferrerPolicy": assertions.Match_StringLikeRegexp(jsii.String("strict-origin")),
+				},
+				"StrictTransportSecurity": map[string]interface{}{
+					"AccessControlMaxAgeSec": 31536000,
+					"Override":               true,
+					"Preload":                false,
+				},
+			},
+		},
+	})
+
 	template.HasResourceProperties(jsii.String("AWS::CloudFront::Distribution"), map[string]interface{}{
 		"DistributionConfig": map[string]interface{}{
+			"Aliases": assertions.Match_ArrayWith(&[]interface{}{
+				siteDomainName,
+				wwwDomainName,
+			}),
 			"CacheBehaviors": assertions.Match_ArrayWith(&[]interface{}{
 				assertions.Match_ObjectLike(&map[string]interface{}{
-					"AllowedMethods": assertions.Match_ArrayWith(&[]interface{}{
+					"AllowedMethods": assertions.Match_ArrayEquals(&[]interface{}{
 						"GET",
 						"HEAD",
 					}),
-					"CachePolicyId":        "658327ea-f89d-4fab-a63d-7e88639e58f6",
-					"Compress":             true,
-					"PathPattern":          "static/*",
-					"ViewerProtocolPolicy": "redirect-to-https",
+					"CachePolicyId":           "658327ea-f89d-4fab-a63d-7e88639e58f6",
+					"Compress":                true,
+					"PathPattern":             "static/*",
+					"ResponseHeadersPolicyId": assertions.Match_AnyValue(),
+					"ViewerProtocolPolicy":    "redirect-to-https",
 				}),
 			}),
 			"DefaultCacheBehavior": map[string]interface{}{
-				"AllowedMethods": assertions.Match_ArrayWith(&[]interface{}{
+				"AllowedMethods": assertions.Match_ArrayEquals(&[]interface{}{
 					"GET",
 					"HEAD",
-					"OPTIONS",
-					"PUT",
-					"PATCH",
-					"POST",
-					"DELETE",
 				}),
-				"CachePolicyId":         "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",
-				"Compress":              true,
-				"OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
-				"ViewerProtocolPolicy":  "redirect-to-https",
+				"CachePolicyId":           "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",
+				"Compress":                true,
+				"OriginRequestPolicyId":   "b689b0a8-53d0-40ab-baf2-68738e2966ac",
+				"ResponseHeadersPolicyId": assertions.Match_AnyValue(),
+				"ViewerProtocolPolicy":    "redirect-to-https",
 			},
 			"Origins": assertions.Match_ArrayWith(&[]interface{}{
 				assertions.Match_ObjectLike(&map[string]interface{}{
@@ -211,8 +252,29 @@ func TestStackIncludesStaticAssetsDistribution(t *testing.T) {
 					},
 				}),
 			}),
+			"ViewerCertificate": assertions.Match_ObjectLike(&map[string]interface{}{
+				"SslSupportMethod": "sni-only",
+			}),
 		},
 	})
+
+	for _, record := range []struct {
+		name       string
+		recordType string
+	}{
+		{name: siteDomainName + ".", recordType: "A"},
+		{name: siteDomainName + ".", recordType: "AAAA"},
+		{name: wwwDomainName + ".", recordType: "A"},
+		{name: wwwDomainName + ".", recordType: "AAAA"},
+	} {
+		template.HasResourceProperties(jsii.String("AWS::Route53::RecordSet"), map[string]interface{}{
+			"AliasTarget": assertions.Match_ObjectLike(&map[string]interface{}{
+				"DNSName": assertions.Match_AnyValue(),
+			}),
+			"Name": record.name,
+			"Type": record.recordType,
+		})
+	}
 
 	template.HasResourceProperties(jsii.String("Custom::CDKBucketDeployment"), map[string]interface{}{
 		"DestinationBucketKeyPrefix": "static",
@@ -231,6 +293,6 @@ func TestStackIncludesStaticAssetsDistribution(t *testing.T) {
 	})
 	template.HasOutput(jsii.String("SiteUrl"), map[string]interface{}{
 		"Description": "CloudFront URL for thailandgiftshop.com",
-		"Value":       assertions.Match_AnyValue(),
+		"Value":       "https://" + siteDomainName,
 	})
 }
