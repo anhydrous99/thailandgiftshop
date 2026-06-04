@@ -3,34 +3,31 @@ package ssr
 import (
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-lambda-go/events"
 )
 
-const expectedHomeHTML = `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Thailand Gift Shop</title>
-  <link rel="icon" href="/static/favicon.ico" sizes="any">
-  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" sizes="180x180">
-  <link rel="manifest" href="/static/site.webmanifest">
-</head>
-<body>
-  <h1>Hello, world!</h1>
-</body>
-</html>`
+var expectedHomeContent = []string{
+	"<!doctype html>",
+	`<html lang="en">`,
+	`<title>Thailand Gift Shop</title>`,
+	`<link rel="icon" href="/static/favicon.ico" sizes="any">`,
+	`<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">`,
+	`<link rel="apple-touch-icon" href="/static/apple-touch-icon.png" sizes="180x180">`,
+	`<link rel="manifest" href="/static/site.webmanifest">`,
+	`<h1>Hello, world!</h1>`,
+}
 
 func TestHandle(t *testing.T) {
 	tests := []struct {
-		name       string
-		request    events.APIGatewayV2HTTPRequest
-		statusCode int
-		body       string
-		headers    map[string]string
+		name         string
+		request      events.APIGatewayV2HTTPRequest
+		statusCode   int
+		body         string
+		bodyContains []string
+		headers      map[string]string
 	}{
 		{
 			name: "root returns hello world",
@@ -42,8 +39,17 @@ func TestHandle(t *testing.T) {
 					},
 				},
 			},
-			statusCode: http.StatusOK,
-			body:       expectedHomeHTML,
+			statusCode:   http.StatusOK,
+			bodyContains: expectedHomeContent,
+			headers: map[string]string{
+				"Content-Type": htmlContentType,
+			},
+		},
+		{
+			name:         "empty request defaults to root get",
+			request:      events.APIGatewayV2HTTPRequest{},
+			statusCode:   http.StatusOK,
+			bodyContains: expectedHomeContent,
 			headers: map[string]string{
 				"Content-Type": htmlContentType,
 			},
@@ -93,8 +99,13 @@ func TestHandle(t *testing.T) {
 			if response.StatusCode != test.statusCode {
 				t.Fatalf("status code = %d, want %d", response.StatusCode, test.statusCode)
 			}
-			if response.Body != test.body {
+			if test.body != "" && response.Body != test.body {
 				t.Fatalf("body = %q, want %q", response.Body, test.body)
+			}
+			for _, want := range test.bodyContains {
+				if !strings.Contains(response.Body, want) {
+					t.Fatalf("body does not contain %q: %q", want, response.Body)
+				}
 			}
 			for key, want := range test.headers {
 				if got := response.Headers[key]; got != want {

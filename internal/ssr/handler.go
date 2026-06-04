@@ -1,35 +1,24 @@
 package ssr
 
 import (
+	"bytes"
 	"context"
 	"net/http"
+	"sync"
 
 	"github.com/aws/aws-lambda-go/events"
 )
 
-const (
-	htmlContentType = "text/html; charset=utf-8"
-	homeHTML        = `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Thailand Gift Shop</title>
-  <link rel="icon" href="/static/favicon.ico" sizes="any">
-  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" sizes="180x180">
-  <link rel="manifest" href="/static/site.webmanifest">
-</head>
-<body>
-  <h1>Hello, world!</h1>
-</body>
-</html>`
-)
+const htmlContentType = "text/html; charset=utf-8"
+
+var homeCache struct {
+	sync.Mutex
+	html string
+	ok   bool
+}
 
 // Handle renders HTML responses for API Gateway HTTP API requests.
 func Handle(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	_ = ctx
-
 	if requestPath(request) != "/" {
 		return htmlResponse(http.StatusNotFound, "Not found", nil), nil
 	}
@@ -40,7 +29,30 @@ func Handle(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events
 		}), nil
 	}
 
-	return htmlResponse(http.StatusOK, homeHTML, nil), nil
+	body, err := renderHome(ctx)
+	if err != nil {
+		return htmlResponse(http.StatusInternalServerError, "Internal server error", nil), nil
+	}
+
+	return htmlResponse(http.StatusOK, body, nil), nil
+}
+
+func renderHome(ctx context.Context) (string, error) {
+	homeCache.Lock()
+	defer homeCache.Unlock()
+
+	if homeCache.ok {
+		return homeCache.html, nil
+	}
+
+	var body bytes.Buffer
+	if err := home().Render(ctx, &body); err != nil {
+		return "", err
+	}
+
+	homeCache.html = body.String()
+	homeCache.ok = true
+	return homeCache.html, nil
 }
 
 func requestMethod(request events.APIGatewayV2HTTPRequest) string {

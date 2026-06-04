@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "**/*.go"
+      - "**/*.templ"
       - go.mod
       - go.sum
       - "infra/**"
@@ -16,6 +17,7 @@ on:
       - main
     paths:
       - "**/*.go"
+      - "**/*.templ"
       - go.mod
       - go.sum
       - "infra/**"
@@ -56,6 +58,16 @@ jobs:
 
       - name: Download Go dependencies
         run: go mod download
+
+      - name: Verify templ generated code
+        run: |
+          go tool templ generate
+          status="$(git status --short)"
+          if [ -n "$status" ]; then
+            echo "$status"
+            echo "Generated templ files are out of date. Run go tool templ generate."
+            exit 1
+          fi
 
       - name: Check Go formatting
         run: |

@@ -23,6 +23,12 @@ go mod download
 npm --prefix infra ci
 ```
 
+Generate Go code after editing templ files:
+
+```sh
+go tool templ generate
+```
+
 Synthesize the CloudFormation template:
 
 ```sh
