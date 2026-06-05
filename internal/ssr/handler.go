@@ -3,7 +3,9 @@ package ssr
 import (
 	"bytes"
 	"context"
+	"maps"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -11,6 +13,9 @@ import (
 
 const htmlContentType = "text/html; charset=utf-8"
 const allowedMethods = http.MethodGet + ", " + http.MethodHead
+const helloStatusText = "Hello from thailandgiftshop.com"
+const fallbackHelloStatusText = "Fallback greeting refreshed from the full page"
+const helloFragmentBody = "HTMX refreshed this greeting from the server"
 
 var homeCache struct {
 	sync.Mutex
@@ -20,7 +25,12 @@ var homeCache struct {
 
 // Handle renders HTML responses for API Gateway HTTP API requests.
 func Handle(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	if requestPath(request) != "/" {
+	path := requestPath(request)
+	if path == "/hello-fragment" {
+		return handleHelloFragment(request), nil
+	}
+
+	if path != "/" {
 		return htmlResponse(http.StatusNotFound, "Not found", nil), nil
 	}
 
@@ -35,12 +45,36 @@ func Handle(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events
 	if err != nil {
 		return htmlResponse(http.StatusInternalServerError, "Internal server error", nil), nil
 	}
+	if request.QueryStringParameters["hello"] == "fallback" {
+		body = strings.Replace(body, helloStatusText, fallbackHelloStatusText, 1)
+	}
 
 	if method == http.MethodHead {
 		body = ""
 	}
 
 	return htmlResponse(http.StatusOK, body, nil), nil
+}
+
+func handleHelloFragment(request events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
+	if requestMethod(request) != http.MethodGet || !hasHeaderValue(request.Headers, "HX-Request", "true") {
+		return htmlResponse(http.StatusNotFound, "Not found", nil)
+	}
+
+	return htmlResponse(http.StatusOK, helloFragmentBody, map[string]string{
+		"Cache-Control": "no-store",
+		"Vary":          "HX-Request",
+	})
+}
+
+func hasHeaderValue(headers map[string]string, name string, value string) bool {
+	for key, got := range headers {
+		if strings.EqualFold(key, name) {
+			return got == value
+		}
+	}
+
+	return false
 }
 
 func renderHome(ctx context.Context) (string, error) {
@@ -84,9 +118,7 @@ func htmlResponse(statusCode int, body string, extraHeaders map[string]string) e
 	headers := map[string]string{
 		"Content-Type": htmlContentType,
 	}
-	for key, value := range extraHeaders {
-		headers[key] = value
-	}
+	maps.Copy(headers, extraHeaders)
 
 	return events.APIGatewayV2HTTPResponse{
 		StatusCode: statusCode,

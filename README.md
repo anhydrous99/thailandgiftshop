@@ -21,6 +21,7 @@ Install dependencies:
 ```sh
 go mod download
 npm --prefix infra ci
+npm --prefix web ci
 ```
 
 Generate Go code after editing templ files:
@@ -29,16 +30,29 @@ Generate Go code after editing templ files:
 go tool templ generate
 ```
 
-Synthesize the CloudFormation template:
+Build frontend assets after editing Tailwind, HTMX, or template files:
+
+```sh
+npm --prefix web run build
+```
+
+Synthesize the CloudFormation template after frontend assets have been built:
 
 ```sh
 npm --prefix infra run synth
+```
+
+For first-time local browser test runs, install Playwright Chromium:
+
+```sh
+npm --prefix web run test:install
 ```
 
 Run tests:
 
 ```sh
 go test $(sh scripts/go-packages.sh)
+npm --prefix web test
 ```
 
 Check Go formatting:
@@ -66,6 +80,13 @@ Replace `ACCOUNT_ID` as needed. Production deploys intentionally fail outside `u
 
 ## Deploy
 
+Local deployers should build frontend assets before synthesizing or deploying so `web/static/` contains the generated CSS and vendored HTMX files used by CDK:
+
+```sh
+npm --prefix web run build
+npm --prefix infra run synth
+```
+
 Deploy locally:
 
 ```sh
@@ -91,6 +112,7 @@ Retained resources, such as retained buckets or log groups, may remain after sta
 CI runs on pull requests and pushes to `main`:
 
 - Go tests for tracked Go package directories
+- Frontend asset build and browser tests
 - `gofmt` check
 - `npx cdk synth`
 

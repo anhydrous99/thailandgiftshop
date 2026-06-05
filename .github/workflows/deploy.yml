@@ -46,11 +46,18 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
-          cache-dependency-path: infra/package-lock.json
+          cache-dependency-path: |
+            infra/package-lock.json
+            web/package-lock.json
 
-      - name: Install Node dependencies
-        working-directory: infra
-        run: npm ci
+      - name: Install infra Node dependencies
+        run: npm --prefix infra ci
+
+      - name: Install web Node dependencies
+        run: npm --prefix web ci
+
+      - name: Build frontend assets
+        run: npm --prefix web run build
 
       - name: Download Go dependencies
         run: go mod download
@@ -79,8 +86,7 @@ jobs:
           go test $packages
 
       - name: Synthesize CDK app
-        working-directory: infra
-        run: npx cdk synth
+        run: npm --prefix infra run synth
 
       - name: Validate deploy configuration
         run: |

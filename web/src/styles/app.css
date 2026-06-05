@@ -1,0 +1,3 @@
+@import "tailwindcss";
+@source "../../../internal/ssr/**/*.templ";
+@source "../../../internal/ssr/**/*.go";

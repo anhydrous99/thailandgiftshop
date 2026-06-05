@@ -5,11 +5,18 @@ on:
     paths:
       - "**/*.go"
       - "**/*.templ"
+      - "cmd/devserver/**"
       - go.mod
       - go.sum
       - "infra/**"
+      - "internal/ssr/**"
       - "scripts/**"
-      - "web/**"
+      - "web/package*.json"
+      - "web/src/**"
+      - "web/scripts/**"
+      - "web/static/**"
+      - "web/tests/**"
+      - "web/playwright.config.ts"
       - .nvmrc
       - .github/workflows/ci.yml
       - .github/workflows/deploy.yml
@@ -19,11 +26,18 @@ on:
     paths:
       - "**/*.go"
       - "**/*.templ"
+      - "cmd/devserver/**"
       - go.mod
       - go.sum
       - "infra/**"
+      - "internal/ssr/**"
       - "scripts/**"
-      - "web/**"
+      - "web/package*.json"
+      - "web/src/**"
+      - "web/scripts/**"
+      - "web/static/**"
+      - "web/tests/**"
+      - "web/playwright.config.ts"
       - .nvmrc
       - .github/workflows/ci.yml
       - .github/workflows/deploy.yml
@@ -54,14 +68,27 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
-          cache-dependency-path: infra/package-lock.json
+          cache-dependency-path: |
+            infra/package-lock.json
+            web/package-lock.json
 
-      - name: Install Node dependencies
-        working-directory: infra
-        run: npm ci
+      - name: Install infra Node dependencies
+        run: npm --prefix infra ci
+
+      - name: Install web Node dependencies
+        run: npm --prefix web ci
 
       - name: Download Go dependencies
         run: go mod download
+
+      - name: Build frontend assets
+        run: npm --prefix web run build
+
+      - name: Install Playwright Chromium
+        run: npm --prefix web run test:install
+
+      - name: Run frontend browser tests
+        run: npm --prefix web test
 
       - name: Verify templ generated code
         run: |
@@ -87,5 +114,4 @@ jobs:
           go test $packages
 
       - name: Synthesize CDK app
-        working-directory: infra
-        run: npx cdk synth
+        run: npm --prefix infra run synth
