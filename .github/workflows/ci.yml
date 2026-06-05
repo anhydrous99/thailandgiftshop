@@ -93,9 +93,7 @@ jobs:
       - name: Verify templ generated code
         run: |
           go tool templ generate
-          status="$(git status --short)"
-          if [ -n "$status" ]; then
-            echo "$status"
+          if ! git diff --exit-code -- internal/ssr/home_templ.go; then
             echo "Generated templ files are out of date. Run go tool templ generate."
             exit 1
           fi
