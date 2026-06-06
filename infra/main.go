@@ -33,6 +33,8 @@ const (
 	catalogSlugIndexSKName   = "gsi1sk"
 	catalogPublicIndexPKName = "gsi2pk"
 	catalogPublicIndexSKName = "gsi2sk"
+	catalogRecentIndexPKName = "gsi3pk"
+	catalogRecentIndexSKName = "gsi3sk"
 
 	staticAssetsKeyPrefix  = "static"
 	productImagesKeyPrefix = "images"
@@ -103,6 +105,18 @@ func addCatalog(stack awscdk.Stack) awsdynamodb.Table {
 			Type: awsdynamodb.AttributeType_STRING,
 		},
 	})
+	catalogTable.AddGlobalSecondaryIndex(&awsdynamodb.GlobalSecondaryIndexProps{
+		IndexName: jsii.String(catalog.DefaultRecentIndexName),
+		PartitionKey: &awsdynamodb.Attribute{
+			Name: jsii.String(catalogRecentIndexPKName),
+			Type: awsdynamodb.AttributeType_STRING,
+		},
+		ProjectionType: awsdynamodb.ProjectionType_ALL,
+		SortKey: &awsdynamodb.Attribute{
+			Name: jsii.String(catalogRecentIndexSKName),
+			Type: awsdynamodb.AttributeType_STRING,
+		},
+	})
 
 	awscdk.NewCfnOutput(stack, jsii.String("CatalogTableName"), &awscdk.CfnOutputProps{
 		Description: jsii.String("DynamoDB table name for products and categories"),
@@ -137,6 +151,7 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable) awsapigatewayv2
 			catalog.EnvTableName:                  catalogTable.TableName(),
 			catalog.EnvSlugIndexName:              jsii.String(catalog.DefaultSlugIndexName),
 			catalog.EnvPublicIndexName:            jsii.String(catalog.DefaultPublicIndexName),
+			catalog.EnvRecentIndexName:            jsii.String(catalog.DefaultRecentIndexName),
 			catalog.EnvProductImagePlaceholderURL: jsii.String(catalog.DefaultProductImagePlaceholderURL),
 		},
 		FunctionName: jsii.String("thailandgiftshop-ssr"),

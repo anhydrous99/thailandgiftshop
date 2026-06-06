@@ -10,6 +10,10 @@ const DemoSeedGroup = "demo"
 
 var demoUpdatedAt = time.Date(2026, 6, 6, 12, 0, 0, 0, time.UTC)
 
+func demoProductCreatedAt(daysBeforeUpdate int) time.Time {
+	return demoUpdatedAt.AddDate(0, 0, -daysBeforeUpdate)
+}
+
 type DemoSeedCounts struct {
 	Categories          int
 	Products            int
@@ -90,6 +94,7 @@ func DemoCatalogProducts() []Product {
 			Status:        StatusActive,
 			SortOrder:     10,
 			StockQuantity: 18,
+			CreatedAt:     demoProductCreatedAt(18),
 			UpdatedAt:     demoUpdatedAt,
 			CategorySlugs: []string{"gift-sets", "snacks-sweets"},
 		},
@@ -103,6 +108,7 @@ func DemoCatalogProducts() []Product {
 			Status:        StatusActive,
 			SortOrder:     20,
 			StockQuantity: 31,
+			CreatedAt:     demoProductCreatedAt(16),
 			UpdatedAt:     demoUpdatedAt,
 			CategorySlugs: []string{"gift-sets", "pantry", "snacks-sweets"},
 		},
@@ -116,6 +122,7 @@ func DemoCatalogProducts() []Product {
 			Status:        StatusActive,
 			SortOrder:     30,
 			StockQuantity: 9,
+			CreatedAt:     demoProductCreatedAt(14),
 			UpdatedAt:     demoUpdatedAt,
 			CategorySlugs: []string{"home-decor", "souvenirs"},
 		},
@@ -129,6 +136,7 @@ func DemoCatalogProducts() []Product {
 			Status:        StatusActive,
 			SortOrder:     40,
 			StockQuantity: 22,
+			CreatedAt:     demoProductCreatedAt(12),
 			UpdatedAt:     demoUpdatedAt,
 			CategorySlugs: []string{"gift-sets", "wellness"},
 		},
@@ -142,6 +150,7 @@ func DemoCatalogProducts() []Product {
 			Status:        StatusActive,
 			SortOrder:     50,
 			StockQuantity: 14,
+			CreatedAt:     demoProductCreatedAt(10),
 			UpdatedAt:     demoUpdatedAt,
 			CategorySlugs: []string{"textiles"},
 		},
@@ -155,6 +164,7 @@ func DemoCatalogProducts() []Product {
 			Status:        StatusActive,
 			SortOrder:     60,
 			StockQuantity: 25,
+			CreatedAt:     demoProductCreatedAt(8),
 			UpdatedAt:     demoUpdatedAt,
 			CategorySlugs: []string{"pantry"},
 		},
@@ -168,6 +178,7 @@ func DemoCatalogProducts() []Product {
 			Status:        StatusActive,
 			SortOrder:     70,
 			StockQuantity: 6,
+			CreatedAt:     demoProductCreatedAt(6),
 			UpdatedAt:     demoUpdatedAt,
 			CategorySlugs: []string{"home-decor"},
 		},
@@ -181,6 +192,7 @@ func DemoCatalogProducts() []Product {
 			Status:        StatusActive,
 			SortOrder:     80,
 			StockQuantity: 40,
+			CreatedAt:     demoProductCreatedAt(5),
 			UpdatedAt:     demoUpdatedAt,
 			CategorySlugs: []string{"home-decor", "souvenirs"},
 		},
@@ -194,6 +206,7 @@ func DemoCatalogProducts() []Product {
 			Status:        StatusActive,
 			SortOrder:     90,
 			StockQuantity: 16,
+			CreatedAt:     demoProductCreatedAt(4),
 			UpdatedAt:     demoUpdatedAt,
 			CategorySlugs: []string{"home-decor", "wellness"},
 		},
@@ -207,6 +220,7 @@ func DemoCatalogProducts() []Product {
 			Status:        StatusActive,
 			SortOrder:     100,
 			StockQuantity: 0,
+			CreatedAt:     demoProductCreatedAt(3),
 			UpdatedAt:     demoUpdatedAt,
 			CategorySlugs: []string{"pantry", "snacks-sweets"},
 		},
@@ -220,6 +234,7 @@ func DemoCatalogProducts() []Product {
 			Status:        StatusActive,
 			SortOrder:     110,
 			StockQuantity: 27,
+			CreatedAt:     demoProductCreatedAt(1),
 			UpdatedAt:     demoUpdatedAt,
 			CategorySlugs: []string{"textiles", "souvenirs"},
 		},
@@ -233,6 +248,7 @@ func DemoCatalogProducts() []Product {
 			Status:        StatusDraft,
 			SortOrder:     120,
 			StockQuantity: 4,
+			CreatedAt:     demoProductCreatedAt(0),
 			UpdatedAt:     demoUpdatedAt,
 			CategorySlugs: []string{"home-decor"},
 		},

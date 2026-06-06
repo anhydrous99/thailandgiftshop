@@ -13,6 +13,7 @@ import (
 )
 
 func TestProductItemRoundTripIncludesInventoryAndNoCurrency(t *testing.T) {
+	createdAt := time.Date(2026, 6, 1, 10, 0, 0, 0, time.UTC)
 	updatedAt := time.Date(2026, 6, 6, 12, 30, 0, 0, time.UTC)
 	product := Product{
 		ID:            "prod_001",
@@ -24,6 +25,7 @@ func TestProductItemRoundTripIncludesInventoryAndNoCurrency(t *testing.T) {
 		Status:        StatusActive,
 		SortOrder:     12,
 		StockQuantity: 0,
+		CreatedAt:     createdAt,
 		UpdatedAt:     updatedAt,
 		CategorySlugs: []string{"food", "gifts"},
 	}
@@ -44,6 +46,15 @@ func TestProductItemRoundTripIncludesInventoryAndNoCurrency(t *testing.T) {
 	}
 	if got := stringAttribute(t, item, "gsi2pk"); got != activeProductsIndexPK {
 		t.Fatalf("gsi2pk = %q", got)
+	}
+	if got := stringAttribute(t, item, "gsi3pk"); got != recentProductsIndexPK {
+		t.Fatalf("gsi3pk = %q", got)
+	}
+	if got := stringAttribute(t, item, "gsi3sk"); got != "PRODUCT#2026-06-01T10:00:00Z#prod_001" {
+		t.Fatalf("gsi3sk = %q", got)
+	}
+	if got := stringAttribute(t, item, "created_at"); got != "2026-06-01T10:00:00Z" {
+		t.Fatalf("created_at = %q", got)
 	}
 
 	got, err := productFromItem(item)
@@ -144,6 +155,9 @@ func TestDemoCatalogSeedItemsIncludesExpectedRows(t *testing.T) {
 			if got := stringAttribute(t, item, "image_url"); !strings.HasPrefix(got, "/images/products/") {
 				t.Fatalf("product image_url = %q, want /images/products/ prefix", got)
 			}
+			if got := stringAttribute(t, item, "created_at"); got == "" {
+				t.Fatal("product created_at is empty")
+			}
 		case entityCategoryProduct:
 			categoryProducts++
 		default:
@@ -198,6 +212,7 @@ func TestDynamoStoreListActiveProductsUsesPublicIndex(t *testing.T) {
 		TableName:       "catalog-table",
 		SlugIndexName:   "slug-index",
 		PublicIndexName: "public-index",
+		RecentIndexName: "recent-index",
 	})
 
 	products, err := store.ListActiveProducts(context.Background(), 10)
@@ -223,6 +238,58 @@ func TestDynamoStoreListActiveProductsUsesPublicIndex(t *testing.T) {
 	}
 }
 
+func TestDynamoStoreListRecentlyAddedProductsUsesRecentIndex(t *testing.T) {
+	product := Product{
+		ID:            "prod_011",
+		Slug:          "elephant-pouch-set",
+		Name:          "Elephant Pouch Set",
+		PriceCents:    2499,
+		Status:        StatusActive,
+		SortOrder:     110,
+		StockQuantity: 4,
+		CreatedAt:     time.Date(2026, 6, 5, 12, 0, 0, 0, time.UTC),
+		UpdatedAt:     time.Date(2026, 6, 6, 12, 0, 0, 0, time.UTC),
+	}
+	item, err := productItem(product)
+	if err != nil {
+		t.Fatalf("productItem returned error: %v", err)
+	}
+	client := &fakeQueryClient{
+		outputs: []*dynamodb.QueryOutput{{Items: []map[string]types.AttributeValue{item}}},
+	}
+	store := NewDynamoStore(client, DynamoConfig{
+		TableName:       "catalog-table",
+		SlugIndexName:   "slug-index",
+		PublicIndexName: "public-index",
+		RecentIndexName: "recent-index",
+	})
+
+	products, err := store.ListRecentlyAddedProducts(context.Background(), 8)
+	if err != nil {
+		t.Fatalf("ListRecentlyAddedProducts returned error: %v", err)
+	}
+	if len(products) != 1 || products[0].ID != product.ID {
+		t.Fatalf("products = %#v", products)
+	}
+
+	input := client.inputs[0]
+	if got := aws.ToString(input.TableName); got != "catalog-table" {
+		t.Fatalf("TableName = %q", got)
+	}
+	if got := aws.ToString(input.IndexName); got != "recent-index" {
+		t.Fatalf("IndexName = %q", got)
+	}
+	if got := aws.ToBool(input.ScanIndexForward); got {
+		t.Fatal("ScanIndexForward = true, want newest products first")
+	}
+	if got := stringAttribute(t, input.ExpressionAttributeValues, ":pk"); got != recentProductsIndexPK {
+		t.Fatalf(":pk = %q", got)
+	}
+	if got := aws.ToInt32(input.Limit); got != 8 {
+		t.Fatalf("Limit = %d, want 8", got)
+	}
+}
+
 func TestDynamoStoreGetProductBySlugUsesSlugIndex(t *testing.T) {
 	product := Product{
 		ID:            "prod_001",
@@ -244,6 +311,7 @@ func TestDynamoStoreGetProductBySlugUsesSlugIndex(t *testing.T) {
 		TableName:       "catalog-table",
 		SlugIndexName:   "slug-index",
 		PublicIndexName: "public-index",
+		RecentIndexName: "recent-index",
 	})
 
 	got, ok, err := store.GetProductBySlug(context.Background(), product.Slug)
@@ -290,6 +358,7 @@ func TestDynamoStoreListActiveProductsByCategoryUsesBaseTable(t *testing.T) {
 		TableName:       "catalog-table",
 		SlugIndexName:   "slug-index",
 		PublicIndexName: "public-index",
+		RecentIndexName: "recent-index",
 	})
 
 	products, err := store.ListActiveProductsByCategory(context.Background(), "home-decor", 6)

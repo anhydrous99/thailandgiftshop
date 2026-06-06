@@ -21,6 +21,7 @@ const (
 	productSK               = "PRODUCT"
 	categorySK              = "CATEGORY"
 	activeProductsIndexPK   = "PRODUCTS#ACTIVE"
+	recentProductsIndexPK   = "PRODUCTS#ACTIVE#RECENT"
 	activeCategoriesIndexPK = "CATEGORIES#ACTIVE"
 )
 
@@ -28,6 +29,7 @@ type DynamoConfig struct {
 	TableName       string
 	SlugIndexName   string
 	PublicIndexName string
+	RecentIndexName string
 }
 
 func DynamoConfigFromEnv() (DynamoConfig, bool) {
@@ -40,12 +42,16 @@ func DynamoConfigFromEnv() (DynamoConfig, bool) {
 		TableName:       tableName,
 		SlugIndexName:   os.Getenv(EnvSlugIndexName),
 		PublicIndexName: os.Getenv(EnvPublicIndexName),
+		RecentIndexName: os.Getenv(EnvRecentIndexName),
 	}
 	if config.SlugIndexName == "" {
 		config.SlugIndexName = DefaultSlugIndexName
 	}
 	if config.PublicIndexName == "" {
 		config.PublicIndexName = DefaultPublicIndexName
+	}
+	if config.RecentIndexName == "" {
+		config.RecentIndexName = DefaultRecentIndexName
 	}
 
 	return config, true
@@ -74,6 +80,7 @@ type DynamoStore struct {
 	tableName       string
 	slugIndexName   string
 	publicIndexName string
+	recentIndexName string
 }
 
 func NewDynamoStore(client queryClient, config DynamoConfig) *DynamoStore {
@@ -82,6 +89,7 @@ func NewDynamoStore(client queryClient, config DynamoConfig) *DynamoStore {
 		tableName:       config.TableName,
 		slugIndexName:   config.SlugIndexName,
 		publicIndexName: config.PublicIndexName,
+		recentIndexName: config.RecentIndexName,
 	}
 }
 
@@ -97,6 +105,26 @@ func (s *DynamoStore) ListActiveProducts(ctx context.Context, limit int) ([]Prod
 			":pk": &types.AttributeValueMemberS{Value: activeProductsIndexPK},
 		},
 		ScanIndexForward: aws.Bool(true),
+	}, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	return productsFromItems(items)
+}
+
+func (s *DynamoStore) ListRecentlyAddedProducts(ctx context.Context, limit int) ([]Product, error) {
+	items, err := s.query(ctx, dynamodb.QueryInput{
+		TableName:              aws.String(s.tableName),
+		IndexName:              aws.String(s.recentIndexName),
+		KeyConditionExpression: aws.String("#gsi3pk = :pk"),
+		ExpressionAttributeNames: map[string]string{
+			"#gsi3pk": "gsi3pk",
+		},
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pk": &types.AttributeValueMemberS{Value: recentProductsIndexPK},
+		},
+		ScanIndexForward: aws.Bool(false),
 	}, limit)
 	if err != nil {
 		return nil, err
@@ -226,12 +254,15 @@ type catalogItem struct {
 	Status        Status   `dynamodbav:"status,omitempty"`
 	SortOrder     int      `dynamodbav:"sort_order"`
 	StockQuantity *int     `dynamodbav:"stock_quantity,omitempty"`
+	CreatedAt     string   `dynamodbav:"created_at,omitempty"`
 	UpdatedAt     string   `dynamodbav:"updated_at,omitempty"`
 	CategorySlugs []string `dynamodbav:"category_slugs,omitempty"`
 	GSI1PK        string   `dynamodbav:"gsi1pk,omitempty"`
 	GSI1SK        string   `dynamodbav:"gsi1sk,omitempty"`
 	GSI2PK        string   `dynamodbav:"gsi2pk,omitempty"`
 	GSI2SK        string   `dynamodbav:"gsi2sk,omitempty"`
+	GSI3PK        string   `dynamodbav:"gsi3pk,omitempty"`
+	GSI3SK        string   `dynamodbav:"gsi3sk,omitempty"`
 }
 
 func productItem(product Product) (map[string]types.AttributeValue, error) {
@@ -248,6 +279,7 @@ func productItem(product Product) (map[string]types.AttributeValue, error) {
 		Status:        product.Status,
 		SortOrder:     product.SortOrder,
 		StockQuantity: intPtr(product.StockQuantity),
+		CreatedAt:     formatCatalogTime(product.CreatedAt),
 		UpdatedAt:     formatUpdatedAt(product.UpdatedAt),
 		CategorySlugs: product.CategorySlugs,
 		GSI1PK:        productSlugIndexPK(product.Slug),
@@ -256,6 +288,8 @@ func productItem(product Product) (map[string]types.AttributeValue, error) {
 	if product.Status == StatusActive {
 		item.GSI2PK = activeProductsIndexPK
 		item.GSI2SK = productPublicIndexSK(product)
+		item.GSI3PK = recentProductsIndexPK
+		item.GSI3SK = productRecentIndexSK(product)
 	}
 
 	return attributevalue.MarshalMap(item)
@@ -295,6 +329,7 @@ func categoryProductItem(categorySlug string, product Product) (map[string]types
 		Status:        product.Status,
 		SortOrder:     product.SortOrder,
 		StockQuantity: intPtr(product.StockQuantity),
+		CreatedAt:     formatCatalogTime(product.CreatedAt),
 		UpdatedAt:     formatUpdatedAt(product.UpdatedAt),
 	})
 }
@@ -325,6 +360,10 @@ func productFromItem(item map[string]types.AttributeValue) (Product, error) {
 	if err != nil {
 		return Product{}, err
 	}
+	createdAt, err := parseCatalogTime("created_at", record.CreatedAt)
+	if err != nil {
+		return Product{}, err
+	}
 
 	return Product{
 		ID:            record.ID,
@@ -336,6 +375,7 @@ func productFromItem(item map[string]types.AttributeValue) (Product, error) {
 		Status:        record.Status,
 		SortOrder:     record.SortOrder,
 		StockQuantity: intValue(record.StockQuantity),
+		CreatedAt:     createdAt,
 		UpdatedAt:     updatedAt,
 		CategorySlugs: record.CategorySlugs,
 	}, nil
@@ -381,6 +421,21 @@ func productPublicIndexSK(product Product) string {
 	return fmt.Sprintf("PRODUCT#%010d#%s", product.SortOrder, product.ID)
 }
 
+func productRecentIndexSK(product Product) string {
+	return fmt.Sprintf("PRODUCT#%s#%s", formatCatalogTime(productRecentTime(product)), product.ID)
+}
+
+func productRecentTime(product Product) time.Time {
+	if !product.CreatedAt.IsZero() {
+		return product.CreatedAt
+	}
+	if !product.UpdatedAt.IsZero() {
+		return product.UpdatedAt
+	}
+
+	return time.Unix(0, 0).UTC()
+}
+
 func categoryPublicIndexSK(category Category) string {
 	return fmt.Sprintf("CATEGORY#%010d#%s", category.SortOrder, category.Slug)
 }
@@ -390,21 +445,29 @@ func categoryProductSK(product Product) string {
 }
 
 func formatUpdatedAt(updatedAt time.Time) string {
-	if updatedAt.IsZero() {
+	return formatCatalogTime(updatedAt)
+}
+
+func formatCatalogTime(value time.Time) string {
+	if value.IsZero() {
 		return ""
 	}
 
-	return updatedAt.UTC().Format(time.RFC3339)
+	return value.UTC().Format(time.RFC3339)
 }
 
 func parseUpdatedAt(updatedAt string) (time.Time, error) {
-	if updatedAt == "" {
+	return parseCatalogTime("updated_at", updatedAt)
+}
+
+func parseCatalogTime(attributeName string, value string) (time.Time, error) {
+	if value == "" {
 		return time.Time{}, nil
 	}
 
-	parsed, err := time.Parse(time.RFC3339, updatedAt)
+	parsed, err := time.Parse(time.RFC3339, value)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("parse catalog updated_at %q: %w", updatedAt, err)
+		return time.Time{}, fmt.Errorf("parse catalog %s %q: %w", attributeName, value, err)
 	}
 
 	return parsed, nil

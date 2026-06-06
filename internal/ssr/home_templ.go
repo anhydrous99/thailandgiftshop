@@ -31,107 +31,125 @@ func home(products []catalog.Product, productImagePlaceholderURL string) templ.C
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Thailand Gift Shop</title><link rel=\"icon\" href=\"/static/favicon.ico\" sizes=\"any\"><link rel=\"icon\" href=\"/static/favicon.svg\" type=\"image/svg+xml\"><link rel=\"apple-touch-icon\" href=\"/static/apple-touch-icon.png\" sizes=\"180x180\"><link rel=\"manifest\" href=\"/static/site.webmanifest\"><link rel=\"stylesheet\" href=\"/static/assets/app.css\"><script src=\"/static/vendor/htmx.min.js\" defer></script></head><body class=\"min-h-screen bg-stone-50 text-stone-950\"><main class=\"mx-auto min-h-screen w-full max-w-6xl px-5 py-10 sm:px-8\"><section class=\"mb-8 border-b border-stone-200 pb-6\"><p class=\"mb-2 text-sm font-semibold uppercase tracking-widest text-emerald-700\">Thailand Gift Shop</p><h1 class=\"max-w-3xl text-4xl font-bold tracking-tight text-stone-950\">Thai gifts, pantry favorites, and small-batch keepsakes.</h1><p class=\"mt-4 max-w-2xl text-base leading-7 text-stone-700\">Browse the current catalog served from DynamoDB, with product images delivered through CloudFront.</p></section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<!doctype html><html lang=\"en\" class=\"scroll-smooth\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Thailand Gift Shop</title><link rel=\"icon\" href=\"/static/favicon.ico\" sizes=\"any\"><link rel=\"icon\" href=\"/static/favicon.svg\" type=\"image/svg+xml\"><link rel=\"apple-touch-icon\" href=\"/static/apple-touch-icon.png\" sizes=\"180x180\"><link rel=\"manifest\" href=\"/static/site.webmanifest\"><link rel=\"stylesheet\" href=\"/static/assets/app.css\"><script src=\"/static/vendor/htmx.min.js\" defer></script></head><body class=\"min-h-screen bg-[#fff8ef] text-slate-950 antialiased\"><header class=\"sticky top-0 z-30 border-b border-slate-950/10 bg-white/90 backdrop-blur\"><nav aria-label=\"Main navigation\" class=\"mx-auto flex min-h-16 w-full max-w-7xl items-center justify-between gap-4 px-5 sm:px-8\"><a href=\"/\" class=\"flex items-center gap-3 text-base font-bold text-slate-950\"><span class=\"grid size-9 place-items-center rounded-full bg-teal-700 text-sm font-bold text-white shadow-sm\">TG</span> <span>Thailand Gift Shop</span></a><div class=\"hidden items-center gap-7 text-sm font-semibold text-slate-700 md:flex\"><a class=\"transition hover:text-teal-700\" href=\"#latest\">Latest</a> <a class=\"transition hover:text-teal-700\" href=\"#gift-sets\">Gift Sets</a> <a class=\"transition hover:text-teal-700\" href=\"#categories\">Categories</a> <a class=\"transition hover:text-teal-700\" href=\"#story\">Story</a></div><a href=\"#latest\" class=\"inline-flex h-10 items-center justify-center rounded-full bg-rose-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-rose-700\">Shop latest</a></nav></header><main><section class=\"relative isolate overflow-hidden bg-slate-950 text-white\"><img class=\"absolute inset-0 -z-20 h-full w-full object-cover opacity-55\" src=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var2 string
+		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.ResolveAttributeValue(heroImageURL(products, productImagePlaceholderURL))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/home.templ`, Line: 37, Col: 135}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var2)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" alt=\"\" aria-hidden=\"true\"><div class=\"absolute inset-0 -z-10 bg-gradient-to-r from-slate-950 via-slate-950/75 to-teal-950/25\"></div><div class=\"mx-auto grid min-h-[520px] w-full max-w-7xl content-end px-5 py-16 sm:min-h-[560px] sm:px-8 lg:py-20\"><div class=\"max-w-3xl\"><p class=\"mb-4 inline-flex rounded-full bg-amber-300 px-4 py-2 text-sm font-bold text-slate-950\">Fresh arrivals from Thailand-inspired makers</p><h1 class=\"text-5xl font-black leading-none text-white sm:text-6xl lg:text-7xl\">Thai gifts with market color, pantry joy, and thoughtful detail.</h1><p class=\"mt-6 max-w-2xl text-lg leading-8 text-white/85\">Discover bright pantry boxes, handmade keepsakes, textiles, wellness gifts, and small home accents curated for easy gifting.</p><div class=\"mt-8 flex flex-wrap gap-3\"><a href=\"#latest\" class=\"inline-flex h-12 items-center justify-center rounded-full bg-rose-600 px-6 text-sm font-bold text-white shadow-sm transition hover:bg-rose-700\">Shop latest arrivals</a> <a href=\"#categories\" class=\"inline-flex h-12 items-center justify-center rounded-full border border-white/45 bg-white/10 px-6 text-sm font-bold text-white backdrop-blur transition hover:bg-white/20\">Browse categories</a></div></div><div class=\"mt-12 grid max-w-3xl gap-3 text-sm font-semibold text-white/90 sm:grid-cols-3\"><div class=\"rounded-lg border border-white/20 bg-white/10 p-4 backdrop-blur\"><p class=\"text-2xl font-black text-amber-200\">01</p><p class=\"mt-1\">Latest arrivals first</p></div><div class=\"rounded-lg border border-white/20 bg-white/10 p-4 backdrop-blur\"><p class=\"text-2xl font-black text-sky-200\">02</p><p class=\"mt-1\">Gift-ready categories</p></div><div class=\"rounded-lg border border-white/20 bg-white/10 p-4 backdrop-blur\"><p class=\"text-2xl font-black text-rose-200\">03</p><p class=\"mt-1\">Small-batch finds</p></div></div></div></section><section id=\"latest\" class=\"mx-auto w-full max-w-7xl px-5 py-16 sm:px-8 lg:py-20\"><div class=\"mb-8 flex flex-col gap-4 border-b border-slate-950/10 pb-6 md:flex-row md:items-end md:justify-between\"><div><p class=\"text-sm font-bold text-teal-700\">Just added</p><h2 class=\"mt-2 text-3xl font-black text-slate-950 sm:text-4xl\">Latest products</h2></div><p class=\"max-w-2xl text-base leading-7 text-slate-600\">Newest active catalog items appear here first, with images served from the product image CDN path.</p></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if len(products) == 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<section class=\"rounded-lg border border-dashed border-stone-300 bg-white p-8 text-center\"><h2 class=\"text-xl font-semibold text-stone-950\">No products are available yet.</h2><p class=\"mt-2 text-sm text-stone-600\">Seed or publish catalog products to show them here.</p></section>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<section class=\"rounded-lg border border-dashed border-slate-300 bg-white p-8 text-center shadow-sm\"><h2 class=\"text-xl font-bold text-slate-950\">No products are available yet.</h2><p class=\"mt-2 text-sm leading-6 text-slate-600\">Seed or publish catalog products to show them here.</p></section>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<section aria-label=\"Products\" class=\"grid gap-5 sm:grid-cols-2 lg:grid-cols-3\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<section aria-label=\"Latest added products\" class=\"grid gap-5 sm:grid-cols-2 lg:grid-cols-4\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			for _, product := range products {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<article data-testid=\"product-card\" class=\"overflow-hidden rounded-lg border border-stone-200 bg-white shadow-sm\"><img class=\"aspect-[4/3] w-full bg-stone-100 object-cover\" src=\"")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var2 string
-				templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.ResolveAttributeValue(product.DisplayImageURL(productImagePlaceholderURL))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/home.templ`, Line: 35, Col: 124}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var2)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\" alt=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<article data-testid=\"product-card\" class=\"group overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition hover:-translate-y-1 hover:border-teal-200 hover:shadow-lg\"><img class=\"aspect-[4/3] w-full bg-amber-50 object-cover transition duration-300 group-hover:scale-105\" src=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var3 string
-				templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.ResolveAttributeValue(product.Name)
+				templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.ResolveAttributeValue(product.DisplayImageURL(productImagePlaceholderURL))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/home.templ`, Line: 35, Col: 145}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/home.templ`, Line: 82, Col: 170}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var3)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\" loading=\"lazy\"><div class=\"p-5\"><div class=\"flex items-start justify-between gap-4\"><h2 class=\"text-lg font-semibold leading-6 text-stone-950\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\" alt=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var4 string
-				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(product.Name)
+				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.ResolveAttributeValue(product.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/home.templ`, Line: 38, Col: 83}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/home.templ`, Line: 82, Col: 191}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</h2><p class=\"shrink-0 text-sm font-bold text-emerald-700\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "\" loading=\"lazy\"><div class=\"p-5\"><div class=\"flex items-start justify-between gap-4\"><h3 class=\"text-lg font-bold leading-6 text-slate-950\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var5 string
-				templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(formatPrice(product.PriceCents))
+				templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(product.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/home.templ`, Line: 39, Col: 98}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/home.templ`, Line: 85, Col: 80}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</p></div><p class=\"mt-3 line-clamp-3 text-sm leading-6 text-stone-600\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</h3><p class=\"shrink-0 rounded-full bg-teal-50 px-3 py-1 text-sm font-black text-teal-800\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var6 string
-				templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(product.Description)
+				templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(formatPrice(product.PriceCents))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/home.templ`, Line: 41, Col: 92}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/home.templ`, Line: 86, Col: 131}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</p>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</p></div><p class=\"mt-3 line-clamp-3 text-sm leading-6 text-slate-600\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var7 string
+				templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(product.Description)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/home.templ`, Line: 88, Col: 93}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</p>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				if product.OutOfStock() {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<p class=\"mt-4 inline-flex rounded-full bg-rose-100 px-3 py-1 text-xs font-bold uppercase tracking-widest text-rose-700\">Out of stock</p>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<p class=\"mt-4 inline-flex rounded-full bg-rose-100 px-3 py-1 text-xs font-bold text-rose-700\">Out of stock</p>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				} else {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<p class=\"mt-4 inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800\">Ready to gift</p>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</div></article>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</div></article>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</section>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</section>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</main></body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</section><section id=\"gift-sets\" class=\"bg-white py-16 lg:py-20\"><div class=\"mx-auto w-full max-w-7xl px-5 sm:px-8\"><div class=\"grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-start\"><div><p class=\"text-sm font-bold text-rose-700\">Gift paths</p><h2 class=\"mt-2 text-3xl font-black text-slate-950 sm:text-4xl\">Start with the occasion, then find the flavor.</h2><p class=\"mt-4 text-base leading-7 text-slate-600\">The rest of the shop can follow this pattern: focused sections, quick category paths, and product shelves that stay close to the catalog.</p></div><div class=\"grid gap-4 sm:grid-cols-3\"><a href=\"#latest\" class=\"rounded-lg border border-amber-200 bg-amber-50 p-5 text-slate-950 transition hover:border-amber-400 hover:bg-amber-100\"><p class=\"text-lg font-black\">Pantry Night</p><p class=\"mt-3 text-sm leading-6 text-slate-600\">Curry kits, tea, sauces, rice sweets, and snackable tasting boxes.</p></a> <a href=\"#latest\" class=\"rounded-lg border border-sky-200 bg-sky-50 p-5 text-slate-950 transition hover:border-sky-400 hover:bg-sky-100\"><p class=\"text-lg font-black\">Home Accent</p><p class=\"mt-3 text-sm leading-6 text-slate-600\">Candles, cups, brass bells, magnets, and shelf-size keepsakes.</p></a> <a href=\"#latest\" class=\"rounded-lg border border-rose-200 bg-rose-50 p-5 text-slate-950 transition hover:border-rose-400 hover:bg-rose-100\"><p class=\"text-lg font-black\">Spa Reset</p><p class=\"mt-3 text-sm leading-6 text-slate-600\">Lemongrass, jasmine, textiles, pouches, and unwind-ready bundles.</p></a></div></div></div></section><section id=\"categories\" class=\"mx-auto w-full max-w-7xl px-5 py-16 sm:px-8 lg:py-20\"><div class=\"mb-8 max-w-3xl\"><p class=\"text-sm font-bold text-teal-700\">Shop structure</p><h2 class=\"mt-2 text-3xl font-black text-slate-950 sm:text-4xl\">Clear categories for every page that comes next.</h2></div><div class=\"grid gap-4 sm:grid-cols-2 lg:grid-cols-4\"><a href=\"#latest\" class=\"rounded-lg border border-slate-200 bg-white p-5 shadow-sm transition hover:border-teal-300 hover:shadow-md\"><p class=\"text-base font-black text-slate-950\">Gift Sets</p><p class=\"mt-2 text-sm leading-6 text-slate-600\">Ready-to-wrap combinations.</p></a> <a href=\"#latest\" class=\"rounded-lg border border-slate-200 bg-white p-5 shadow-sm transition hover:border-teal-300 hover:shadow-md\"><p class=\"text-base font-black text-slate-950\">Thai Pantry</p><p class=\"mt-2 text-sm leading-6 text-slate-600\">Cooking staples and sweets.</p></a> <a href=\"#latest\" class=\"rounded-lg border border-slate-200 bg-white p-5 shadow-sm transition hover:border-teal-300 hover:shadow-md\"><p class=\"text-base font-black text-slate-950\">Textiles</p><p class=\"mt-2 text-sm leading-6 text-slate-600\">Scarves, pouches, and woven goods.</p></a> <a href=\"#latest\" class=\"rounded-lg border border-slate-200 bg-white p-5 shadow-sm transition hover:border-teal-300 hover:shadow-md\"><p class=\"text-base font-black text-slate-950\">Home Decor</p><p class=\"mt-2 text-sm leading-6 text-slate-600\">Compact accents and keepsakes.</p></a></div></section><section id=\"story\" class=\"border-y border-slate-950/10 bg-teal-950 py-16 text-white lg:py-20\"><div class=\"mx-auto grid w-full max-w-7xl gap-8 px-5 sm:px-8 lg:grid-cols-[1fr_1fr] lg:items-center\"><div><p class=\"text-sm font-bold text-amber-200\">Curation point of view</p><h2 class=\"mt-2 text-3xl font-black sm:text-4xl\">A bright, practical shop for Thai-inspired gifting.</h2></div><p class=\"text-base leading-8 text-white/80\">Future pages can reuse this rhythm: a clear header, useful navigation, colorful category paths, and product shelves that keep the buyer close to real inventory.</p></div></section></main><footer class=\"bg-slate-950 px-5 py-10 text-white sm:px-8\"><div class=\"mx-auto flex w-full max-w-7xl flex-col gap-4 text-sm text-white/70 sm:flex-row sm:items-center sm:justify-between\"><p class=\"font-bold text-white\">Thailand Gift Shop</p><p>Thai gifts, pantry favorites, and small-batch keepsakes.</p></div></footer></body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

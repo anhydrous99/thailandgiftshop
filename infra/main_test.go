@@ -130,6 +130,14 @@ func TestStackIncludesCatalogResources(t *testing.T) {
 					"AttributeName": catalogPublicIndexSKName,
 					"AttributeType": "S",
 				},
+				map[string]interface{}{
+					"AttributeName": catalogRecentIndexPKName,
+					"AttributeType": "S",
+				},
+				map[string]interface{}{
+					"AttributeName": catalogRecentIndexSKName,
+					"AttributeType": "S",
+				},
 			}),
 			"BillingMode": "PAY_PER_REQUEST",
 			"GlobalSecondaryIndexes": assertions.Match_ArrayWith(&[]interface{}{
@@ -165,6 +173,22 @@ func TestStackIncludesCatalogResources(t *testing.T) {
 						"ProjectionType": "ALL",
 					},
 				}),
+				assertions.Match_ObjectLike(&map[string]interface{}{
+					"IndexName": "recent-index",
+					"KeySchema": assertions.Match_ArrayWith(&[]interface{}{
+						map[string]interface{}{
+							"AttributeName": catalogRecentIndexPKName,
+							"KeyType":       "HASH",
+						},
+						map[string]interface{}{
+							"AttributeName": catalogRecentIndexSKName,
+							"KeyType":       "RANGE",
+						},
+					}),
+					"Projection": map[string]interface{}{
+						"ProjectionType": "ALL",
+					},
+				}),
 			}),
 			"KeySchema": assertions.Match_ArrayWith(&[]interface{}{
 				map[string]interface{}{
@@ -193,6 +217,7 @@ func TestStackIncludesCatalogResources(t *testing.T) {
 				"CATALOG_TABLE_NAME":            assertions.Match_AnyValue(),
 				"CATALOG_SLUG_INDEX_NAME":       "slug-index",
 				"CATALOG_PUBLIC_INDEX_NAME":     "public-index",
+				"CATALOG_RECENT_INDEX_NAME":     "recent-index",
 				"PRODUCT_IMAGE_PLACEHOLDER_URL": catalog.DefaultProductImagePlaceholderURL,
 			},
 		},

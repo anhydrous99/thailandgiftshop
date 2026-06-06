@@ -10,10 +10,12 @@ const (
 	EnvTableName                  = "CATALOG_TABLE_NAME"
 	EnvSlugIndexName              = "CATALOG_SLUG_INDEX_NAME"
 	EnvPublicIndexName            = "CATALOG_PUBLIC_INDEX_NAME"
+	EnvRecentIndexName            = "CATALOG_RECENT_INDEX_NAME"
 	EnvProductImagePlaceholderURL = "PRODUCT_IMAGE_PLACEHOLDER_URL"
 
 	DefaultSlugIndexName   = "slug-index"
 	DefaultPublicIndexName = "public-index"
+	DefaultRecentIndexName = "recent-index"
 
 	DefaultProductImagePlaceholderURL = "/images/placeholder-product.jpg"
 )
@@ -36,6 +38,7 @@ type Product struct {
 	Status        Status
 	SortOrder     int
 	StockQuantity int
+	CreatedAt     time.Time
 	UpdatedAt     time.Time
 	CategorySlugs []string
 }
@@ -66,6 +69,7 @@ type Category struct {
 
 type Store interface {
 	ListActiveProducts(ctx context.Context, limit int) ([]Product, error)
+	ListRecentlyAddedProducts(ctx context.Context, limit int) ([]Product, error)
 	GetProductBySlug(ctx context.Context, slug string) (Product, bool, error)
 	ListActiveCategories(ctx context.Context) ([]Category, error)
 	ListActiveProductsByCategory(ctx context.Context, categorySlug string, limit int) ([]Product, error)
@@ -74,6 +78,10 @@ type Store interface {
 type EmptyStore struct{}
 
 func (EmptyStore) ListActiveProducts(ctx context.Context, limit int) ([]Product, error) {
+	return []Product{}, nil
+}
+
+func (EmptyStore) ListRecentlyAddedProducts(ctx context.Context, limit int) ([]Product, error) {
 	return []Product{}, nil
 }
 

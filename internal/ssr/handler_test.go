@@ -13,7 +13,7 @@ import (
 
 var expectedHomeContent = []string{
 	"<!doctype html>",
-	`<html lang="en">`,
+	`<html lang="en" class="scroll-smooth">`,
 	`<title>Thailand Gift Shop</title>`,
 	`<link rel="icon" href="/static/favicon.ico" sizes="any">`,
 	`<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">`,
@@ -21,7 +21,13 @@ var expectedHomeContent = []string{
 	`<link rel="manifest" href="/static/site.webmanifest">`,
 	`/static/assets/app.css`,
 	`/static/vendor/htmx.min.js`,
-	`Thai gifts, pantry favorites`,
+	`aria-label="Main navigation"`,
+	`href="#latest"`,
+	`href="#gift-sets"`,
+	`href="#categories"`,
+	`href="#story"`,
+	`Thai gifts with market color`,
+	`Latest products`,
 	`No products are available yet.`,
 }
 
@@ -35,7 +41,7 @@ func TestHandle(t *testing.T) {
 		headers      map[string]string
 	}{
 		{
-			name: "root returns catalog shell",
+			name: "root returns home page",
 			request: events.APIGatewayV2HTTPRequest{
 				RawPath: "/",
 				RequestContext: events.APIGatewayV2HTTPRequestContext{
@@ -180,7 +186,8 @@ func TestHomeIncludesFrontendAssets(t *testing.T) {
 	for _, want := range []string{
 		`/static/assets/app.css`,
 		`/static/vendor/htmx.min.js`,
-		`Thai gifts, pantry favorites`,
+		`Thai gifts with market color`,
+		`Latest products`,
 		`No products are available yet.`,
 	} {
 		if !strings.Contains(response.Body, want) {
@@ -233,6 +240,7 @@ func TestHomeRendersProductImageURLsFromCatalog(t *testing.T) {
 		`src="/images/placeholder-product.jpg"`,
 		`Mango Sticky Rice Kit`,
 		`$28.99`,
+		`Ready to gift`,
 		`Out of stock`,
 	} {
 		if !strings.Contains(response.Body, want) {
@@ -271,6 +279,16 @@ type fakeCatalogStore struct {
 }
 
 func (f fakeCatalogStore) ListActiveProducts(ctx context.Context, limit int) ([]catalog.Product, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	if limit > 0 && len(f.products) > limit {
+		return f.products[:limit], nil
+	}
+	return f.products, nil
+}
+
+func (f fakeCatalogStore) ListRecentlyAddedProducts(ctx context.Context, limit int) ([]catalog.Product, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -385,7 +403,7 @@ func TestHomeIgnoresLegacyFallbackGreetingQuery(t *testing.T) {
 	if strings.Contains(response.Body, "Fallback greeting refreshed") {
 		t.Fatalf("body contains removed fallback greeting: %q", response.Body)
 	}
-	if !strings.Contains(response.Body, "<!doctype html>") || !strings.Contains(response.Body, `<html lang="en">`) || !strings.Contains(response.Body, "No products are available yet.") {
+	if !strings.Contains(response.Body, "<!doctype html>") || !strings.Contains(response.Body, `<html lang="en"`) || !strings.Contains(response.Body, "No products are available yet.") {
 		t.Fatalf("fallback response does not contain full-page shell: %q", response.Body)
 	}
 }

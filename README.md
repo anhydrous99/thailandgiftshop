@@ -41,7 +41,7 @@ If `CATALOG_TABLE_NAME` is unset, the devserver uses an empty catalog store. To 
 AWS_PROFILE=default AWS_REGION=us-east-1 CATALOG_TABLE_NAME=thailandgiftshop-catalog go run ./cmd/devserver
 ```
 
-`CATALOG_SLUG_INDEX_NAME` and `CATALOG_PUBLIC_INDEX_NAME` default to `slug-index` and `public-index`, which match the CDK-provisioned table. Product cards use `image_url` from DynamoDB, falling back to `PRODUCT_IMAGE_PLACEHOLDER_URL` or `/images/placeholder-product.jpg` when the field is empty.
+`CATALOG_SLUG_INDEX_NAME`, `CATALOG_PUBLIC_INDEX_NAME`, and `CATALOG_RECENT_INDEX_NAME` default to `slug-index`, `public-index`, and `recent-index`, which match the CDK-provisioned table. The Home page displays latest active products from the recent index, and product cards use `image_url` from DynamoDB, falling back to `PRODUCT_IMAGE_PLACEHOLDER_URL` or `/images/placeholder-product.jpg` when the field is empty.
 
 ## Seed Catalog
 
@@ -147,7 +147,7 @@ Replace `ROUTE53_HOSTED_ZONE_ID` with the public Route 53 hosted zone ID for `th
 
 The stack outputs `SiteUrl` as `https://thailandgiftshop.com` and also outputs `SiteDistributionDomainName` for the underlying CloudFront distribution. The existing `SsrHttpApiUrl` output remains available for direct API Gateway access while CloudFront handles normal site traffic. Catalog infrastructure outputs include `CatalogTableName` and `CatalogTableArn`; product image infrastructure outputs include `ProductImagesBucketName` and `ProductImagesBaseUrl`.
 
-After changing seeded image URLs, reseed the catalog so DynamoDB points at `/images/products/...`:
+After changing seeded image URLs, product creation dates, or catalog indexes, reseed the catalog so DynamoDB points at `/images/products/...` and populates the latest-products access pattern:
 
 ```sh
 AWS_REGION=us-east-1 go run ./cmd/seedcatalog

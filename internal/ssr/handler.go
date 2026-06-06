@@ -16,7 +16,7 @@ import (
 const htmlContentType = "text/html; charset=utf-8"
 const allowedMethods = http.MethodGet + ", " + http.MethodHead
 const helloFragmentBody = "HTMX refreshed this greeting from the server"
-const homeProductLimit = 12
+const latestProductLimit = 8
 
 type Handler struct {
 	catalogStore               catalog.Store
@@ -113,7 +113,7 @@ func hasHeaderValue(headers map[string]string, name string, value string) bool {
 }
 
 func (h *Handler) renderHome(ctx context.Context) (string, error) {
-	products, err := h.catalogStore.ListActiveProducts(ctx, homeProductLimit)
+	products, err := h.catalogStore.ListRecentlyAddedProducts(ctx, latestProductLimit)
 	if err != nil {
 		return "", err
 	}
@@ -132,6 +132,17 @@ func formatPrice(priceCents int) string {
 	}
 
 	return "$" + strconv.Itoa(priceCents/100) + "." + twoDigitCents(priceCents%100)
+}
+
+func heroImageURL(products []catalog.Product, fallback string) string {
+	for _, product := range products {
+		imageURL := product.DisplayImageURL(fallback)
+		if imageURL != "" {
+			return imageURL
+		}
+	}
+
+	return catalog.Product{}.DisplayImageURL(fallback)
 }
 
 func twoDigitCents(cents int) string {
