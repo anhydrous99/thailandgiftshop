@@ -2,23 +2,43 @@ package main
 
 import (
 	"log"
+	"net"
 	"net/http"
+	"os"
 
 	"github.com/anhydrous99/thailandgiftshop/internal/ssr"
 	"github.com/aws/aws-lambda-go/events"
 )
 
-const address = "127.0.0.1:8080"
+const (
+	defaultHost      = "127.0.0.1"
+	defaultPort      = "8080"
+	defaultStaticDir = "web/static"
+)
 
 func main() {
+	host := envOrDefault("HOST", defaultHost)
+	port := envOrDefault("PORT", defaultPort)
+	staticDir := envOrDefault("STATIC_DIR", defaultStaticDir)
+	address := net.JoinHostPort(host, port)
+
 	mux := http.NewServeMux()
-	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
+	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir(staticDir))))
 	mux.HandleFunc("/", handleSSR)
 
 	log.Printf("serving local SSR site at http://%s", address)
 	if err := http.ListenAndServe(address, mux); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func envOrDefault(name string, fallback string) string {
+	value := os.Getenv(name)
+	if value == "" {
+		return fallback
+	}
+
+	return value
 }
 
 func handleSSR(responseWriter http.ResponseWriter, request *http.Request) {

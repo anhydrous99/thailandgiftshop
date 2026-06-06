@@ -11,12 +11,30 @@ Static assets belong in `web/static/`. CDK deploys that folder to a private S3 b
 ## Prerequisites
 
 - Go 1.25 or newer
-- Node.js 24 LTS
+- Node.js 24 LTS for frontend asset builds, browser tests, and CDK commands
 - AWS credentials for local bootstrap/deploy
+
+## Local Run
+
+Serve the checked-in local site with the Go devserver:
+
+```sh
+go run ./cmd/devserver
+```
+
+Open `http://127.0.0.1:8080`. The leading `./` is intentional because `cmd/devserver` is a local Go package path.
+
+The devserver uses `web/static/` by default and does not install Node dependencies or rebuild frontend assets. Override the bind address or static asset directory when needed:
+
+```sh
+PORT=8081 go run ./cmd/devserver
+HOST=0.0.0.0 go run ./cmd/devserver
+STATIC_DIR=/path/to/static go run ./cmd/devserver
+```
 
 ## Local Setup
 
-Install dependencies:
+Install dependencies for frontend builds, browser tests, CDK commands, and explicit Go dependency prefetching:
 
 ```sh
 go mod download
