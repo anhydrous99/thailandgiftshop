@@ -116,6 +116,51 @@ func TestCategoryAndMembershipItemsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestDemoCatalogSeedItemsIncludesExpectedRows(t *testing.T) {
+	items, err := DemoCatalogSeedItems()
+	if err != nil {
+		t.Fatalf("DemoCatalogSeedItems returned error: %v", err)
+	}
+	counts := DemoCatalogSeedCounts()
+	if len(items) != counts.Items {
+		t.Fatalf("seed item count = %d, want %d", len(items), counts.Items)
+	}
+
+	var categories int
+	var products int
+	var categoryProducts int
+	var marked int
+	for _, item := range items {
+		if stringAttribute(t, item, "seed_group") == DemoSeedGroup {
+			marked++
+		}
+
+		switch got := stringAttribute(t, item, "entity_type"); got {
+		case entityCategory:
+			categories++
+		case entityProduct:
+			products++
+		case entityCategoryProduct:
+			categoryProducts++
+		default:
+			t.Fatalf("unexpected entity_type %q", got)
+		}
+	}
+
+	if categories != counts.Categories {
+		t.Fatalf("category rows = %d, want %d", categories, counts.Categories)
+	}
+	if products != counts.Products {
+		t.Fatalf("product rows = %d, want %d", products, counts.Products)
+	}
+	if categoryProducts != counts.CategoryProductRows {
+		t.Fatalf("category-product rows = %d, want %d", categoryProducts, counts.CategoryProductRows)
+	}
+	if marked != counts.Items {
+		t.Fatalf("seed_group-marked rows = %d, want %d", marked, counts.Items)
+	}
+}
+
 func TestDynamoStoreListActiveProductsUsesPublicIndex(t *testing.T) {
 	product := Product{
 		ID:            "prod_001",

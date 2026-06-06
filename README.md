@@ -40,6 +40,26 @@ AWS_PROFILE=default AWS_REGION=us-east-1 CATALOG_TABLE_NAME=thailandgiftshop-cat
 
 `CATALOG_SLUG_INDEX_NAME` and `CATALOG_PUBLIC_INDEX_NAME` default to `slug-index` and `public-index`, which match the CDK-provisioned table.
 
+## Seed Catalog
+
+Seed the deployed DynamoDB catalog with demo categories, products, and category-product rows:
+
+```sh
+AWS_REGION=us-east-1 go run ./cmd/seedcatalog
+```
+
+The command defaults to the CDK table name, `thailandgiftshop-catalog`. Override it when needed:
+
+```sh
+AWS_REGION=us-east-1 go run ./cmd/seedcatalog -table CUSTOM_TABLE_NAME
+```
+
+Preview the row count without writing:
+
+```sh
+AWS_REGION=us-east-1 go run ./cmd/seedcatalog -dry-run
+```
+
 ## Local Setup
 
 Install dependencies for frontend builds, browser tests, CDK commands, and explicit Go dependency prefetching:
