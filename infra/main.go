@@ -3,12 +3,14 @@ package main
 import (
 	"os"
 
+	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsapigatewayv2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsapigatewayv2integrations"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscertificatemanager"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfront"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfrontorigins"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awsdynamodb"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awslambda"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awslogs"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsroute53"
@@ -23,6 +25,14 @@ const (
 	productionRegion = "us-east-1"
 	siteDomainName   = "thailandgiftshop.com"
 	wwwDomainName    = "www.thailandgiftshop.com"
+
+	catalogTableName         = "thailandgiftshop-catalog"
+	catalogPartitionKeyName  = "pk"
+	catalogSortKeyName       = "sk"
+	catalogSlugIndexPKName   = "gsi1pk"
+	catalogSlugIndexSKName   = "gsi1sk"
+	catalogPublicIndexPKName = "gsi2pk"
+	catalogPublicIndexSKName = "gsi2sk"
 )
 
 type ThailandGiftshopStackProps struct {
@@ -40,13 +50,70 @@ func NewThailandGiftshopStack(scope constructs.Construct, id string, props *Thai
 	awscdk.Tags_Of(stack).Add(jsii.String("Project"), jsii.String("thailandgiftshop"), nil)
 	awscdk.Tags_Of(stack).Add(jsii.String("ManagedBy"), jsii.String("aws-cdk"), nil)
 
-	httpAPI := addSSR(stack)
+	catalogTable := addCatalog(stack)
+	httpAPI := addSSR(stack, catalogTable)
 	addSite(stack, httpAPI)
 
 	return stack
 }
 
-func addSSR(stack awscdk.Stack) awsapigatewayv2.HttpApi {
+func addCatalog(stack awscdk.Stack) awsdynamodb.Table {
+	catalogTable := awsdynamodb.NewTable(stack, jsii.String("CatalogTable"), &awsdynamodb.TableProps{
+		BillingMode: awsdynamodb.BillingMode_PAY_PER_REQUEST,
+		Encryption:  awsdynamodb.TableEncryption_AWS_MANAGED,
+		PartitionKey: &awsdynamodb.Attribute{
+			Name: jsii.String(catalogPartitionKeyName),
+			Type: awsdynamodb.AttributeType_STRING,
+		},
+		PointInTimeRecoverySpecification: &awsdynamodb.PointInTimeRecoverySpecification{
+			PointInTimeRecoveryEnabled: jsii.Bool(true),
+		},
+		RemovalPolicy: awscdk.RemovalPolicy_RETAIN,
+		SortKey: &awsdynamodb.Attribute{
+			Name: jsii.String(catalogSortKeyName),
+			Type: awsdynamodb.AttributeType_STRING,
+		},
+		TableName: jsii.String(catalogTableName),
+	})
+
+	catalogTable.AddGlobalSecondaryIndex(&awsdynamodb.GlobalSecondaryIndexProps{
+		IndexName: jsii.String(catalog.DefaultSlugIndexName),
+		PartitionKey: &awsdynamodb.Attribute{
+			Name: jsii.String(catalogSlugIndexPKName),
+			Type: awsdynamodb.AttributeType_STRING,
+		},
+		ProjectionType: awsdynamodb.ProjectionType_ALL,
+		SortKey: &awsdynamodb.Attribute{
+			Name: jsii.String(catalogSlugIndexSKName),
+			Type: awsdynamodb.AttributeType_STRING,
+		},
+	})
+	catalogTable.AddGlobalSecondaryIndex(&awsdynamodb.GlobalSecondaryIndexProps{
+		IndexName: jsii.String(catalog.DefaultPublicIndexName),
+		PartitionKey: &awsdynamodb.Attribute{
+			Name: jsii.String(catalogPublicIndexPKName),
+			Type: awsdynamodb.AttributeType_STRING,
+		},
+		ProjectionType: awsdynamodb.ProjectionType_ALL,
+		SortKey: &awsdynamodb.Attribute{
+			Name: jsii.String(catalogPublicIndexSKName),
+			Type: awsdynamodb.AttributeType_STRING,
+		},
+	})
+
+	awscdk.NewCfnOutput(stack, jsii.String("CatalogTableName"), &awscdk.CfnOutputProps{
+		Description: jsii.String("DynamoDB table name for products and categories"),
+		Value:       catalogTable.TableName(),
+	})
+	awscdk.NewCfnOutput(stack, jsii.String("CatalogTableArn"), &awscdk.CfnOutputProps{
+		Description: jsii.String("DynamoDB table ARN for products and categories"),
+		Value:       catalogTable.TableArn(),
+	})
+
+	return catalogTable
+}
+
+func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable) awsapigatewayv2.HttpApi {
 	lambdaLogGroup := awslogs.NewLogGroup(stack, jsii.String("SsrLambdaLogGroup"), &awslogs.LogGroupProps{
 		LogGroupName: jsii.String("/aws/lambda/thailandgiftshop-ssr"),
 		Retention:    awslogs.RetentionDays_THREE_MONTHS,
@@ -62,7 +129,12 @@ func addSSR(stack awscdk.Stack) awsapigatewayv2.HttpApi {
 			DeployTime:  jsii.Bool(true),
 			DisplayName: jsii.String("ssr-lambda"),
 		}),
-		Description:  jsii.String("Server-side HTML renderer for thailandgiftshop.com"),
+		Description: jsii.String("Server-side HTML renderer for thailandgiftshop.com"),
+		Environment: &map[string]*string{
+			catalog.EnvTableName:       catalogTable.TableName(),
+			catalog.EnvSlugIndexName:   jsii.String(catalog.DefaultSlugIndexName),
+			catalog.EnvPublicIndexName: jsii.String(catalog.DefaultPublicIndexName),
+		},
 		FunctionName: jsii.String("thailandgiftshop-ssr"),
 		Handler:      jsii.String("bootstrap"),
 		LogGroup:     lambdaLogGroup,
@@ -71,6 +143,7 @@ func addSSR(stack awscdk.Stack) awsapigatewayv2.HttpApi {
 		Timeout:      awscdk.Duration_Seconds(jsii.Number(10)),
 		Tracing:      awslambda.Tracing_ACTIVE,
 	})
+	catalogTable.GrantReadData(ssrFunction)
 
 	httpAPI := awsapigatewayv2.NewHttpApi(stack, jsii.String("SsrHttpApi"), &awsapigatewayv2.HttpApiProps{
 		ApiName:            jsii.String("thailandgiftshop-ssr"),

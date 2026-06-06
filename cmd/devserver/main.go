@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net"
 	"net/http"
@@ -22,9 +23,16 @@ func main() {
 	staticDir := envOrDefault("STATIC_DIR", defaultStaticDir)
 	address := net.JoinHostPort(host, port)
 
+	handler, err := ssr.NewHandlerFromEnvironment(context.Background())
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	mux := http.NewServeMux()
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir(staticDir))))
-	mux.HandleFunc("/", handleSSR)
+	mux.HandleFunc("/", func(responseWriter http.ResponseWriter, request *http.Request) {
+		handleSSR(handler, responseWriter, request)
+	})
 
 	log.Printf("serving local SSR site at http://%s", address)
 	if err := http.ListenAndServe(address, mux); err != nil {
@@ -41,8 +49,8 @@ func envOrDefault(name string, fallback string) string {
 	return value
 }
 
-func handleSSR(responseWriter http.ResponseWriter, request *http.Request) {
-	apiResponse, err := ssr.Handle(request.Context(), events.APIGatewayV2HTTPRequest{
+func handleSSR(handler *ssr.Handler, responseWriter http.ResponseWriter, request *http.Request) {
+	apiResponse, err := handler.Handle(request.Context(), events.APIGatewayV2HTTPRequest{
 		RawPath:               request.URL.Path,
 		RawQueryString:        request.URL.RawQuery,
 		Headers:               requestHeaders(request),

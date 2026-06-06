@@ -93,6 +93,135 @@ func TestStackIncludesObservabilityResources(t *testing.T) {
 	})
 }
 
+func TestStackIncludesCatalogResources(t *testing.T) {
+	defer jsii.Close()
+
+	app := awscdk.NewApp(nil)
+	stack := NewThailandGiftshopStack(app, "TestStack", nil)
+	template := assertions.Template_FromStack(stack, nil)
+
+	template.HasResource(jsii.String("AWS::DynamoDB::Table"), map[string]interface{}{
+		"DeletionPolicy":      "Retain",
+		"UpdateReplacePolicy": "Retain",
+		"Properties": assertions.Match_ObjectLike(&map[string]interface{}{
+			"AttributeDefinitions": assertions.Match_ArrayWith(&[]interface{}{
+				map[string]interface{}{
+					"AttributeName": catalogPartitionKeyName,
+					"AttributeType": "S",
+				},
+				map[string]interface{}{
+					"AttributeName": catalogSortKeyName,
+					"AttributeType": "S",
+				},
+				map[string]interface{}{
+					"AttributeName": catalogSlugIndexPKName,
+					"AttributeType": "S",
+				},
+				map[string]interface{}{
+					"AttributeName": catalogSlugIndexSKName,
+					"AttributeType": "S",
+				},
+				map[string]interface{}{
+					"AttributeName": catalogPublicIndexPKName,
+					"AttributeType": "S",
+				},
+				map[string]interface{}{
+					"AttributeName": catalogPublicIndexSKName,
+					"AttributeType": "S",
+				},
+			}),
+			"BillingMode": "PAY_PER_REQUEST",
+			"GlobalSecondaryIndexes": assertions.Match_ArrayWith(&[]interface{}{
+				assertions.Match_ObjectLike(&map[string]interface{}{
+					"IndexName": "slug-index",
+					"KeySchema": assertions.Match_ArrayWith(&[]interface{}{
+						map[string]interface{}{
+							"AttributeName": catalogSlugIndexPKName,
+							"KeyType":       "HASH",
+						},
+						map[string]interface{}{
+							"AttributeName": catalogSlugIndexSKName,
+							"KeyType":       "RANGE",
+						},
+					}),
+					"Projection": map[string]interface{}{
+						"ProjectionType": "ALL",
+					},
+				}),
+				assertions.Match_ObjectLike(&map[string]interface{}{
+					"IndexName": "public-index",
+					"KeySchema": assertions.Match_ArrayWith(&[]interface{}{
+						map[string]interface{}{
+							"AttributeName": catalogPublicIndexPKName,
+							"KeyType":       "HASH",
+						},
+						map[string]interface{}{
+							"AttributeName": catalogPublicIndexSKName,
+							"KeyType":       "RANGE",
+						},
+					}),
+					"Projection": map[string]interface{}{
+						"ProjectionType": "ALL",
+					},
+				}),
+			}),
+			"KeySchema": assertions.Match_ArrayWith(&[]interface{}{
+				map[string]interface{}{
+					"AttributeName": catalogPartitionKeyName,
+					"KeyType":       "HASH",
+				},
+				map[string]interface{}{
+					"AttributeName": catalogSortKeyName,
+					"KeyType":       "RANGE",
+				},
+			}),
+			"PointInTimeRecoverySpecification": map[string]interface{}{
+				"PointInTimeRecoveryEnabled": true,
+			},
+			"SSESpecification": map[string]interface{}{
+				"SSEEnabled": true,
+			},
+			"TableName": catalogTableName,
+		}),
+	})
+
+	template.HasResourceProperties(jsii.String("AWS::Lambda::Function"), map[string]interface{}{
+		"FunctionName": "thailandgiftshop-ssr",
+		"Environment": map[string]interface{}{
+			"Variables": map[string]interface{}{
+				"CATALOG_TABLE_NAME":        assertions.Match_AnyValue(),
+				"CATALOG_SLUG_INDEX_NAME":   "slug-index",
+				"CATALOG_PUBLIC_INDEX_NAME": "public-index",
+			},
+		},
+	})
+
+	template.HasResourceProperties(jsii.String("AWS::IAM::Policy"), map[string]interface{}{
+		"PolicyDocument": map[string]interface{}{
+			"Statement": assertions.Match_ArrayWith(&[]interface{}{
+				assertions.Match_ObjectLike(&map[string]interface{}{
+					"Action": assertions.Match_ArrayWith(&[]interface{}{
+						"dynamodb:BatchGetItem",
+						"dynamodb:Query",
+						"dynamodb:GetItem",
+					}),
+					"Effect":   "Allow",
+					"Resource": assertions.Match_AnyValue(),
+				}),
+			}),
+		},
+	})
+
+	template.HasOutput(jsii.String("CatalogTableName"), map[string]interface{}{
+		"Description": "DynamoDB table name for products and categories",
+		"Value":       assertions.Match_AnyValue(),
+	})
+	template.HasOutput(jsii.String("CatalogTableArn"), map[string]interface{}{
+		"Description": "DynamoDB table ARN for products and categories",
+		"Value":       assertions.Match_AnyValue(),
+	})
+}
+
 func TestStackIncludesStaticAssetsDistribution(t *testing.T) {
 	defer jsii.Close()
 

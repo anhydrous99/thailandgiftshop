@@ -32,6 +32,14 @@ HOST=0.0.0.0 go run ./cmd/devserver
 STATIC_DIR=/path/to/static go run ./cmd/devserver
 ```
 
+If `CATALOG_TABLE_NAME` is unset, the devserver uses an empty catalog store. To read the deployed DynamoDB catalog locally, run the devserver with an AWS profile that already has access to the catalog table:
+
+```sh
+AWS_PROFILE=default AWS_REGION=us-east-1 CATALOG_TABLE_NAME=thailandgiftshop-catalog go run ./cmd/devserver
+```
+
+`CATALOG_SLUG_INDEX_NAME` and `CATALOG_PUBLIC_INDEX_NAME` default to `slug-index` and `public-index`, which match the CDK-provisioned table.
+
 ## Local Setup
 
 Install dependencies for frontend builds, browser tests, CDK commands, and explicit Go dependency prefetching:
@@ -114,7 +122,7 @@ AWS_REGION=us-east-1 npx cdk deploy ThailandGiftshopStack --parameters HostedZon
 
 Replace `ROUTE53_HOSTED_ZONE_ID` with the public Route 53 hosted zone ID for `thailandgiftshop.com`.
 
-The stack outputs `SiteUrl` as `https://thailandgiftshop.com` and also outputs `SiteDistributionDomainName` for the underlying CloudFront distribution. The existing `SsrHttpApiUrl` output remains available for direct API Gateway access while CloudFront handles normal site traffic.
+The stack outputs `SiteUrl` as `https://thailandgiftshop.com` and also outputs `SiteDistributionDomainName` for the underlying CloudFront distribution. The existing `SsrHttpApiUrl` output remains available for direct API Gateway access while CloudFront handles normal site traffic. Catalog infrastructure outputs include `CatalogTableName` and `CatalogTableArn`.
 
 After the `us-east-1` site has been deployed and verified, manually destroy the old regional stack if it is still present:
 

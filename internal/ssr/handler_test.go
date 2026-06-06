@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
 	"github.com/aws/aws-lambda-go/events"
 )
 
@@ -134,6 +135,30 @@ func TestHandle(t *testing.T) {
 	}
 }
 
+func TestNewHandlerUsesInjectedCatalogStore(t *testing.T) {
+	store := &fakeCatalogStore{}
+	handler := NewHandler(store)
+
+	if handler.Catalog() != store {
+		t.Fatal("handler did not retain injected catalog store")
+	}
+
+	response, err := handler.Handle(context.Background(), events.APIGatewayV2HTTPRequest{
+		RawPath: "/",
+		RequestContext: events.APIGatewayV2HTTPRequestContext{
+			HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+				Method: http.MethodGet,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+}
+
 func TestHomeIncludesFrontendAssetsAndHTMXControls(t *testing.T) {
 	response, err := Handle(context.Background(), events.APIGatewayV2HTTPRequest{
 		RawPath: "/",
@@ -161,6 +186,24 @@ func TestHomeIncludesFrontendAssetsAndHTMXControls(t *testing.T) {
 			t.Fatalf("body does not contain %q: %q", want, response.Body)
 		}
 	}
+}
+
+type fakeCatalogStore struct{}
+
+func (fakeCatalogStore) ListActiveProducts(ctx context.Context, limit int) ([]catalog.Product, error) {
+	return []catalog.Product{}, nil
+}
+
+func (fakeCatalogStore) GetProductBySlug(ctx context.Context, slug string) (catalog.Product, bool, error) {
+	return catalog.Product{}, false, nil
+}
+
+func (fakeCatalogStore) ListActiveCategories(ctx context.Context) ([]catalog.Category, error) {
+	return []catalog.Category{}, nil
+}
+
+func (fakeCatalogStore) ListActiveProductsByCategory(ctx context.Context, categorySlug string, limit int) ([]catalog.Product, error) {
+	return []catalog.Product{}, nil
 }
 
 func TestHelloFragmentHTMX(t *testing.T) {

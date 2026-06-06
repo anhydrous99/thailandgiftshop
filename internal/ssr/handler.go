@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
 	"github.com/aws/aws-lambda-go/events"
 )
 
@@ -23,8 +24,42 @@ var homeCache struct {
 	ok   bool
 }
 
+type Handler struct {
+	catalogStore catalog.Store
+}
+
+func NewHandler(catalogStore catalog.Store) *Handler {
+	if catalogStore == nil {
+		catalogStore = catalog.EmptyStore{}
+	}
+
+	return &Handler{
+		catalogStore: catalogStore,
+	}
+}
+
+func NewHandlerFromEnvironment(ctx context.Context) (*Handler, error) {
+	catalogStore, _, err := catalog.NewStoreFromEnv(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewHandler(catalogStore), nil
+}
+
+func (h *Handler) Catalog() catalog.Store {
+	return h.catalogStore
+}
+
+var defaultHandler = NewHandler(catalog.EmptyStore{})
+
 // Handle renders HTML responses for API Gateway HTTP API requests.
 func Handle(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	return defaultHandler.Handle(ctx, request)
+}
+
+// Handle renders HTML responses for API Gateway HTTP API requests.
+func (h *Handler) Handle(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	path := requestPath(request)
 	if path == "/hello-fragment" {
 		return handleHelloFragment(request), nil
