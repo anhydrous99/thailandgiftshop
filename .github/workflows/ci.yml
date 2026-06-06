@@ -15,6 +15,7 @@ on:
       - "web/src/**"
       - "web/scripts/**"
       - "web/static/**"
+      - "web/product-images/**"
       - "web/tests/**"
       - "web/playwright.config.ts"
       - .nvmrc
@@ -36,6 +37,7 @@ on:
       - "web/src/**"
       - "web/scripts/**"
       - "web/static/**"
+      - "web/product-images/**"
       - "web/tests/**"
       - "web/playwright.config.ts"
       - .nvmrc

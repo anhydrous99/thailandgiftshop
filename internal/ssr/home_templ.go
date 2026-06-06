@@ -8,7 +8,9 @@ package ssr
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-func home() templ.Component {
+import "github.com/anhydrous99/thailandgiftshop/internal/catalog"
+
+func home(products []catalog.Product, productImagePlaceholderURL string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -29,7 +31,107 @@ func home() templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Thailand Gift Shop</title><link rel=\"icon\" href=\"/static/favicon.ico\" sizes=\"any\"><link rel=\"icon\" href=\"/static/favicon.svg\" type=\"image/svg+xml\"><link rel=\"apple-touch-icon\" href=\"/static/apple-touch-icon.png\" sizes=\"180x180\"><link rel=\"manifest\" href=\"/static/site.webmanifest\"><link rel=\"stylesheet\" href=\"/static/assets/app.css\"><script src=\"/static/vendor/htmx.min.js\" defer></script></head><body class=\"min-h-screen bg-amber-50 text-stone-950\"><main class=\"flex min-h-screen items-center justify-center px-6 py-12\"><section class=\"w-full max-w-xl rounded-3xl border border-amber-200 bg-white p-8 shadow-2xl shadow-amber-900/10\"><p class=\"mb-3 text-sm font-semibold uppercase tracking-widest text-amber-700\">Thailand Gift Shop</p><h1 class=\"text-4xl font-bold tracking-tight text-stone-950\">Hello, world!</h1><p id=\"hello-status\" class=\"mt-5 rounded-2xl bg-amber-100 px-5 py-4 text-lg font-medium text-stone-900\">Hello from thailandgiftshop.com</p><a class=\"mt-6 inline-flex items-center justify-center rounded-full bg-stone-950 px-6 py-3 text-sm font-bold uppercase tracking-widest text-amber-50 shadow-lg shadow-stone-950/20 transition hover:-translate-y-0.5 hover:bg-amber-700 focus:outline-none focus:ring-4 focus:ring-amber-300\" href=\"/?hello=fallback\" hx-get=\"/hello-fragment\" hx-target=\"#hello-status\" hx-swap=\"innerHTML\">Refresh greeting with HTMX</a></section></main></body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Thailand Gift Shop</title><link rel=\"icon\" href=\"/static/favicon.ico\" sizes=\"any\"><link rel=\"icon\" href=\"/static/favicon.svg\" type=\"image/svg+xml\"><link rel=\"apple-touch-icon\" href=\"/static/apple-touch-icon.png\" sizes=\"180x180\"><link rel=\"manifest\" href=\"/static/site.webmanifest\"><link rel=\"stylesheet\" href=\"/static/assets/app.css\"><script src=\"/static/vendor/htmx.min.js\" defer></script></head><body class=\"min-h-screen bg-stone-50 text-stone-950\"><main class=\"mx-auto min-h-screen w-full max-w-6xl px-5 py-10 sm:px-8\"><section class=\"mb-8 border-b border-stone-200 pb-6\"><p class=\"mb-2 text-sm font-semibold uppercase tracking-widest text-emerald-700\">Thailand Gift Shop</p><h1 class=\"max-w-3xl text-4xl font-bold tracking-tight text-stone-950\">Thai gifts, pantry favorites, and small-batch keepsakes.</h1><p class=\"mt-4 max-w-2xl text-base leading-7 text-stone-700\">Browse the current catalog served from DynamoDB, with product images delivered through CloudFront.</p></section>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if len(products) == 0 {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<section class=\"rounded-lg border border-dashed border-stone-300 bg-white p-8 text-center\"><h2 class=\"text-xl font-semibold text-stone-950\">No products are available yet.</h2><p class=\"mt-2 text-sm text-stone-600\">Seed or publish catalog products to show them here.</p></section>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<section aria-label=\"Products\" class=\"grid gap-5 sm:grid-cols-2 lg:grid-cols-3\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			for _, product := range products {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<article data-testid=\"product-card\" class=\"overflow-hidden rounded-lg border border-stone-200 bg-white shadow-sm\"><img class=\"aspect-[4/3] w-full bg-stone-100 object-cover\" src=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var2 string
+				templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.ResolveAttributeValue(product.DisplayImageURL(productImagePlaceholderURL))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/home.templ`, Line: 35, Col: 124}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var2)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\" alt=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var3 string
+				templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.ResolveAttributeValue(product.Name)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/home.templ`, Line: 35, Col: 145}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var3)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\" loading=\"lazy\"><div class=\"p-5\"><div class=\"flex items-start justify-between gap-4\"><h2 class=\"text-lg font-semibold leading-6 text-stone-950\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var4 string
+				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(product.Name)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/home.templ`, Line: 38, Col: 83}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</h2><p class=\"shrink-0 text-sm font-bold text-emerald-700\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var5 string
+				templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(formatPrice(product.PriceCents))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/home.templ`, Line: 39, Col: 98}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</p></div><p class=\"mt-3 line-clamp-3 text-sm leading-6 text-stone-600\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var6 string
+				templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(product.Description)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/home.templ`, Line: 41, Col: 92}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</p>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				if product.OutOfStock() {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<p class=\"mt-4 inline-flex rounded-full bg-rose-100 px-3 py-1 text-xs font-bold uppercase tracking-widest text-rose-700\">Out of stock</p>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</div></article>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</section>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</main></body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -5,8 +5,9 @@ import (
 	"context"
 	"maps"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
 	"github.com/aws/aws-lambda-go/events"
@@ -14,27 +15,29 @@ import (
 
 const htmlContentType = "text/html; charset=utf-8"
 const allowedMethods = http.MethodGet + ", " + http.MethodHead
-const helloStatusText = "Hello from thailandgiftshop.com"
-const fallbackHelloStatusText = "Fallback greeting refreshed from the full page"
 const helloFragmentBody = "HTMX refreshed this greeting from the server"
-
-var homeCache struct {
-	sync.Mutex
-	html string
-	ok   bool
-}
+const homeProductLimit = 12
 
 type Handler struct {
-	catalogStore catalog.Store
+	catalogStore               catalog.Store
+	productImagePlaceholderURL string
 }
 
 func NewHandler(catalogStore catalog.Store) *Handler {
+	return NewHandlerWithProductImagePlaceholderURL(catalogStore, os.Getenv(catalog.EnvProductImagePlaceholderURL))
+}
+
+func NewHandlerWithProductImagePlaceholderURL(catalogStore catalog.Store, placeholderURL string) *Handler {
 	if catalogStore == nil {
 		catalogStore = catalog.EmptyStore{}
 	}
+	if strings.TrimSpace(placeholderURL) == "" {
+		placeholderURL = catalog.DefaultProductImagePlaceholderURL
+	}
 
 	return &Handler{
-		catalogStore: catalogStore,
+		catalogStore:               catalogStore,
+		productImagePlaceholderURL: placeholderURL,
 	}
 }
 
@@ -76,12 +79,9 @@ func (h *Handler) Handle(ctx context.Context, request events.APIGatewayV2HTTPReq
 		}), nil
 	}
 
-	body, err := renderHome(ctx)
+	body, err := h.renderHome(ctx)
 	if err != nil {
 		return htmlResponse(http.StatusInternalServerError, "Internal server error", nil), nil
-	}
-	if request.QueryStringParameters["hello"] == "fallback" {
-		body = strings.Replace(body, helloStatusText, fallbackHelloStatusText, 1)
 	}
 
 	if method == http.MethodHead {
@@ -112,22 +112,34 @@ func hasHeaderValue(headers map[string]string, name string, value string) bool {
 	return false
 }
 
-func renderHome(ctx context.Context) (string, error) {
-	homeCache.Lock()
-	defer homeCache.Unlock()
-
-	if homeCache.ok {
-		return homeCache.html, nil
-	}
-
-	var body bytes.Buffer
-	if err := home().Render(ctx, &body); err != nil {
+func (h *Handler) renderHome(ctx context.Context) (string, error) {
+	products, err := h.catalogStore.ListActiveProducts(ctx, homeProductLimit)
+	if err != nil {
 		return "", err
 	}
 
-	homeCache.html = body.String()
-	homeCache.ok = true
-	return homeCache.html, nil
+	var body bytes.Buffer
+	if err := home(products, h.productImagePlaceholderURL).Render(ctx, &body); err != nil {
+		return "", err
+	}
+
+	return body.String(), nil
+}
+
+func formatPrice(priceCents int) string {
+	if priceCents < 0 {
+		priceCents = 0
+	}
+
+	return "$" + strconv.Itoa(priceCents/100) + "." + twoDigitCents(priceCents%100)
+}
+
+func twoDigitCents(cents int) string {
+	if cents < 10 {
+		return "0" + strconv.Itoa(cents)
+	}
+
+	return strconv.Itoa(cents)
 }
 
 func requestMethod(request events.APIGatewayV2HTTPRequest) string {

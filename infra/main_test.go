@@ -3,6 +3,7 @@ package main
 import (
 	"testing"
 
+	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/assertions"
 	"github.com/aws/jsii-runtime-go"
@@ -189,9 +190,10 @@ func TestStackIncludesCatalogResources(t *testing.T) {
 		"FunctionName": "thailandgiftshop-ssr",
 		"Environment": map[string]interface{}{
 			"Variables": map[string]interface{}{
-				"CATALOG_TABLE_NAME":        assertions.Match_AnyValue(),
-				"CATALOG_SLUG_INDEX_NAME":   "slug-index",
-				"CATALOG_PUBLIC_INDEX_NAME": "public-index",
+				"CATALOG_TABLE_NAME":            assertions.Match_AnyValue(),
+				"CATALOG_SLUG_INDEX_NAME":       "slug-index",
+				"CATALOG_PUBLIC_INDEX_NAME":     "public-index",
+				"PRODUCT_IMAGE_PLACEHOLDER_URL": catalog.DefaultProductImagePlaceholderURL,
 			},
 		},
 	})
@@ -423,5 +425,112 @@ func TestStackIncludesStaticAssetsDistribution(t *testing.T) {
 	template.HasOutput(jsii.String("SiteUrl"), map[string]interface{}{
 		"Description": "CloudFront URL for thailandgiftshop.com",
 		"Value":       "https://" + siteDomainName,
+	})
+}
+
+func TestStackIncludesProductImagesBucketAndDeployment(t *testing.T) {
+	defer jsii.Close()
+
+	app := awscdk.NewApp(nil)
+	stack := NewThailandGiftshopStack(app, "TestStack", nil)
+	template := assertions.Template_FromStack(stack, nil)
+
+	template.ResourceCountIs(jsii.String("AWS::S3::Bucket"), jsii.Number(2))
+	template.ResourceCountIs(jsii.String("AWS::CloudFront::OriginAccessControl"), jsii.Number(2))
+	template.ResourceCountIs(jsii.String("Custom::CDKBucketDeployment"), jsii.Number(2))
+
+	template.HasResourceProperties(jsii.String("AWS::CloudFront::Distribution"), map[string]interface{}{
+		"DistributionConfig": map[string]interface{}{
+			"CacheBehaviors": assertions.Match_ArrayWith(&[]interface{}{
+				assertions.Match_ObjectLike(&map[string]interface{}{
+					"AllowedMethods": assertions.Match_ArrayEquals(&[]interface{}{
+						"GET",
+						"HEAD",
+					}),
+					"CachePolicyId":           "658327ea-f89d-4fab-a63d-7e88639e58f6",
+					"Compress":                true,
+					"PathPattern":             "images/*",
+					"ResponseHeadersPolicyId": assertions.Match_AnyValue(),
+					"ViewerProtocolPolicy":    "redirect-to-https",
+				}),
+			}),
+		},
+	})
+
+	template.HasResource(jsii.String("AWS::S3::Bucket"), map[string]interface{}{
+		"DeletionPolicy":      "Retain",
+		"UpdateReplacePolicy": "Retain",
+		"Properties": assertions.Match_ObjectLike(&map[string]interface{}{
+			"BucketEncryption": map[string]interface{}{
+				"ServerSideEncryptionConfiguration": assertions.Match_ArrayWith(&[]interface{}{
+					assertions.Match_ObjectLike(&map[string]interface{}{
+						"ServerSideEncryptionByDefault": map[string]interface{}{
+							"SSEAlgorithm": "AES256",
+						},
+					}),
+				}),
+			},
+			"OwnershipControls": map[string]interface{}{
+				"Rules": assertions.Match_ArrayWith(&[]interface{}{
+					map[string]interface{}{
+						"ObjectOwnership": "BucketOwnerEnforced",
+					},
+				}),
+			},
+			"PublicAccessBlockConfiguration": map[string]interface{}{
+				"BlockPublicAcls":       true,
+				"BlockPublicPolicy":     true,
+				"IgnorePublicAcls":      true,
+				"RestrictPublicBuckets": true,
+			},
+		}),
+	})
+
+	template.HasResourceProperties(jsii.String("AWS::S3::BucketPolicy"), map[string]interface{}{
+		"PolicyDocument": map[string]interface{}{
+			"Statement": assertions.Match_ArrayWith(&[]interface{}{
+				assertions.Match_ObjectLike(&map[string]interface{}{
+					"Action": "s3:*",
+					"Condition": map[string]interface{}{
+						"Bool": map[string]interface{}{
+							"aws:SecureTransport": "false",
+						},
+					},
+					"Effect": "Deny",
+				}),
+				assertions.Match_ObjectLike(&map[string]interface{}{
+					"Action": "s3:GetObject",
+					"Condition": map[string]interface{}{
+						"StringEquals": map[string]interface{}{
+							"AWS:SourceArn": assertions.Match_AnyValue(),
+						},
+					},
+					"Effect": "Allow",
+					"Principal": map[string]interface{}{
+						"Service": "cloudfront.amazonaws.com",
+					},
+				}),
+			}),
+		},
+	})
+
+	template.HasResourceProperties(jsii.String("Custom::CDKBucketDeployment"), map[string]interface{}{
+		"DestinationBucketKeyPrefix": productImagesKeyPrefix,
+		"DistributionPaths": assertions.Match_ArrayWith(&[]interface{}{
+			"/images/*",
+		}),
+		"Prune": false,
+		"SystemMetadata": map[string]interface{}{
+			"cache-control": "max-age=3600",
+		},
+	})
+
+	template.HasOutput(jsii.String("ProductImagesBucketName"), map[string]interface{}{
+		"Description": "S3 bucket name for product image objects",
+		"Value":       assertions.Match_AnyValue(),
+	})
+	template.HasOutput(jsii.String("ProductImagesBaseUrl"), map[string]interface{}{
+		"Description": "CloudFront base URL path for product images",
+		"Value":       "https://" + siteDomainName + "/" + productImagesKeyPrefix + "/",
 	})
 }

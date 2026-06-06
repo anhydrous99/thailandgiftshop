@@ -2,16 +2,20 @@ package catalog
 
 import (
 	"context"
+	"strings"
 	"time"
 )
 
 const (
-	EnvTableName       = "CATALOG_TABLE_NAME"
-	EnvSlugIndexName   = "CATALOG_SLUG_INDEX_NAME"
-	EnvPublicIndexName = "CATALOG_PUBLIC_INDEX_NAME"
+	EnvTableName                  = "CATALOG_TABLE_NAME"
+	EnvSlugIndexName              = "CATALOG_SLUG_INDEX_NAME"
+	EnvPublicIndexName            = "CATALOG_PUBLIC_INDEX_NAME"
+	EnvProductImagePlaceholderURL = "PRODUCT_IMAGE_PLACEHOLDER_URL"
 
 	DefaultSlugIndexName   = "slug-index"
 	DefaultPublicIndexName = "public-index"
+
+	DefaultProductImagePlaceholderURL = "/images/placeholder-product.jpg"
 )
 
 type Status string
@@ -38,6 +42,17 @@ type Product struct {
 
 func (p Product) OutOfStock() bool {
 	return p.StockQuantity <= 0
+}
+
+func (p Product) DisplayImageURL(fallback string) string {
+	if strings.TrimSpace(p.ImageURL) != "" {
+		return p.ImageURL
+	}
+	if strings.TrimSpace(fallback) != "" {
+		return fallback
+	}
+
+	return DefaultProductImagePlaceholderURL
 }
 
 type Category struct {

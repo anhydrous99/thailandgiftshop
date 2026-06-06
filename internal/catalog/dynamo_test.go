@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,7 +20,7 @@ func TestProductItemRoundTripIncludesInventoryAndNoCurrency(t *testing.T) {
 		Name:          "Mango Sticky Rice Kit",
 		Description:   "A shelf-stable dessert gift kit.",
 		PriceCents:    2499,
-		ImageURL:      "/static/products/mango.jpg",
+		ImageURL:      "/images/products/mango.jpg",
 		Status:        StatusActive,
 		SortOrder:     12,
 		StockQuantity: 0,
@@ -91,7 +92,7 @@ func TestCategoryAndMembershipItemsRoundTrip(t *testing.T) {
 		Slug:          "teak-elephant",
 		Name:          "Teak Elephant",
 		PriceCents:    3999,
-		ImageURL:      "/static/products/teak.jpg",
+		ImageURL:      "/images/products/teak.jpg",
 		Status:        StatusActive,
 		SortOrder:     5,
 		StockQuantity: 7,
@@ -140,6 +141,9 @@ func TestDemoCatalogSeedItemsIncludesExpectedRows(t *testing.T) {
 			categories++
 		case entityProduct:
 			products++
+			if got := stringAttribute(t, item, "image_url"); !strings.HasPrefix(got, "/images/products/") {
+				t.Fatalf("product image_url = %q, want /images/products/ prefix", got)
+			}
 		case entityCategoryProduct:
 			categoryProducts++
 		default:
@@ -158,6 +162,18 @@ func TestDemoCatalogSeedItemsIncludesExpectedRows(t *testing.T) {
 	}
 	if marked != counts.Items {
 		t.Fatalf("seed_group-marked rows = %d, want %d", marked, counts.Items)
+	}
+}
+
+func TestProductDisplayImageURLFallsBackWhenEmpty(t *testing.T) {
+	if got := (Product{ImageURL: "/images/products/mango.jpg"}).DisplayImageURL("/images/placeholder-product.jpg"); got != "/images/products/mango.jpg" {
+		t.Fatalf("DisplayImageURL = %q", got)
+	}
+	if got := (Product{}).DisplayImageURL("/images/custom-placeholder.jpg"); got != "/images/custom-placeholder.jpg" {
+		t.Fatalf("DisplayImageURL fallback = %q", got)
+	}
+	if got := (Product{}).DisplayImageURL(""); got != DefaultProductImagePlaceholderURL {
+		t.Fatalf("DisplayImageURL default fallback = %q", got)
 	}
 }
 

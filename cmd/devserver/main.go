@@ -15,12 +15,14 @@ const (
 	defaultHost      = "127.0.0.1"
 	defaultPort      = "8080"
 	defaultStaticDir = "web/static"
+	defaultImageDir  = "web/product-images"
 )
 
 func main() {
 	host := envOrDefault("HOST", defaultHost)
 	port := envOrDefault("PORT", defaultPort)
 	staticDir := envOrDefault("STATIC_DIR", defaultStaticDir)
+	imageDir := envOrDefault("IMAGE_DIR", defaultImageDir)
 	address := net.JoinHostPort(host, port)
 
 	handler, err := ssr.NewHandlerFromEnvironment(context.Background())
@@ -30,6 +32,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir(staticDir))))
+	mux.Handle("/images/", http.StripPrefix("/images/", http.FileServer(http.Dir(imageDir))))
 	mux.HandleFunc("/", func(responseWriter http.ResponseWriter, request *http.Request) {
 		handleSSR(handler, responseWriter, request)
 	})

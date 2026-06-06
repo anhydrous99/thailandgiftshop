@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test('Tailwind and HTMX hello world work end-to-end', async ({ page }) => {
+test('catalog shell assets and product image route work end-to-end', async ({ page }) => {
   const htmxResponsePromise = page.waitForResponse((response) =>
     response.url().endsWith('/static/vendor/htmx.min.js') && response.status() === 200,
   );
@@ -14,31 +14,27 @@ test('Tailwind and HTMX hello world work end-to-end', async ({ page }) => {
   expect(cssResponse.status()).toBe(200);
   expect(cssResponse.headers()['content-type']).toContain('text/css');
 
-  const card = page.locator('#hello-status');
-  await expect(card).toContainText('Hello from thailandgiftshop.com');
-  await expect(card).toHaveCSS('border-radius', '16px');
-  await expect(card).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  const imageResponse = await page.request.get('/images/placeholder-product.jpg');
+  expect(imageResponse.status()).toBe(200);
+  expect(imageResponse.headers()['content-type']).toContain('image/jpeg');
 
-  const pageURL = page.url();
-  await page.getByRole('link', { name: 'Refresh greeting with HTMX' }).click();
-
-  await expect(card).toContainText('HTMX refreshed this greeting');
-  expect(page.url()).toBe(pageURL);
+  await expect(page.getByRole('heading', { name: /Thai gifts, pantry favorites/i })).toBeVisible();
+  const emptyState = page.getByRole('heading', { name: 'No products are available yet.' });
+  await expect(emptyState).toBeVisible();
+  await expect(emptyState).toHaveCSS('font-weight', '600');
 });
 
 test.describe('without JavaScript', () => {
   test.use({ javaScriptEnabled: false });
 
-  test('fallback link refreshes greeting through full-page navigation', async ({ page }) => {
+  test('catalog shell renders without JavaScript', async ({ page }) => {
     await page.goto('/');
 
     const cssResponse = await page.request.get('/static/assets/app.css');
     expect(cssResponse.status()).toBe(200);
     expect(cssResponse.headers()['content-type']).toContain('text/css');
 
-    await page.getByRole('link', { name: 'Refresh greeting with HTMX' }).click();
-
-    await expect(page).toHaveURL('/?hello=fallback');
-    await expect(page.locator('#hello-status')).toContainText('Fallback greeting refreshed');
+    await expect(page.getByRole('heading', { name: /Thai gifts, pantry favorites/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'No products are available yet.' })).toBeVisible();
   });
 });

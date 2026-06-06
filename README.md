@@ -8,6 +8,8 @@ The deployed CDK stack ID is `ThailandGiftshopStack`. Production is deployed in 
 
 Static assets belong in `web/static/`. CDK deploys that folder to a private S3 bucket behind the site CloudFront distribution and serves it under `/static/`, so `web/static/logo.svg` is available as `/static/logo.svg`.
 
+Product image seed assets belong in `web/product-images/`. CDK deploys that folder to a separate private retained S3 bucket behind the same CloudFront distribution and serves it under `/images/`, so `web/product-images/products/mango-sticky-rice-kit.jpg` is available as `/images/products/mango-sticky-rice-kit.jpg`. This bucket is intentionally separate from the pruned static asset deployment so future uploaded product images are not removed by site deploys.
+
 ## Prerequisites
 
 - Go 1.25 or newer
@@ -24,12 +26,13 @@ go run ./cmd/devserver
 
 Open `http://127.0.0.1:8080`. The leading `./` is intentional because `cmd/devserver` is a local Go package path.
 
-The devserver uses `web/static/` by default and does not install Node dependencies or rebuild frontend assets. Override the bind address or static asset directory when needed:
+The devserver uses `web/static/` and `web/product-images/` by default and does not install Node dependencies or rebuild frontend assets. Override the bind address, static asset directory, or product image directory when needed:
 
 ```sh
 PORT=8081 go run ./cmd/devserver
 HOST=0.0.0.0 go run ./cmd/devserver
 STATIC_DIR=/path/to/static go run ./cmd/devserver
+IMAGE_DIR=/path/to/product-images go run ./cmd/devserver
 ```
 
 If `CATALOG_TABLE_NAME` is unset, the devserver uses an empty catalog store. To read the deployed DynamoDB catalog locally, run the devserver with an AWS profile that already has access to the catalog table:
@@ -38,7 +41,7 @@ If `CATALOG_TABLE_NAME` is unset, the devserver uses an empty catalog store. To 
 AWS_PROFILE=default AWS_REGION=us-east-1 CATALOG_TABLE_NAME=thailandgiftshop-catalog go run ./cmd/devserver
 ```
 
-`CATALOG_SLUG_INDEX_NAME` and `CATALOG_PUBLIC_INDEX_NAME` default to `slug-index` and `public-index`, which match the CDK-provisioned table.
+`CATALOG_SLUG_INDEX_NAME` and `CATALOG_PUBLIC_INDEX_NAME` default to `slug-index` and `public-index`, which match the CDK-provisioned table. Product cards use `image_url` from DynamoDB, falling back to `PRODUCT_IMAGE_PLACEHOLDER_URL` or `/images/placeholder-product.jpg` when the field is empty.
 
 ## Seed Catalog
 
@@ -109,7 +112,7 @@ gofmt -l $(git ls-files '*.go')
 
 ## Observability
 
-The CDK stack provisions the SSR Lambda with its own CloudWatch Logs group at `/aws/lambda/thailandgiftshop-ssr` and 3-month retention. The HTTP API stage writes access logs to `/aws/apigateway/thailandgiftshop-ssr`, also with 3-month retention. Static asset deployment helper logs are written to `/aws/lambda/thailandgiftshop-static-assets-deployment` with the same 3-month retention policy.
+The CDK stack provisions the SSR Lambda with its own CloudWatch Logs group at `/aws/lambda/thailandgiftshop-ssr` and 3-month retention. The HTTP API stage writes access logs to `/aws/apigateway/thailandgiftshop-ssr`, also with 3-month retention. Static and product image deployment helper logs are written to `/aws/lambda/thailandgiftshop-static-assets-deployment` with the same 3-month retention policy.
 
 Lambda emits AWS-managed CloudWatch metrics automatically, and the HTTP API default stage has detailed metrics enabled. Lambda X-Ray tracing is active and the Lambda role includes the X-Ray write permissions required to publish trace data.
 
@@ -142,7 +145,13 @@ AWS_REGION=us-east-1 npx cdk deploy ThailandGiftshopStack --parameters HostedZon
 
 Replace `ROUTE53_HOSTED_ZONE_ID` with the public Route 53 hosted zone ID for `thailandgiftshop.com`.
 
-The stack outputs `SiteUrl` as `https://thailandgiftshop.com` and also outputs `SiteDistributionDomainName` for the underlying CloudFront distribution. The existing `SsrHttpApiUrl` output remains available for direct API Gateway access while CloudFront handles normal site traffic. Catalog infrastructure outputs include `CatalogTableName` and `CatalogTableArn`.
+The stack outputs `SiteUrl` as `https://thailandgiftshop.com` and also outputs `SiteDistributionDomainName` for the underlying CloudFront distribution. The existing `SsrHttpApiUrl` output remains available for direct API Gateway access while CloudFront handles normal site traffic. Catalog infrastructure outputs include `CatalogTableName` and `CatalogTableArn`; product image infrastructure outputs include `ProductImagesBucketName` and `ProductImagesBaseUrl`.
+
+After changing seeded image URLs, reseed the catalog so DynamoDB points at `/images/products/...`:
+
+```sh
+AWS_REGION=us-east-1 go run ./cmd/seedcatalog
+```
 
 After the `us-east-1` site has been deployed and verified, manually destroy the old regional stack if it is still present:
 

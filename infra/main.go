@@ -33,6 +33,9 @@ const (
 	catalogSlugIndexSKName   = "gsi1sk"
 	catalogPublicIndexPKName = "gsi2pk"
 	catalogPublicIndexSKName = "gsi2sk"
+
+	staticAssetsKeyPrefix  = "static"
+	productImagesKeyPrefix = "images"
 )
 
 type ThailandGiftshopStackProps struct {
@@ -131,9 +134,10 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable) awsapigatewayv2
 		}),
 		Description: jsii.String("Server-side HTML renderer for thailandgiftshop.com"),
 		Environment: &map[string]*string{
-			catalog.EnvTableName:       catalogTable.TableName(),
-			catalog.EnvSlugIndexName:   jsii.String(catalog.DefaultSlugIndexName),
-			catalog.EnvPublicIndexName: jsii.String(catalog.DefaultPublicIndexName),
+			catalog.EnvTableName:                  catalogTable.TableName(),
+			catalog.EnvSlugIndexName:              jsii.String(catalog.DefaultSlugIndexName),
+			catalog.EnvPublicIndexName:            jsii.String(catalog.DefaultPublicIndexName),
+			catalog.EnvProductImagePlaceholderURL: jsii.String(catalog.DefaultProductImagePlaceholderURL),
 		},
 		FunctionName: jsii.String("thailandgiftshop-ssr"),
 		Handler:      jsii.String("bootstrap"),
@@ -206,6 +210,13 @@ func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi) {
 		ObjectOwnership:   awss3.ObjectOwnership_BUCKET_OWNER_ENFORCED,
 		RemovalPolicy:     awscdk.RemovalPolicy_RETAIN,
 	})
+	productImagesBucket := awss3.NewBucket(stack, jsii.String("ProductImagesBucket"), &awss3.BucketProps{
+		BlockPublicAccess: awss3.BlockPublicAccess_BLOCK_ALL(),
+		Encryption:        awss3.BucketEncryption_S3_MANAGED,
+		EnforceSSL:        jsii.Bool(true),
+		ObjectOwnership:   awss3.ObjectOwnership_BUCKET_OWNER_ENFORCED,
+		RemovalPolicy:     awscdk.RemovalPolicy_RETAIN,
+	})
 
 	staticAssetsDeploymentLogGroup := awslogs.NewLogGroup(stack, jsii.String("StaticAssetsDeploymentLogGroup"), &awslogs.LogGroupProps{
 		LogGroupName: jsii.String("/aws/lambda/thailandgiftshop-static-assets-deployment"),
@@ -237,6 +248,14 @@ func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi) {
 				ResponseHeadersPolicy: securityHeadersPolicy,
 				ViewerProtocolPolicy:  awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
 			},
+			"images/*": {
+				AllowedMethods:        awscloudfront.AllowedMethods_ALLOW_GET_HEAD(),
+				CachePolicy:           awscloudfront.CachePolicy_CACHING_OPTIMIZED(),
+				Compress:              jsii.Bool(true),
+				Origin:                awscloudfrontorigins.S3BucketOrigin_WithOriginAccessControl(productImagesBucket, nil),
+				ResponseHeadersPolicy: securityHeadersPolicy,
+				ViewerProtocolPolicy:  awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
+			},
 		},
 	})
 
@@ -247,7 +266,7 @@ func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi) {
 			awss3deployment.CacheControl_MaxAge(awscdk.Duration_Hours(jsii.Number(1))),
 		},
 		DestinationBucket:    staticBucket,
-		DestinationKeyPrefix: jsii.String("static"),
+		DestinationKeyPrefix: jsii.String(staticAssetsKeyPrefix),
 		Distribution:         distribution,
 		DistributionPaths: &[]*string{
 			jsii.String("/static/*"),
@@ -256,6 +275,22 @@ func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi) {
 		Prune:    jsii.Bool(true),
 		Sources: &[]awss3deployment.ISource{
 			awss3deployment.Source_Asset(jsii.String("../web/static"), nil),
+		},
+	})
+	awss3deployment.NewBucketDeployment(stack, jsii.String("ProductImagesDeployment"), &awss3deployment.BucketDeploymentProps{
+		CacheControl: &[]awss3deployment.CacheControl{
+			awss3deployment.CacheControl_MaxAge(awscdk.Duration_Hours(jsii.Number(1))),
+		},
+		DestinationBucket:    productImagesBucket,
+		DestinationKeyPrefix: jsii.String(productImagesKeyPrefix),
+		Distribution:         distribution,
+		DistributionPaths: &[]*string{
+			jsii.String("/images/*"),
+		},
+		LogGroup: staticAssetsDeploymentLogGroup,
+		Prune:    jsii.Bool(false),
+		Sources: &[]awss3deployment.ISource{
+			awss3deployment.Source_Asset(jsii.String("../web/product-images"), nil),
 		},
 	})
 
@@ -267,6 +302,14 @@ func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi) {
 	awscdk.NewCfnOutput(stack, jsii.String("SiteUrl"), &awscdk.CfnOutputProps{
 		Description: jsii.String("CloudFront URL for thailandgiftshop.com"),
 		Value:       jsii.String("https://" + siteDomainName),
+	})
+	awscdk.NewCfnOutput(stack, jsii.String("ProductImagesBucketName"), &awscdk.CfnOutputProps{
+		Description: jsii.String("S3 bucket name for product image objects"),
+		Value:       productImagesBucket.BucketName(),
+	})
+	awscdk.NewCfnOutput(stack, jsii.String("ProductImagesBaseUrl"), &awscdk.CfnOutputProps{
+		Description: jsii.String("CloudFront base URL path for product images"),
+		Value:       jsii.String("https://" + siteDomainName + "/" + productImagesKeyPrefix + "/"),
 	})
 }
 
