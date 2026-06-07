@@ -267,7 +267,7 @@ func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi) {
 			jsii.String(wwwDomainName),
 		},
 		DefaultBehavior: &awscloudfront.BehaviorOptions{
-			AllowedMethods:        awscloudfront.AllowedMethods_ALLOW_GET_HEAD(),
+			AllowedMethods:        awscloudfront.AllowedMethods_ALLOW_ALL(),
 			CachePolicy:           awscloudfront.CachePolicy_CACHING_DISABLED(),
 			Compress:              jsii.Bool(true),
 			Origin:                ssrOrigin(httpAPI),
