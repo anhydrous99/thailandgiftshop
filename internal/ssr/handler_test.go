@@ -21,12 +21,15 @@ var expectedHomeContent = []string{
 	`<link rel="manifest" href="/static/site.webmanifest">`,
 	`/static/assets/app.css`,
 	`/static/vendor/htmx.min.js`,
+	`src="/static/logo.svg"`,
+	`src="/static/home-hero.png"`,
 	`aria-label="Main navigation"`,
 	`href="#latest"`,
 	`href="#gift-sets"`,
 	`href="#categories"`,
 	`href="#story"`,
-	`Thai gifts with market color`,
+	`Premium Thai gifting`,
+	`Curated Thai gifts for pantry nights`,
 	`Latest products`,
 	`No products are available yet.`,
 }
@@ -186,7 +189,9 @@ func TestHomeIncludesFrontendAssets(t *testing.T) {
 	for _, want := range []string{
 		`/static/assets/app.css`,
 		`/static/vendor/htmx.min.js`,
-		`Thai gifts with market color`,
+		`/static/logo.svg`,
+		`/static/home-hero.png`,
+		`Premium Thai gifting`,
 		`Latest products`,
 		`No products are available yet.`,
 	} {
