@@ -109,22 +109,22 @@ func productCard(product catalog.Product, productImagePlaceholderURL string) tem
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</p><div class=\"mt-4 flex items-center justify-between gap-3\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if product.OutOfStock() {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<p class=\"mt-4 inline-flex rounded-full bg-[#A51931]/10 px-3 py-1 text-xs font-black text-[#A51931]\">Out of stock</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<p class=\"inline-flex rounded-full bg-[#A51931]/10 px-3 py-1 text-xs font-black text-[#A51931]\">Out of stock</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<p class=\"mt-4 inline-flex rounded-full bg-[#2D2A4A]/10 px-3 py-1 text-xs font-black text-[#2D2A4A]\">In stock</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<p class=\"inline-flex rounded-full bg-[#2D2A4A]/10 px-3 py-1 text-xs font-black text-[#2D2A4A]\">In stock</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</div></a>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<span class=\"text-sm font-black text-[#A51931] transition group-hover:text-[#831426]\">View details</span></div></div></a>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

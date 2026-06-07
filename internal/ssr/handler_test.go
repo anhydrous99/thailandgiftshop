@@ -2,14 +2,19 @@ package ssr
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/anhydrous99/thailandgiftshop/internal/cart"
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
 	"github.com/aws/aws-lambda-go/events"
 )
+
+const ssrTestCartSecret = "ssr-cart-test-secret"
 
 var expectedHomeContent = []string{
 	"<!doctype html>",
@@ -24,10 +29,12 @@ var expectedHomeContent = []string{
 	`src="/static/logo.svg"`,
 	`src="/static/home-hero.png"`,
 	`aria-label="Main navigation"`,
+	`href="/products"`,
 	`href="#latest"`,
 	`href="#shop-aisles"`,
 	`href="#categories"`,
 	`href="#story"`,
+	`href="/cart"`,
 	`Bangkok gift shop online`,
 	`Thai snacks, souvenirs`,
 	`Latest products`,
@@ -72,6 +79,36 @@ func TestRouteForPath(t *testing.T) {
 			want: pageRoute{kind: pageStory, knownPageShape: true},
 		},
 		{
+			name: "cart",
+			path: "/cart",
+			want: pageRoute{kind: pageCart, knownPageShape: true},
+		},
+		{
+			name: "checkout",
+			path: "/checkout",
+			want: pageRoute{kind: pageCheckout, knownPageShape: true},
+		},
+		{
+			name: "cart items mutation",
+			path: "/cart/items",
+			want: pageRoute{kind: pageCartItems, knownPageShape: true},
+		},
+		{
+			name: "cart quantity mutation",
+			path: "/cart/items/mango-sticky-rice-kit/quantity",
+			want: pageRoute{kind: pageCartQuantity, slug: "mango-sticky-rice-kit", knownPageShape: true},
+		},
+		{
+			name: "cart remove mutation",
+			path: "/cart/items/mango-sticky-rice-kit/remove",
+			want: pageRoute{kind: pageCartRemove, slug: "mango-sticky-rice-kit", knownPageShape: true},
+		},
+		{
+			name: "cart clear mutation",
+			path: "/cart/clear",
+			want: pageRoute{kind: pageCartClear, knownPageShape: true},
+		},
+		{
 			name: "shop redirect",
 			path: "/shop",
 			want: pageRoute{kind: pageProducts, redirectTo: "/products", knownPageShape: true},
@@ -105,6 +142,16 @@ func TestRouteForPath(t *testing.T) {
 			name: "story trailing slash redirect",
 			path: "/story/",
 			want: pageRoute{kind: pageStory, redirectTo: "/story", knownPageShape: true},
+		},
+		{
+			name: "cart trailing slash redirect",
+			path: "/cart/",
+			want: pageRoute{kind: pageCart, redirectTo: "/cart", knownPageShape: true},
+		},
+		{
+			name: "checkout trailing slash redirect",
+			path: "/checkout/",
+			want: pageRoute{kind: pageCheckout, redirectTo: "/checkout", knownPageShape: true},
 		},
 		{
 			name: "unknown",
@@ -160,6 +207,8 @@ func TestRedirects(t *testing.T) {
 		{name: "categories trailing slash", method: http.MethodGet, path: "/categories/", location: "/categories"},
 		{name: "category detail trailing slash", method: http.MethodGet, path: "/categories/pantry/", location: "/categories/pantry"},
 		{name: "story trailing slash", method: http.MethodGet, path: "/story/", location: "/story"},
+		{name: "cart trailing slash", method: http.MethodGet, path: "/cart/", location: "/cart"},
+		{name: "checkout trailing slash", method: http.MethodGet, path: "/checkout/", location: "/checkout"},
 		{name: "head redirect has no body", method: http.MethodHead, path: "/shop", location: "/products"},
 	}
 
@@ -193,6 +242,8 @@ func TestKnownPageMethods(t *testing.T) {
 		"/categories",
 		"/categories/pantry",
 		"/story",
+		"/cart",
+		"/checkout",
 		"/shop",
 		"/about",
 		"/products/",
@@ -200,6 +251,8 @@ func TestKnownPageMethods(t *testing.T) {
 		"/categories/",
 		"/categories/pantry/",
 		"/story/",
+		"/cart/",
+		"/checkout/",
 	} {
 		t.Run(path, func(t *testing.T) {
 			response, err := Handle(context.Background(), pageRequest(http.MethodPost, path))
@@ -227,6 +280,327 @@ func TestKnownPageMethods(t *testing.T) {
 			t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusNotFound)
 		}
 	})
+}
+
+func TestCartRoutes(t *testing.T) {
+	handler := NewHandler(cartRouteStore())
+
+	for _, path := range []string{"/cart", "/checkout"} {
+		t.Run("head "+path, func(t *testing.T) {
+			response, err := handler.Handle(context.Background(), pageRequest(http.MethodHead, path))
+			if err != nil {
+				t.Fatalf("Handle returned error: %v", err)
+			}
+			if response.StatusCode != http.StatusOK && path == "/cart" {
+				t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
+			}
+			if response.Body != "" {
+				t.Fatalf("HEAD body = %q, want empty", response.Body)
+			}
+		})
+	}
+
+	for _, path := range []string{"/cart/items", "/cart/items/mango-sticky-rice-kit/quantity", "/cart/items/mango-sticky-rice-kit/remove", "/cart/clear"} {
+		t.Run("get "+path, func(t *testing.T) {
+			response, err := handler.Handle(context.Background(), pageRequest(http.MethodGet, path))
+			if err != nil {
+				t.Fatalf("Handle returned error: %v", err)
+			}
+			if response.StatusCode != http.StatusMethodNotAllowed {
+				t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusMethodNotAllowed)
+			}
+			if got := response.Headers["Allow"]; got != http.MethodPost {
+				t.Fatalf("Allow = %q, want POST", got)
+			}
+		})
+	}
+}
+
+func TestCartMutationsPostCartItemsSetsCookieAndRedirectsToCart(t *testing.T) {
+	t.Setenv(cart.EnvCookieSecret, ssrTestCartSecret)
+	handler := NewHandler(cartRouteStore())
+	body := base64.StdEncoding.EncodeToString([]byte("slug=mango-sticky-rice-kit&quantity=2"))
+	request := formPostRequest("/cart/items", body)
+	request.IsBase64Encoded = true
+	request.Headers["X-Forwarded-Proto"] = "https"
+
+	response, err := handler.Handle(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusSeeOther {
+		t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusSeeOther)
+	}
+	if got := response.Headers["Location"]; got != "/cart" {
+		t.Fatalf("Location = %q, want /cart", got)
+	}
+	decoded := decodedCartFromResponse(t, response)
+	if got := decoded.Lines(); len(got) != 1 || got[0].Slug != "mango-sticky-rice-kit" || got[0].Quantity != 2 {
+		t.Fatalf("cart lines = %#v, want mango quantity 2", got)
+	}
+	if cookie := response.Cookies[0]; !strings.Contains(cookie, "Secure") {
+		t.Fatalf("cookie = %q, want Secure", cookie)
+	}
+}
+
+func TestPostCartItemsRejectsInactiveOutOfStockOrUnknownSlug(t *testing.T) {
+	handler := NewHandler(cartRouteStore())
+
+	for _, slug := range []string{"draft-product", "sold-out", "missing-product"} {
+		t.Run(slug, func(t *testing.T) {
+			response, err := handler.Handle(context.Background(), formPostRequest("/cart/items", "slug="+slug+"&quantity=1"))
+			if err != nil {
+				t.Fatalf("Handle returned error: %v", err)
+			}
+			if response.StatusCode != http.StatusNotFound {
+				t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusNotFound)
+			}
+		})
+	}
+}
+
+func TestPostCartQuantityRejectsInvalidQuantity(t *testing.T) {
+	handler := NewHandler(cartRouteStore())
+
+	for _, body := range []string{"quantity=0", "quantity=-1", "quantity=abc", ""} {
+		t.Run(body, func(t *testing.T) {
+			response, err := handler.Handle(context.Background(), formPostRequest("/cart/items/mango-sticky-rice-kit/quantity", body))
+			if err != nil {
+				t.Fatalf("Handle returned error: %v", err)
+			}
+			if response.StatusCode != http.StatusBadRequest {
+				t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusBadRequest)
+			}
+		})
+	}
+}
+
+func TestCartMutationsRejectFullCart(t *testing.T) {
+	t.Setenv(cart.EnvCookieSecret, ssrTestCartSecret)
+	store := cartRouteStore()
+	fullLines := make([]cart.Line, 0, cart.MaxLineItems)
+	for i := range cart.MaxLineItems {
+		slug := "line-" + strconv.Itoa(i)
+		store.productsBySlug[slug] = catalog.Product{Slug: slug, Name: slug, Status: catalog.StatusActive, StockQuantity: 1}
+		fullLines = append(fullLines, cart.Line{Slug: slug, Quantity: 1})
+	}
+	handler := NewHandler(store)
+	request := formPostRequest("/cart/items", "slug=mango-sticky-rice-kit&quantity=1")
+	request.Cookies = []string{cart.CookieName + "=" + encodedTestCart(t, fullLines)}
+
+	response, err := handler.Handle(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusBadRequest)
+	}
+}
+
+func TestCheckoutReviewEmptyCartRedirectsToCart(t *testing.T) {
+	response, err := NewHandler(cartRouteStore()).Handle(context.Background(), pageRequest(http.MethodGet, "/checkout"))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusSeeOther {
+		t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusSeeOther)
+	}
+	if got := response.Headers["Location"]; got != "/cart" {
+		t.Fatalf("Location = %q, want /cart", got)
+	}
+}
+
+func TestCartPageRenders(t *testing.T) {
+	t.Run("empty state", func(t *testing.T) {
+		response, err := NewHandler(cartRouteStore()).Handle(context.Background(), pageRequest(http.MethodGet, "/cart"))
+		if err != nil {
+			t.Fatalf("Handle returned error: %v", err)
+		}
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
+		}
+		assertBodyContains(t, response.Body, []string{`<title>Cart | Thailand Gift Shop</title>`, `Your cart is empty.`, `Browse the latest Thai snacks`, `href="/products"`, `Continue shopping`})
+		assertBodyOmits(t, response.Body, []string{`data-testid="cart-line-item"`, `href="/checkout"`, `action="/cart/clear"`})
+	})
+
+	t.Run("line items and controls", func(t *testing.T) {
+		t.Setenv(cart.EnvCookieSecret, ssrTestCartSecret)
+		request := pageRequest(http.MethodGet, "/cart")
+		request.Cookies = []string{cart.CookieName + "=" + encodedTestCart(t, []cart.Line{{Slug: "mango-sticky-rice-kit", Quantity: 2}})}
+
+		response, err := NewHandlerWithProductImagePlaceholderURL(cartRouteStore(), "/images/placeholder-product.jpg").Handle(context.Background(), request)
+		if err != nil {
+			t.Fatalf("Handle returned error: %v", err)
+		}
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
+		}
+		assertBodyContains(t, response.Body, []string{`Cart (2)`, `data-testid="cart-line-item"`, `src="/images/products/mango-sticky-rice-kit.jpg"`, `alt="Mango Sticky Rice Treats"`, `href="/products/mango-sticky-rice-kit"`, `Mango Sticky Rice Treats`, `$28.99`, `$57.98`, `action="/cart/items/mango-sticky-rice-kit/quantity"`, `name="quantity"`, `value="2"`, `max="5"`, `action="/cart/items/mango-sticky-rice-kit/remove"`, `action="/cart/clear"`, `href="/checkout"`, `Review checkout`, `Continue shopping`, `Clear cart`})
+	})
+}
+
+func TestCheckoutPageRendersReviewOnly(t *testing.T) {
+	t.Setenv(cart.EnvCookieSecret, ssrTestCartSecret)
+	request := pageRequest(http.MethodGet, "/checkout")
+	request.Cookies = []string{cart.CookieName + "=" + encodedTestCart(t, []cart.Line{{Slug: "mango-sticky-rice-kit", Quantity: 2}})}
+
+	response, err := NewHandlerWithProductImagePlaceholderURL(cartRouteStore(), "/images/placeholder-product.jpg").Handle(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	assertBodyContains(t, response.Body, []string{`<title>Checkout Review | Thailand Gift Shop</title>`, `Checkout Review`, `Review only`, `data-testid="checkout-line-item"`, `src="/images/products/mango-sticky-rice-kit.jpg"`, `Mango Sticky Rice Treats`, `Quantity 2`, `$28.99`, `$57.98`, `Shipping and tax are not calculated on this review page.`, `Payment is not collected, and no order is placed from this screen.`, `No customer details or payment details are collected here, and no order is submitted.`, `href="/cart"`, `href="/products"`})
+	assertBodyOmits(t, response.Body, []string{`<form`, `name="email"`, `name="address"`, `name="card"`, `payment submit`, `instant purchase`})
+}
+
+func TestCartPageOmitsPIIAndPaymentControls(t *testing.T) {
+	t.Setenv(cart.EnvCookieSecret, ssrTestCartSecret)
+	for _, path := range []string{"/cart", "/checkout"} {
+		t.Run(path, func(t *testing.T) {
+			request := pageRequest(http.MethodGet, path)
+			request.Cookies = []string{cart.CookieName + "=" + encodedTestCart(t, []cart.Line{{Slug: "mango-sticky-rice-kit", Quantity: 1}})}
+
+			response, err := NewHandler(cartRouteStore()).Handle(context.Background(), request)
+			if err != nil {
+				t.Fatalf("Handle returned error: %v", err)
+			}
+			if response.StatusCode != http.StatusOK {
+				t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
+			}
+			assertBodyOmits(t, response.Body, []string{`name="email"`, `name="address"`, `name="card"`, `card number`, `payment submit`, `instant purchase`})
+		})
+	}
+}
+
+func TestCartPageShowsCappedInventoryQuantities(t *testing.T) {
+	t.Setenv(cart.EnvCookieSecret, ssrTestCartSecret)
+	request := pageRequest(http.MethodGet, "/cart")
+	request.Cookies = []string{cart.CookieName + "=" + encodedTestCart(t, []cart.Line{{Slug: "mango-sticky-rice-kit", Quantity: 20}, {Slug: "high-stock", Quantity: 150}})}
+
+	response, err := NewHandler(cartRouteStore()).Handle(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	decoded := decodedCartFromResponse(t, response)
+	lines := decoded.Lines()
+	if len(lines) != 2 || lines[0].Quantity != 5 || lines[1].Quantity != cart.MaxQuantity {
+		t.Fatalf("bounded lines = %#v, want stock cap 5 and max quantity %d", lines, cart.MaxQuantity)
+	}
+	assertBodyContains(t, response.Body, []string{`Cart (104)`, `Mango Sticky Rice Treats`, `High Stock Product`, `max="5"`, `value="5"`, `max="99"`, `value="99"`})
+}
+
+func TestCheckoutPageExcludesDroppedStaleItems(t *testing.T) {
+	t.Setenv(cart.EnvCookieSecret, ssrTestCartSecret)
+	request := pageRequest(http.MethodGet, "/checkout")
+	request.Cookies = []string{cart.CookieName + "=" + encodedTestCart(t, []cart.Line{{Slug: "mango-sticky-rice-kit", Quantity: 2}, {Slug: "draft-product", Quantity: 1}, {Slug: "sold-out", Quantity: 1}, {Slug: "missing-product", Quantity: 1}})}
+
+	response, err := NewHandler(cartRouteStore()).Handle(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	decoded := decodedCartFromResponse(t, response)
+	if got := decoded.Lines(); len(got) != 1 || got[0].Slug != "mango-sticky-rice-kit" || got[0].Quantity != 2 {
+		t.Fatalf("normalized lines = %#v, want only active in-stock mango", got)
+	}
+	assertBodyContains(t, response.Body, []string{`Mango Sticky Rice Treats`, `$57.98`})
+	assertBodyOmits(t, response.Body, []string{`Draft Product`, `Sold Out`, `missing-product`})
+}
+
+func TestCartCookieFlagsHttpOnlySameSitePathMaxAgeAndHttpsSecure(t *testing.T) {
+	t.Setenv(cart.EnvCookieSecret, ssrTestCartSecret)
+	request := formPostRequest("/cart/items", "slug=mango-sticky-rice-kit&quantity=1")
+	request.Headers["x-forwarded-proto"] = "https"
+
+	response, err := NewHandler(cartRouteStore()).Handle(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	cookieHeader := response.Cookies[0]
+	for _, want := range []string{cart.CookieName + "=", "Path=/", "Max-Age=604800", "HttpOnly", "SameSite=Lax", "Secure"} {
+		if !strings.Contains(cookieHeader, want) {
+			t.Fatalf("cookie = %q, want %q", cookieHeader, want)
+		}
+	}
+
+	request = formPostRequest("/cart/items", "slug=mango-sticky-rice-kit&quantity=1")
+	response, err = NewHandler(cartRouteStore()).Handle(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if strings.Contains(response.Cookies[0], "Secure") {
+		t.Fatalf("localhost HTTP cookie = %q, want no Secure", response.Cookies[0])
+	}
+}
+
+func TestCartNormalizesMissingInactiveAndOutOfStockItems(t *testing.T) {
+	t.Setenv(cart.EnvCookieSecret, ssrTestCartSecret)
+	request := pageRequest(http.MethodGet, "/cart")
+	request.Cookies = []string{cart.CookieName + "=" + encodedTestCart(t, []cart.Line{
+		{Slug: "mango-sticky-rice-kit", Quantity: 2},
+		{Slug: "draft-product", Quantity: 1},
+		{Slug: "sold-out", Quantity: 1},
+		{Slug: "missing-product", Quantity: 1},
+	})}
+
+	response, err := NewHandler(cartRouteStore()).Handle(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	decoded := decodedCartFromResponse(t, response)
+	if got := decoded.Lines(); len(got) != 1 || got[0].Slug != "mango-sticky-rice-kit" || got[0].Quantity != 2 {
+		t.Fatalf("normalized lines = %#v, want only active in-stock mango", got)
+	}
+	assertBodyOmits(t, response.Body, []string{"Draft Product", "Sold Out"})
+}
+
+func TestCartInventoryBoundsCapsQuantityToCurrentStockAndNinetyNine(t *testing.T) {
+	t.Setenv(cart.EnvCookieSecret, ssrTestCartSecret)
+	request := pageRequest(http.MethodGet, "/cart")
+	request.Cookies = []string{cart.CookieName + "=" + encodedTestCart(t, []cart.Line{
+		{Slug: "mango-sticky-rice-kit", Quantity: 20},
+		{Slug: "high-stock", Quantity: 150},
+	})}
+
+	response, err := NewHandler(cartRouteStore()).Handle(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	decoded := decodedCartFromResponse(t, response)
+	lines := decoded.Lines()
+	if len(lines) != 2 || lines[0].Quantity != 5 || lines[1].Quantity != cart.MaxQuantity {
+		t.Fatalf("bounded lines = %#v, want stock cap 5 and max quantity %d", lines, cart.MaxQuantity)
+	}
+}
+
+func TestCheckoutNever500sWithStaleCartCookie(t *testing.T) {
+	t.Setenv(cart.EnvCookieSecret, ssrTestCartSecret)
+	request := pageRequest(http.MethodGet, "/checkout")
+	request.Headers = map[string]string{"Cookie": cart.CookieName + "=" + encodedTestCart(t, []cart.Line{{Slug: "missing-product", Quantity: 1}})}
+
+	response, err := NewHandler(cartRouteStore()).Handle(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusSeeOther {
+		t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusSeeOther)
+	}
+	if got := response.Headers["Location"]; got != "/cart" {
+		t.Fatalf("Location = %q, want /cart", got)
+	}
+	if len(response.Cookies) != 1 || !strings.Contains(response.Cookies[0], "Max-Age=0") {
+		t.Fatalf("cookies = %#v, want clearing cookie", response.Cookies)
+	}
 }
 
 func TestHandle(t *testing.T) {
@@ -347,6 +721,79 @@ func pageRequest(method string, path string) events.APIGatewayV2HTTPRequest {
 		RequestContext: events.APIGatewayV2HTTPRequestContext{
 			HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
 				Method: method,
+			},
+		},
+	}
+}
+
+func formPostRequest(path string, body string) events.APIGatewayV2HTTPRequest {
+	request := pageRequest(http.MethodPost, path)
+	request.Body = body
+	request.Headers = map[string]string{"content-type": "application/x-www-form-urlencoded"}
+	return request
+}
+
+func encodedTestCart(t *testing.T, lines []cart.Line) string {
+	t.Helper()
+	testCart, err := cart.New(lines)
+	if err != nil {
+		t.Fatalf("cart.New returned error: %v", err)
+	}
+	encoded, err := cart.EncodeCookie(testCart, ssrTestCartSecret)
+	if err != nil {
+		t.Fatalf("EncodeCookie returned error: %v", err)
+	}
+	return encoded
+}
+
+func decodedCartFromResponse(t *testing.T, response events.APIGatewayV2HTTPResponse) cart.Cart {
+	t.Helper()
+	if len(response.Cookies) != 1 {
+		t.Fatalf("response cookies = %#v, want one cart cookie", response.Cookies)
+	}
+	value, found := namedCookieValue(response.Cookies[0], cart.CookieName)
+	if !found {
+		t.Fatalf("cart cookie missing from %#v", response.Cookies)
+	}
+	decoded := cart.DecodeCookie(value, ssrTestCartSecret)
+	if decoded.NeedsClear {
+		t.Fatalf("decoded cart NeedsClear = true for cookie %q", response.Cookies[0])
+	}
+	return decoded.Cart
+}
+
+func cartRouteStore() *fakeCatalogStore {
+	return &fakeCatalogStore{
+		productsBySlug: map[string]catalog.Product{
+			"mango-sticky-rice-kit": {
+				Slug:          "mango-sticky-rice-kit",
+				Name:          "Mango Sticky Rice Treats",
+				Description:   "Shelf-stable Thai dessert snacks.",
+				PriceCents:    2899,
+				ImageURL:      "/images/products/mango-sticky-rice-kit.jpg",
+				Status:        catalog.StatusActive,
+				StockQuantity: 5,
+			},
+			"high-stock": {
+				Slug:          "high-stock",
+				Name:          "High Stock Product",
+				Description:   "Bulk Thai gift-shop stock.",
+				PriceCents:    199,
+				ImageURL:      "/images/products/high-stock.jpg",
+				Status:        catalog.StatusActive,
+				StockQuantity: cart.MaxQuantity + 25,
+			},
+			"draft-product": {
+				Slug:          "draft-product",
+				Name:          "Draft Product",
+				Status:        catalog.StatusDraft,
+				StockQuantity: 5,
+			},
+			"sold-out": {
+				Slug:          "sold-out",
+				Name:          "Sold Out",
+				Status:        catalog.StatusActive,
+				StockQuantity: 0,
 			},
 		},
 	}
@@ -510,6 +957,102 @@ func TestHomeRendersCategoryCardsFromCatalog(t *testing.T) {
 	}
 }
 
+func TestHomeRendersDataDrivenAisleLinks(t *testing.T) {
+	handler := NewHandler(&fakeCatalogStore{
+		categories: []catalog.Category{
+			{
+				Slug:        "thai-snacks",
+				Name:        "Thai Snacks",
+				Description: "Crunchy, sweet, and pantry-friendly finds.",
+				Status:      catalog.StatusActive,
+			},
+			{
+				Slug:        "temple-bells",
+				Name:        "Temple Bells",
+				Description: "Small brass bells and shrine-side keepsakes.",
+				Status:      catalog.StatusActive,
+			},
+			{
+				Slug:        "jasmine-garlands",
+				Name:        "Jasmine Garlands",
+				Description: "Fragrant market-inspired gifts and floral mementos.",
+				Status:      catalog.StatusActive,
+			},
+			{
+				Slug:        "hidden-category",
+				Name:        "Hidden Category",
+				Description: "Should not be visible.",
+				Status:      catalog.StatusDraft,
+			},
+			{
+				Slug:        "fourth-active",
+				Name:        "Fourth Active Category",
+				Description: "Visible in categories, not featured aisles.",
+				Status:      catalog.StatusActive,
+			},
+		},
+	})
+
+	response, err := handler.Handle(context.Background(), pageRequest(http.MethodGet, "/"))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	assertBodyContains(t, response.Body, []string{
+		`data-testid="home-aisle-card" href="/categories/thai-snacks"`,
+		`data-testid="home-aisle-card" href="/categories/temple-bells"`,
+		`data-testid="home-aisle-card" href="/categories/jasmine-garlands"`,
+		`href="/categories/fourth-active"`,
+	})
+	if got := strings.Count(response.Body, `data-testid="home-aisle-card"`); got != 3 {
+		t.Fatalf("home aisle cards = %d, want 3: %q", got, response.Body)
+	}
+	assertBodyOmits(t, response.Body, []string{
+		`data-testid="home-aisle-card" href="#latest"`,
+		`data-testid="home-aisle-card" href="/categories/hidden-category"`,
+	})
+}
+
+func TestHeaderRendersCartLinkLabelFromNormalizedCookie(t *testing.T) {
+	t.Setenv(cart.EnvCookieSecret, ssrTestCartSecret)
+	request := pageRequest(http.MethodGet, "/products")
+	request.Cookies = []string{cart.CookieName + "=" + encodedTestCart(t, []cart.Line{{Slug: "mango-sticky-rice-kit", Quantity: 2}})}
+
+	response, err := NewHandler(cartRouteStore()).Handle(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	assertBodyContains(t, response.Body, []string{
+		`href="/cart">Cart (2)</a>`,
+		`Products</a>`,
+		`Categories</a>`,
+		`Story</a>`,
+	})
+}
+
+func TestHeaderRendersMobileNoJSNavigation(t *testing.T) {
+	response, err := NewHandler(routeMatrixStore()).Handle(context.Background(), pageRequest(http.MethodGet, "/story"))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	assertBodyContains(t, response.Body, []string{
+		`<details class="md:hidden">`,
+		`<summary class="inline-flex h-10 cursor-pointer list-none`,
+		`href="/products">Products</a>`,
+		`href="/categories">Categories</a>`,
+		`href="/story">Story</a>`,
+		`href="/cart">Cart</a>`,
+	})
+}
+
 func TestHomeRendersEmptyCategoryState(t *testing.T) {
 	handler := NewHandler(&fakeCatalogStore{})
 
@@ -667,8 +1210,178 @@ func TestProductDetailRendersExactActiveProduct(t *testing.T) {
 		`Wrong Mango`,
 		`prod_active_002`,
 		`Add to cart`,
-		`Checkout`,
 		`Quantity`,
+	})
+}
+
+func TestProductDetailRendersCartFormForInStockProduct(t *testing.T) {
+	product := catalog.Product{
+		ID:            "prod_active_cart",
+		Slug:          "thai-tea-sampler",
+		Name:          "Thai Tea Selection",
+		Description:   "Loose leaf Thai tea and sweet snacks.",
+		PriceCents:    2199,
+		Status:        catalog.StatusActive,
+		StockQuantity: cart.MaxQuantity + 12,
+	}
+	handler := NewHandler(&fakeCatalogStore{
+		productsBySlug: map[string]catalog.Product{product.Slug: product},
+	})
+
+	response, err := handler.Handle(context.Background(), pageRequest(http.MethodGet, "/products/thai-tea-sampler"))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	assertBodyContains(t, response.Body, []string{
+		`method="POST"`,
+		`action="/cart/items"`,
+		`type="hidden" name="slug" value="thai-tea-sampler"`,
+		`type="number" name="quantity" value="1" min="1" max="99"`,
+		`Add to cart`,
+		`Adding this item starts a cart review.`,
+		`No payment is collected yet`,
+		`shipping and tax are not included`,
+		`Stripe payment processing will be added later`,
+	})
+	assertBodyOmits(t, response.Body, []string{
+		`prod_active_cart`,
+		`/products/prod_`,
+	})
+}
+
+func TestProductDetailDoesNotRenderAddToCartForOutOfStock(t *testing.T) {
+	product := catalog.Product{
+		Slug:          "sold-out-tea",
+		Name:          "Sold Out Tea",
+		Description:   "This tin is currently unavailable.",
+		PriceCents:    1199,
+		Status:        catalog.StatusActive,
+		StockQuantity: 0,
+	}
+	handler := NewHandler(&fakeCatalogStore{
+		productsBySlug: map[string]catalog.Product{product.Slug: product},
+	})
+
+	response, err := handler.Handle(context.Background(), pageRequest(http.MethodGet, "/products/sold-out-tea"))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	assertBodyContains(t, response.Body, []string{
+		`Out of stock`,
+		`This item cannot be added to cart right now.`,
+	})
+	assertBodyOmits(t, response.Body, []string{
+		`action="/cart/items"`,
+		`name="quantity"`,
+		`Add to cart`,
+	})
+}
+
+func TestProductDetailRendersActiveCategoryChips(t *testing.T) {
+	product := catalog.Product{
+		Slug:          "mango-sticky-rice-kit",
+		Name:          "Mango Sticky Rice Treats",
+		Description:   "Shelf-stable Thai dessert snacks.",
+		PriceCents:    2899,
+		Status:        catalog.StatusActive,
+		StockQuantity: 4,
+		CategorySlugs: []string{"thai-snacks", "pantry"},
+	}
+	handler := NewHandler(&fakeCatalogStore{
+		productsBySlug: map[string]catalog.Product{product.Slug: product},
+		categories: []catalog.Category{
+			{Slug: "thai-snacks", Name: "Thai Snacks", Description: "Crunchy finds.", Status: catalog.StatusActive},
+			{Slug: "pantry", Name: "Pantry", Description: "Shelf-stable staples.", Status: catalog.StatusActive},
+		},
+	})
+
+	response, err := handler.Handle(context.Background(), pageRequest(http.MethodGet, "/products/mango-sticky-rice-kit"))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	assertBodyContains(t, response.Body, []string{
+		`aria-label="Product categories"`,
+		`href="/categories/thai-snacks"`,
+		`Thai Snacks`,
+		`href="/categories/pantry"`,
+		`Pantry`,
+	})
+}
+
+func TestProductDetailOmitsInactiveCategoryChips(t *testing.T) {
+	product := catalog.Product{
+		Slug:          "mango-sticky-rice-kit",
+		Name:          "Mango Sticky Rice Treats",
+		Description:   "Shelf-stable Thai dessert snacks.",
+		PriceCents:    2899,
+		Status:        catalog.StatusActive,
+		StockQuantity: 4,
+		CategorySlugs: []string{"thai-snacks", "hidden-category", "missing-category"},
+	}
+	handler := NewHandler(&fakeCatalogStore{
+		productsBySlug: map[string]catalog.Product{product.Slug: product},
+		categories: []catalog.Category{
+			{Slug: "thai-snacks", Name: "Thai Snacks", Description: "Crunchy finds.", Status: catalog.StatusActive},
+			{Slug: "hidden-category", Name: "Hidden Category", Description: "Should not show.", Status: catalog.StatusDraft},
+		},
+	})
+
+	response, err := handler.Handle(context.Background(), pageRequest(http.MethodGet, "/products/mango-sticky-rice-kit"))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	assertBodyContains(t, response.Body, []string{
+		`href="/categories/thai-snacks"`,
+		`Thai Snacks`,
+	})
+	assertBodyOmits(t, response.Body, []string{
+		`href="/categories/hidden-category"`,
+		`Hidden Category`,
+		`href="/categories/missing-category"`,
+	})
+}
+
+func TestProductCardsRenderViewDetailsAffordance(t *testing.T) {
+	handler := NewHandler(&fakeCatalogStore{
+		products: []catalog.Product{
+			{
+				Slug:          "mango-sticky-rice-kit",
+				Name:          "Mango Sticky Rice Treats",
+				Description:   "Shelf-stable Thai dessert snacks.",
+				PriceCents:    2899,
+				Status:        catalog.StatusActive,
+				StockQuantity: 4,
+			},
+		},
+	})
+
+	response, err := handler.Handle(context.Background(), pageRequest(http.MethodGet, "/products"))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	assertBodyContains(t, response.Body, []string{
+		`data-testid="product-card" href="/products/mango-sticky-rice-kit"`,
+		`View details`,
+	})
+	assertBodyOmits(t, response.Body, []string{
+		`action="/cart/items"`,
+		`Add to cart`,
+		`name="quantity"`,
 	})
 }
 
@@ -1113,12 +1826,29 @@ func TestStoryReturnsStaticPageWithoutCatalogQuery(t *testing.T) {
 		`href="/products"`,
 		`href="/categories"`,
 		`href="/story"`,
+		`href="/cart"`,
 		`<h1 class="mt-3 text-5xl font-black leading-none text-[#2D2A4A] sm:text-6xl">Our Story</h1>`,
 		`Bangkok gift shop online`,
 		`Thai snacks, souvenirs, textiles, pantry items, decor, wellness, and small keepsakes`,
 		`Thailand Gift Shop is a Bangkok gift shop online for Thai snacks, souvenirs, textiles, pantry items, decor, wellness, and small keepsakes.`,
 		`Each aisle is shaped for calm browsing: clear categories, strong product images, concise details, and slug-based links that work without JavaScript.`,
 		`The shop point of view is market-bright and practical, rooted in the colors, textures, pantry flavors, and compact keepsakes travelers remember from Bangkok gift shops.`,
+		`Checkout is review-only for now: no payment is collected yet, and shipping and tax are confirmed later.`,
+	})
+}
+
+func TestStoryExplainsReviewOnlyCheckout(t *testing.T) {
+	response, err := NewHandler(&fakeCatalogStore{}).Handle(context.Background(), pageRequest(http.MethodGet, "/story"))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	assertBodyContains(t, response.Body, []string{
+		`Thai gift-shop catalog`,
+		`Review-only checkout: no payment is collected yet, and shipping and tax are confirmed later.`,
+		`Checkout is review-only for now: no payment is collected yet, and shipping and tax are confirmed later.`,
 	})
 }
 
@@ -1269,12 +1999,10 @@ func routeMatrixStore() *fakeCatalogStore {
 
 func excludedUILabels() []string {
 	return []string{
-		"Cart",
-		"Checkout",
 		"Account",
 		"Search",
-		"Ready to wrap",
-		"Gift set",
+		"Filter",
+		"Sort",
 	}
 }
 

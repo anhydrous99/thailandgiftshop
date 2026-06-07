@@ -4,9 +4,9 @@ This guide is for AI agents implementing the pages implied by the home page. Kee
 
 ## Current State
 
-- The SSR app currently routes `/` and the internal HTMX-only `/hello-fragment` path.
+- The SSR app currently routes catalog pages plus the review-only cart and checkout shell.
 - `internal/ssr/home.templ` renders the full home page.
-- `internal/ssr/handler.go` currently returns `404` for all paths except `/` and `/hello-fragment`.
+- `internal/ssr/handler.go` owns page routing and should keep unknown paths returning `404`.
 - Catalog data already exposes the required page data through `catalog.Store`:
   - `ListRecentlyAddedProducts(ctx, limit)` for home.
   - `ListActiveProducts(ctx, limit)` for product listing.
@@ -26,6 +26,8 @@ Implement these routes as server-rendered pages using templ. Preserve existing a
 | Category index | `/categories` | `ListActiveCategories(ctx)` | Show no-categories message |
 | Category detail | `/categories/{slug}` | `ListActiveCategories(ctx)` plus `ListActiveProductsByCategory(ctx, slug, 0)` | `404` when slug is not in active categories; empty product grid when category exists but has no products |
 | Story / About | `/story` | Static content | No data dependency |
+| Cart | `/cart` | Cart cookie slugs and catalog product lookup | Review-only cart shell; show an empty cart message when no cart items are present |
+| Checkout | `/checkout` | Cart review data only | Review-only checkout shell; shipping, tax, and payment are not collected yet |
 
 Optional aliases may redirect, not duplicate:
 
@@ -49,7 +51,17 @@ Category pages and category navigation must be derived from catalog data.
 - Product cards on listing and category pages should link to `/products/{product.Slug}`.
 - Product detail pages should show name, image with `DisplayImageURL`, price from `formatPrice`, description, and stock state.
 - If `product.OutOfStock()` is true, show `Out of stock`; otherwise show `In stock`.
-- Do not invent checkout, cart, account, or search behavior as part of this page pass.
+- Cart and checkout are allowed in this release only as review-only pages. They may show selected products and quantities, but they must not collect customer PII, shipping details, card details, payment, or order placement.
+
+## Deferred Scope
+
+Keep these features out of the current release unless a later guide explicitly adds them:
+
+- Deferred: Stripe integration, payment processing, and payment collection.
+- Customer account pages or account sign-in flows.
+- Search, filter, and sort controls for catalog browsing.
+- Customer PII forms, shipping forms, billing forms, and contact-detail collection.
+- Order persistence and order placement.
 
 ## Implementation Notes
 

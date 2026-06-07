@@ -3,18 +3,23 @@ package ssr
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"errors"
 	"maps"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
 
+	"github.com/anhydrous99/thailandgiftshop/internal/cart"
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
 	"github.com/aws/aws-lambda-go/events"
 )
 
 const htmlContentType = "text/html; charset=utf-8"
 const allowedMethods = http.MethodGet + ", " + http.MethodHead
+const cartMutationAllowedMethods = http.MethodPost
 const helloFragmentBody = "HTMX refreshed this greeting from the server"
 const latestProductLimit = 8
 
@@ -27,6 +32,12 @@ const (
 	pageCategories     pageKind = "categories"
 	pageCategoryDetail pageKind = "category-detail"
 	pageStory          pageKind = "story"
+	pageCart           pageKind = "cart"
+	pageCheckout       pageKind = "checkout"
+	pageCartItems      pageKind = "cart-items"
+	pageCartQuantity   pageKind = "cart-quantity"
+	pageCartRemove     pageKind = "cart-remove"
+	pageCartClear      pageKind = "cart-clear"
 	pageUnknown        pageKind = "unknown"
 )
 
@@ -89,41 +100,78 @@ func (h *Handler) Handle(ctx context.Context, request events.APIGatewayV2HTTPReq
 
 	method := requestMethod(request)
 	route := routeForPath(path)
-	if route.knownPageShape && !isAllowedPageMethod(method) {
+	if route.knownPageShape && !isAllowedRouteMethod(route, method) {
 		return htmlResponse(http.StatusMethodNotAllowed, "Method not allowed", map[string]string{
-			"Allow": allowedMethods,
+			"Allow": allowedMethodsForRoute(route),
 		}), nil
 	}
 	if route.redirectTo != "" {
 		return redirectResponse(route.redirectTo), nil
 	}
+	if isCartMutationRoute(route.kind) {
+		return h.handleCartMutation(ctx, request, route), nil
+	}
 	var body string
 	statusCode := http.StatusOK
+	cookies := []string(nil)
 	var err error
+	headerCartLabel, headerCookies := h.cartNavigation(ctx, request)
+	cookies = append(cookies, headerCookies...)
 
 	switch route.kind {
 	case pageHome:
-		body, err = h.renderHome(ctx)
+		body, err = h.renderHome(ctx, headerCartLabel)
 	case pageProducts:
-		body, err = h.renderProductListing(ctx)
+		body, err = h.renderProductListing(ctx, headerCartLabel)
 	case pageProductDetail:
 		found := false
-		body, found, err = h.renderProductDetail(ctx, route.slug)
+		body, found, err = h.renderProductDetail(ctx, route.slug, headerCartLabel)
 		if !found {
 			statusCode = http.StatusNotFound
 			body = "Not found"
 		}
 	case pageCategories:
-		body, err = h.renderCategoryIndex(ctx)
+		body, err = h.renderCategoryIndex(ctx, headerCartLabel)
 	case pageCategoryDetail:
 		found := false
-		body, found, err = h.renderCategoryDetail(ctx, route.slug)
+		body, found, err = h.renderCategoryDetail(ctx, route.slug, headerCartLabel)
 		if !found {
 			statusCode = http.StatusNotFound
 			body = "Not found"
 		}
 	case pageStory:
-		body, err = h.renderStory(ctx)
+		body, err = h.renderStory(ctx, headerCartLabel)
+	case pageCart:
+		var currentCart cart.Cart
+		var lines []cartLineView
+		currentCart, lines, cookies, err = h.cartFromRequest(ctx, request)
+		headerCartLabel = cartNavigationLabel(currentCart.TotalItemCount())
+		if err == nil {
+			body, err = renderCartPage(ctx, cartPageViewModel{
+				Lines:                      lines,
+				ProductImagePlaceholderURL: h.productImagePlaceholderURL,
+				HeaderCartLabel:            headerCartLabel,
+			})
+		}
+	case pageCheckout:
+		var currentCart cart.Cart
+		var lines []cartLineView
+		currentCart, lines, cookies, err = h.cartFromRequest(ctx, request)
+		headerCartLabel = cartNavigationLabel(currentCart.TotalItemCount())
+		if err == nil && currentCart.LineCount() == 0 {
+			response := seeOtherResponse("/cart", cookies)
+			if method == http.MethodHead {
+				response.Body = ""
+			}
+			return response, nil
+		}
+		if err == nil {
+			body, err = renderCheckoutPage(ctx, checkoutPageViewModel{
+				Lines:                      lines,
+				ProductImagePlaceholderURL: h.productImagePlaceholderURL,
+				HeaderCartLabel:            headerCartLabel,
+			})
+		}
 	default:
 		statusCode = http.StatusNotFound
 		body = "Not found"
@@ -136,7 +184,7 @@ func (h *Handler) Handle(ctx context.Context, request events.APIGatewayV2HTTPReq
 		body = ""
 	}
 
-	return htmlResponse(statusCode, body, nil), nil
+	return htmlResponseWithCookies(statusCode, body, nil, cookies), nil
 }
 
 func routeForPath(path string) pageRoute {
@@ -159,6 +207,24 @@ func routeForPath(path string) pageRoute {
 		return pageRoute{kind: pageStory, knownPageShape: true}
 	case "/story/":
 		return pageRoute{kind: pageStory, redirectTo: "/story", knownPageShape: true}
+	case "/cart":
+		return pageRoute{kind: pageCart, knownPageShape: true}
+	case "/cart/":
+		return pageRoute{kind: pageCart, redirectTo: "/cart", knownPageShape: true}
+	case "/checkout":
+		return pageRoute{kind: pageCheckout, knownPageShape: true}
+	case "/checkout/":
+		return pageRoute{kind: pageCheckout, redirectTo: "/checkout", knownPageShape: true}
+	case "/cart/items":
+		return pageRoute{kind: pageCartItems, knownPageShape: true}
+	case "/cart/clear":
+		return pageRoute{kind: pageCartClear, knownPageShape: true}
+	}
+	if route := cartMutationRouteForPath(path, "/cart/items/", "/quantity", pageCartQuantity); route.knownPageShape {
+		return route
+	}
+	if route := cartMutationRouteForPath(path, "/cart/items/", "/remove", pageCartRemove); route.knownPageShape {
+		return route
 	}
 
 	if route := detailRouteForPath(path, "/products/", pageProductDetail); route.knownPageShape {
@@ -172,22 +238,38 @@ func routeForPath(path string) pageRoute {
 }
 
 func detailRouteForPath(path string, prefix string, kind pageKind) pageRoute {
-	if !strings.HasPrefix(path, prefix) {
+	slug, ok := strings.CutPrefix(path, prefix)
+	if !ok {
 		return pageRoute{kind: pageUnknown}
 	}
 
-	slug := strings.TrimPrefix(path, prefix)
 	if slug == "" {
 		return pageRoute{kind: pageUnknown}
 	}
-	if strings.HasSuffix(slug, "/") {
-		slug = strings.TrimSuffix(slug, "/")
+	if trimmedSlug, ok := strings.CutSuffix(slug, "/"); ok {
+		slug = trimmedSlug
 		if slug == "" || strings.Contains(slug, "/") {
 			return pageRoute{kind: pageUnknown}
 		}
 		return pageRoute{kind: kind, slug: slug, redirectTo: prefix + slug, knownPageShape: true}
 	}
 	if strings.Contains(slug, "/") {
+		return pageRoute{kind: pageUnknown}
+	}
+
+	return pageRoute{kind: kind, slug: slug, knownPageShape: true}
+}
+
+func cartMutationRouteForPath(path string, prefix string, suffix string, kind pageKind) pageRoute {
+	slug, ok := strings.CutPrefix(path, prefix)
+	if !ok {
+		return pageRoute{kind: pageUnknown}
+	}
+	slug, ok = strings.CutSuffix(slug, suffix)
+	if !ok {
+		return pageRoute{kind: pageUnknown}
+	}
+	if slug == "" || strings.Contains(slug, "/") {
 		return pageRoute{kind: pageUnknown}
 	}
 
@@ -204,8 +286,39 @@ func redirectResponse(location string) events.APIGatewayV2HTTPResponse {
 	}
 }
 
+func seeOtherResponse(location string, cookies []string) events.APIGatewayV2HTTPResponse {
+	return events.APIGatewayV2HTTPResponse{
+		StatusCode: http.StatusSeeOther,
+		Headers: map[string]string{
+			"Content-Type": htmlContentType,
+			"Location":     location,
+		},
+		Cookies: cookies,
+	}
+}
+
 func isAllowedPageMethod(method string) bool {
 	return method == http.MethodGet || method == http.MethodHead
+}
+
+func isAllowedRouteMethod(route pageRoute, method string) bool {
+	if isCartMutationRoute(route.kind) {
+		return method == http.MethodPost
+	}
+
+	return isAllowedPageMethod(method)
+}
+
+func allowedMethodsForRoute(route pageRoute) string {
+	if isCartMutationRoute(route.kind) {
+		return cartMutationAllowedMethods
+	}
+
+	return allowedMethods
+}
+
+func isCartMutationRoute(kind pageKind) bool {
+	return kind == pageCartItems || kind == pageCartQuantity || kind == pageCartRemove || kind == pageCartClear
 }
 
 func handleHelloFragment(request events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
@@ -229,7 +342,7 @@ func hasHeaderValue(headers map[string]string, name string, value string) bool {
 	return false
 }
 
-func (h *Handler) renderHome(ctx context.Context) (string, error) {
+func (h *Handler) renderHome(ctx context.Context, headerCartLabel string) (string, error) {
 	products, err := h.catalogStore.ListRecentlyAddedProducts(ctx, latestProductLimit)
 	if err != nil {
 		return "", err
@@ -243,7 +356,9 @@ func (h *Handler) renderHome(ctx context.Context) (string, error) {
 	if err := home(homePageViewModel{
 		Products:                   products,
 		Categories:                 categories,
+		FeaturedCategories:         featuredHomeCategories(categories),
 		ProductImagePlaceholderURL: h.productImagePlaceholderURL,
+		HeaderCartLabel:            headerCartLabel,
 	}).Render(ctx, &body); err != nil {
 		return "", err
 	}
@@ -251,7 +366,7 @@ func (h *Handler) renderHome(ctx context.Context) (string, error) {
 	return body.String(), nil
 }
 
-func (h *Handler) renderProductListing(ctx context.Context) (string, error) {
+func (h *Handler) renderProductListing(ctx context.Context, headerCartLabel string) (string, error) {
 	products, err := h.catalogStore.ListActiveProducts(ctx, 0)
 	if err != nil {
 		return "", err
@@ -266,6 +381,7 @@ func (h *Handler) renderProductListing(ctx context.Context) (string, error) {
 		Products:                   products,
 		Categories:                 categories,
 		ProductImagePlaceholderURL: h.productImagePlaceholderURL,
+		HeaderCartLabel:            headerCartLabel,
 	}).Render(ctx, &body); err != nil {
 		return "", err
 	}
@@ -273,7 +389,7 @@ func (h *Handler) renderProductListing(ctx context.Context) (string, error) {
 	return body.String(), nil
 }
 
-func (h *Handler) renderProductDetail(ctx context.Context, slug string) (string, bool, error) {
+func (h *Handler) renderProductDetail(ctx context.Context, slug string, headerCartLabel string) (string, bool, error) {
 	product, found, err := h.catalogStore.GetProductBySlug(ctx, slug)
 	if err != nil {
 		return "", false, err
@@ -281,11 +397,17 @@ func (h *Handler) renderProductDetail(ctx context.Context, slug string) (string,
 	if !found || product.Status != catalog.StatusActive {
 		return "", false, nil
 	}
+	categories, err := h.loadActiveCategories(ctx)
+	if err != nil {
+		return "", false, err
+	}
 
 	var body bytes.Buffer
 	if err := productDetailPage(productDetailPageViewModel{
 		Product:                    product,
+		Categories:                 activeProductCategories(product, categories),
 		ProductImagePlaceholderURL: h.productImagePlaceholderURL,
+		HeaderCartLabel:            headerCartLabel,
 	}).Render(ctx, &body); err != nil {
 		return "", false, err
 	}
@@ -293,7 +415,7 @@ func (h *Handler) renderProductDetail(ctx context.Context, slug string) (string,
 	return body.String(), true, nil
 }
 
-func (h *Handler) renderCategoryIndex(ctx context.Context) (string, error) {
+func (h *Handler) renderCategoryIndex(ctx context.Context, headerCartLabel string) (string, error) {
 	categories, err := h.loadActiveCategories(ctx)
 	if err != nil {
 		return "", err
@@ -301,7 +423,8 @@ func (h *Handler) renderCategoryIndex(ctx context.Context) (string, error) {
 
 	var body bytes.Buffer
 	if err := categoryIndexPage(categoryIndexPageViewModel{
-		Categories: categories,
+		Categories:      categories,
+		HeaderCartLabel: headerCartLabel,
 	}).Render(ctx, &body); err != nil {
 		return "", err
 	}
@@ -319,7 +442,41 @@ func findCategoryBySlug(categories []catalog.Category, slug string) (catalog.Cat
 	return catalog.Category{}, false
 }
 
-func (h *Handler) renderCategoryDetail(ctx context.Context, slug string) (string, bool, error) {
+func activeProductCategories(product catalog.Product, categories []catalog.Category) []catalog.Category {
+	if len(product.CategorySlugs) == 0 || len(categories) == 0 {
+		return nil
+	}
+
+	categoriesBySlug := make(map[string]catalog.Category, len(categories))
+	for _, category := range categories {
+		if category.Status == catalog.StatusActive {
+			categoriesBySlug[category.Slug] = category
+		}
+	}
+
+	productCategories := make([]catalog.Category, 0, len(product.CategorySlugs))
+	seen := make(map[string]bool, len(product.CategorySlugs))
+	for _, slug := range product.CategorySlugs {
+		category, found := categoriesBySlug[slug]
+		if !found || seen[slug] {
+			continue
+		}
+		productCategories = append(productCategories, category)
+		seen[slug] = true
+	}
+
+	return productCategories
+}
+
+func featuredHomeCategories(categories []catalog.Category) []catalog.Category {
+	if len(categories) <= 3 {
+		return categories
+	}
+
+	return categories[:3]
+}
+
+func (h *Handler) renderCategoryDetail(ctx context.Context, slug string, headerCartLabel string) (string, bool, error) {
 	categories, err := h.loadActiveCategories(ctx)
 	if err != nil {
 		return "", false, err
@@ -340,6 +497,7 @@ func (h *Handler) renderCategoryDetail(ctx context.Context, slug string) (string
 		Categories:                 categories,
 		Products:                   products,
 		ProductImagePlaceholderURL: h.productImagePlaceholderURL,
+		HeaderCartLabel:            headerCartLabel,
 	}).Render(ctx, &body); err != nil {
 		return "", false, err
 	}
@@ -347,13 +505,323 @@ func (h *Handler) renderCategoryDetail(ctx context.Context, slug string) (string
 	return body.String(), true, nil
 }
 
-func (h *Handler) renderStory(ctx context.Context) (string, error) {
+func (h *Handler) renderStory(ctx context.Context, headerCartLabel string) (string, error) {
 	var body bytes.Buffer
-	if err := storyPage(storyPageViewModel{}).Render(ctx, &body); err != nil {
+	if err := storyPage(storyPageViewModel{HeaderCartLabel: headerCartLabel}).Render(ctx, &body); err != nil {
 		return "", err
 	}
 
 	return body.String(), nil
+}
+
+type cartLineView struct {
+	Product  catalog.Product
+	Quantity int
+}
+
+func (h *Handler) handleCartMutation(ctx context.Context, request events.APIGatewayV2HTTPRequest, route pageRoute) events.APIGatewayV2HTTPResponse {
+	form, err := parseFormRequest(request)
+	if err != nil {
+		return htmlResponse(http.StatusBadRequest, "Bad request", nil)
+	}
+
+	currentCart, _, _, err := h.cartFromRequest(ctx, request)
+	if err != nil {
+		return htmlResponse(http.StatusInternalServerError, "Internal server error", nil)
+	}
+	mutatedCart := currentCart
+
+	switch route.kind {
+	case pageCartItems:
+		quantity, ok := positiveFormQuantity(form)
+		if !ok {
+			return htmlResponse(http.StatusBadRequest, "Invalid quantity", nil)
+		}
+		slug := form.Get("slug")
+		product, found, err := h.availableCartProduct(ctx, slug)
+		if err != nil {
+			return htmlResponse(http.StatusInternalServerError, "Internal server error", nil)
+		}
+		if !found {
+			return htmlResponse(http.StatusNotFound, "Not found", nil)
+		}
+		mutatedCart, err = currentCart.Add(product.Slug, min(quantity, product.StockQuantity, cart.MaxQuantity))
+		if err != nil {
+			return cartMutationErrorResponse(err)
+		}
+	case pageCartQuantity:
+		quantity, ok := positiveFormQuantity(form)
+		if !ok {
+			return htmlResponse(http.StatusBadRequest, "Invalid quantity", nil)
+		}
+		product, found, err := h.availableCartProduct(ctx, route.slug)
+		if err != nil {
+			return htmlResponse(http.StatusInternalServerError, "Internal server error", nil)
+		}
+		if !found {
+			return htmlResponse(http.StatusNotFound, "Not found", nil)
+		}
+		mutatedCart, err = currentCart.SetQuantity(product.Slug, min(quantity, product.StockQuantity, cart.MaxQuantity))
+		if err != nil {
+			return cartMutationErrorResponse(err)
+		}
+	case pageCartRemove:
+		product, found, err := h.availableCartProduct(ctx, route.slug)
+		if err != nil {
+			return htmlResponse(http.StatusInternalServerError, "Internal server error", nil)
+		}
+		if !found {
+			return htmlResponse(http.StatusNotFound, "Not found", nil)
+		}
+		mutatedCart, err = currentCart.Remove(product.Slug)
+		if err != nil {
+			return cartMutationErrorResponse(err)
+		}
+	case pageCartClear:
+		mutatedCart = currentCart.Clear()
+	}
+
+	mutatedCart, _, _, err = h.normalizeCart(ctx, mutatedCart)
+	if err != nil {
+		return htmlResponse(http.StatusInternalServerError, "Internal server error", nil)
+	}
+	cookieValue, err := cartResponseCookie(mutatedCart, request)
+	if err != nil {
+		return htmlResponse(http.StatusBadRequest, "Bad request", nil)
+	}
+
+	return seeOtherResponse("/cart", []string{cookieValue})
+}
+
+func cartMutationErrorResponse(err error) events.APIGatewayV2HTTPResponse {
+	if errors.Is(err, cart.ErrInvalidSlug) {
+		return htmlResponse(http.StatusNotFound, "Not found", nil)
+	}
+	if errors.Is(err, cart.ErrInvalidQuantity) || errors.Is(err, cart.ErrLineItemLimit) || errors.Is(err, cart.ErrCookieTooLarge) {
+		return htmlResponse(http.StatusBadRequest, "Bad request", nil)
+	}
+
+	return htmlResponse(http.StatusInternalServerError, "Internal server error", nil)
+}
+
+func (h *Handler) availableCartProduct(ctx context.Context, slug string) (catalog.Product, bool, error) {
+	product, found, err := h.catalogStore.GetProductBySlug(ctx, slug)
+	if err != nil || !found || product.Status != catalog.StatusActive || product.StockQuantity <= 0 {
+		return catalog.Product{}, false, err
+	}
+
+	return product, true, nil
+}
+
+func (h *Handler) cartFromRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) (cart.Cart, []cartLineView, []string, error) {
+	decodedCart := cart.Empty()
+	needsClear := false
+	if cookieValue, found := cartCookieValue(request); found {
+		decoded := cart.DecodeCookie(cookieValue, os.Getenv(cart.EnvCookieSecret))
+		decodedCart = decoded.Cart
+		needsClear = decoded.NeedsClear
+	}
+
+	normalizedCart, lines, changed, err := h.normalizeCart(ctx, decodedCart)
+	if err != nil {
+		return cart.Empty(), nil, nil, err
+	}
+	if needsClear || (changed && normalizedCart.LineCount() == 0) {
+		return normalizedCart, lines, []string{clearCartCookie(request)}, nil
+	}
+	if changed {
+		cookieValue, err := cartResponseCookie(normalizedCart, request)
+		if err != nil {
+			return cart.Empty(), nil, nil, err
+		}
+		return normalizedCart, lines, []string{cookieValue}, nil
+	}
+
+	return normalizedCart, lines, nil, nil
+}
+
+func (h *Handler) normalizeCart(ctx context.Context, currentCart cart.Cart) (cart.Cart, []cartLineView, bool, error) {
+	normalizedCart := cart.Empty()
+	lines := make([]cartLineView, 0, currentCart.LineCount())
+	changed := false
+
+	for _, line := range currentCart.Lines() {
+		product, found, err := h.catalogStore.GetProductBySlug(ctx, line.Slug)
+		if err != nil {
+			return cart.Empty(), nil, false, err
+		}
+		if !found || product.Status != catalog.StatusActive || product.StockQuantity <= 0 {
+			changed = true
+			continue
+		}
+
+		quantity := min(line.Quantity, product.StockQuantity, cart.MaxQuantity)
+		if quantity != line.Quantity {
+			changed = true
+		}
+		var setErr error
+		normalizedCart, setErr = normalizedCart.SetQuantity(product.Slug, quantity)
+		if setErr != nil {
+			return cart.Empty(), nil, false, setErr
+		}
+		lines = append(lines, cartLineView{Product: product, Quantity: quantity})
+	}
+
+	return normalizedCart, lines, changed, nil
+}
+
+func (h *Handler) cartNavigation(ctx context.Context, request events.APIGatewayV2HTTPRequest) (string, []string) {
+	if _, found := cartCookieValue(request); !found {
+		return cartNavigationLabel(0), nil
+	}
+
+	currentCart, _, cookies, err := h.cartFromRequest(ctx, request)
+	if err != nil {
+		return cartNavigationLabel(0), nil
+	}
+
+	return cartNavigationLabel(currentCart.TotalItemCount()), cookies
+}
+
+func cartNavigationLabel(itemCount int) string {
+	if itemCount <= 0 {
+		return "Cart"
+	}
+
+	return "Cart (" + strconv.Itoa(itemCount) + ")"
+}
+
+func parseFormRequest(request events.APIGatewayV2HTTPRequest) (url.Values, error) {
+	body := request.Body
+	if request.IsBase64Encoded {
+		decoded, err := base64.StdEncoding.DecodeString(body)
+		if err != nil {
+			return nil, err
+		}
+		body = string(decoded)
+	}
+
+	return url.ParseQuery(body)
+}
+
+func positiveFormQuantity(form url.Values) (int, bool) {
+	quantity, err := strconv.Atoi(strings.TrimSpace(form.Get("quantity")))
+	if err != nil || quantity <= 0 {
+		return 0, false
+	}
+
+	return quantity, true
+}
+
+func cartCookieValue(request events.APIGatewayV2HTTPRequest) (string, bool) {
+	for _, cookieHeader := range request.Cookies {
+		if value, found := namedCookieValue(cookieHeader, cart.CookieName); found {
+			return value, true
+		}
+	}
+	if cookieHeader := headerValue(request.Headers, "Cookie"); cookieHeader != "" {
+		return namedCookieValue(cookieHeader, cart.CookieName)
+	}
+
+	return "", false
+}
+
+func namedCookieValue(cookieHeader string, name string) (string, bool) {
+	for part := range strings.SplitSeq(cookieHeader, ";") {
+		cookieName, value, ok := strings.Cut(strings.TrimSpace(part), "=")
+		if ok && cookieName == name {
+			return value, true
+		}
+	}
+
+	return "", false
+}
+
+func cartResponseCookie(currentCart cart.Cart, request events.APIGatewayV2HTTPRequest) (string, error) {
+	if currentCart.LineCount() == 0 {
+		return clearCartCookie(request), nil
+	}
+	encoded, err := cart.EncodeCookie(currentCart, os.Getenv(cart.EnvCookieSecret))
+	if err != nil {
+		return "", err
+	}
+
+	return (&http.Cookie{
+		Name:     cart.CookieName,
+		Value:    encoded,
+		Path:     "/",
+		MaxAge:   cart.CookieMaxAge,
+		HttpOnly: true,
+		Secure:   isHTTPSRequest(request),
+		SameSite: http.SameSiteLaxMode,
+	}).String(), nil
+}
+
+func clearCartCookie(request events.APIGatewayV2HTTPRequest) string {
+	return (&http.Cookie{
+		Name:     cart.CookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   isHTTPSRequest(request),
+		SameSite: http.SameSiteLaxMode,
+	}).String()
+}
+
+func isHTTPSRequest(request events.APIGatewayV2HTTPRequest) bool {
+	for proto := range strings.SplitSeq(headerValue(request.Headers, "x-forwarded-proto"), ",") {
+		if strings.EqualFold(strings.TrimSpace(proto), "https") {
+			return true
+		}
+	}
+
+	return false
+}
+
+func headerValue(headers map[string]string, name string) string {
+	for key, value := range headers {
+		if strings.EqualFold(key, name) {
+			return value
+		}
+	}
+
+	return ""
+}
+
+func renderCartPage(ctx context.Context, vm cartPageViewModel) (string, error) {
+	var body bytes.Buffer
+	if err := cartPage(vm).Render(ctx, &body); err != nil {
+		return "", err
+	}
+
+	return body.String(), nil
+}
+
+func renderCheckoutPage(ctx context.Context, vm checkoutPageViewModel) (string, error) {
+	var body bytes.Buffer
+	if err := checkoutPage(vm).Render(ctx, &body); err != nil {
+		return "", err
+	}
+
+	return body.String(), nil
+}
+
+func lineTotalCents(line cartLineView) int {
+	return line.Product.PriceCents * line.Quantity
+}
+
+func subtotalCents(lines []cartLineView) int {
+	total := 0
+	for _, line := range lines {
+		total += lineTotalCents(line)
+	}
+
+	return total
+}
+
+func cartQuantityLimit(product catalog.Product) int {
+	return min(product.StockQuantity, cart.MaxQuantity)
 }
 
 func (h *Handler) loadActiveCategories(ctx context.Context) ([]catalog.Category, error) {
@@ -366,17 +834,6 @@ func formatPrice(priceCents int) string {
 	}
 
 	return "$" + strconv.Itoa(priceCents/100) + "." + twoDigitCents(priceCents%100)
-}
-
-func heroImageURL(products []catalog.Product, fallback string) string {
-	for _, product := range products {
-		imageURL := product.DisplayImageURL(fallback)
-		if imageURL != "" {
-			return imageURL
-		}
-	}
-
-	return catalog.Product{}.DisplayImageURL(fallback)
 }
 
 func twoDigitCents(cents int) string {
@@ -407,6 +864,10 @@ func requestPath(request events.APIGatewayV2HTTPRequest) string {
 }
 
 func htmlResponse(statusCode int, body string, extraHeaders map[string]string) events.APIGatewayV2HTTPResponse {
+	return htmlResponseWithCookies(statusCode, body, extraHeaders, nil)
+}
+
+func htmlResponseWithCookies(statusCode int, body string, extraHeaders map[string]string, cookies []string) events.APIGatewayV2HTTPResponse {
 	headers := map[string]string{
 		"Content-Type": htmlContentType,
 	}
@@ -416,5 +877,6 @@ func htmlResponse(statusCode int, body string, extraHeaders map[string]string) e
 		StatusCode: statusCode,
 		Headers:    headers,
 		Body:       body,
+		Cookies:    cookies,
 	}
 }

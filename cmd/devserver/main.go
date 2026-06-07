@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -63,10 +64,19 @@ func envOrDefault(name string, fallback string) string {
 }
 
 func handleSSR(handler *ssr.Handler, responseWriter http.ResponseWriter, request *http.Request) {
+	body, err := io.ReadAll(request.Body)
+	if err != nil {
+		http.Error(responseWriter, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
 	apiResponse, err := handler.Handle(request.Context(), events.APIGatewayV2HTTPRequest{
 		RawPath:               request.URL.Path,
 		RawQueryString:        request.URL.RawQuery,
 		Headers:               requestHeaders(request),
+		Cookies:               requestCookies(request),
+		Body:                  string(body),
+		IsBase64Encoded:       false,
 		QueryStringParameters: queryParameters(request),
 		RequestContext: events.APIGatewayV2HTTPRequestContext{
 			HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
@@ -82,6 +92,9 @@ func handleSSR(handler *ssr.Handler, responseWriter http.ResponseWriter, request
 
 	for key, value := range apiResponse.Headers {
 		responseWriter.Header().Set(key, value)
+	}
+	for _, cookie := range apiResponse.Cookies {
+		responseWriter.Header().Add("Set-Cookie", cookie)
 	}
 	responseWriter.WriteHeader(apiResponse.StatusCode)
 	if request.Method != http.MethodHead {
@@ -99,7 +112,19 @@ func requestHeaders(request *http.Request) map[string]string {
 	if hxRequest := request.Header.Get("HX-Request"); hxRequest != "" {
 		headers["HX-Request"] = hxRequest
 	}
+	if contentType := request.Header.Get("Content-Type"); contentType != "" {
+		headers["content-type"] = contentType
+	}
 	return headers
+}
+
+func requestCookies(request *http.Request) []string {
+	cookies := request.Cookies()
+	values := make([]string, 0, len(cookies))
+	for _, cookie := range cookies {
+		values = append(values, cookie.Name+"="+cookie.Value)
+	}
+	return values
 }
 
 func queryParameters(request *http.Request) map[string]string {

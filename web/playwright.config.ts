@@ -18,6 +18,7 @@ export default defineConfig({
     cwd: '..',
     env: {
       CATALOG_DEMO_STORE: '1',
+      CART_COOKIE_SECRET: 'playwright-cart-cookie-secret',
     },
     url: 'http://127.0.0.1:8080/',
     reuseExistingServer: !process.env.CI,

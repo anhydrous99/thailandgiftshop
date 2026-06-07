@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 
+	cartsession "github.com/anhydrous99/thailandgiftshop/internal/cart"
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsapigatewayv2"
@@ -17,6 +18,7 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsroute53targets"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awss3"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awss3deployment"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awssecretsmanager"
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
 )
@@ -135,6 +137,7 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable) awsapigatewayv2
 		LogGroupName: jsii.String("/aws/lambda/thailandgiftshop-ssr"),
 		Retention:    awslogs.RetentionDays_THREE_MONTHS,
 	})
+	cartCookieSecret := addCartCookieSecret(stack)
 
 	ssrFunction := awslambda.NewFunction(stack, jsii.String("SsrLambda"), &awslambda.FunctionProps{
 		Architecture: awslambda.Architecture_ARM_64(),
@@ -153,6 +156,7 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable) awsapigatewayv2
 			catalog.EnvPublicIndexName:            jsii.String(catalog.DefaultPublicIndexName),
 			catalog.EnvRecentIndexName:            jsii.String(catalog.DefaultRecentIndexName),
 			catalog.EnvProductImagePlaceholderURL: jsii.String(catalog.DefaultProductImagePlaceholderURL),
+			cartsession.EnvCookieSecret:           cartCookieSecretReference(cartCookieSecret),
 		},
 		FunctionName: jsii.String("thailandgiftshop-ssr"),
 		Handler:      jsii.String("bootstrap"),
@@ -205,6 +209,23 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable) awsapigatewayv2
 	})
 
 	return httpAPI
+}
+
+func addCartCookieSecret(stack awscdk.Stack) awssecretsmanager.Secret {
+	return awssecretsmanager.NewSecret(stack, jsii.String("CartCookieSecret"), &awssecretsmanager.SecretProps{
+		Description: jsii.String("Signing secret for thailandgiftshop.com cart cookies"),
+		GenerateSecretString: &awssecretsmanager.SecretStringGenerator{
+			ExcludePunctuation: jsii.Bool(true),
+			PasswordLength:     jsii.Number(64),
+		},
+	})
+}
+
+func cartCookieSecretReference(secret awssecretsmanager.ISecret) *string {
+	return awscdk.NewCfnDynamicReference(
+		awscdk.CfnDynamicReferenceService_SECRETS_MANAGER,
+		secret.CfnDynamicReferenceKey(nil),
+	).ToString()
 }
 
 func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi) {

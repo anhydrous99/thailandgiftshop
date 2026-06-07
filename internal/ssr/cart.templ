@@ -1,0 +1,76 @@
+package ssr
+
+import "strconv"
+
+templ cartPage(vm cartPageViewModel) {
+	<!DOCTYPE html>
+	<html lang="en" class="scroll-smooth">
+		@siteHead("Cart | Thailand Gift Shop")
+		<body class="min-h-screen bg-[#F8F4EE] text-[#17172A] antialiased">
+			@siteHeader("page", vm.HeaderCartLabel)
+			<main>
+				<section class="border-b border-[#2D2A4A]/10 bg-white px-5 py-14 sm:px-8 lg:py-18">
+					<div class="mx-auto w-full max-w-7xl">
+						<p class="text-sm font-black uppercase tracking-wide text-[#A51931]">Gift bag</p>
+						<h1 class="mt-3 text-5xl font-black leading-none text-[#2D2A4A] sm:text-6xl">Cart</h1>
+						<p class="mt-5 max-w-3xl text-lg leading-8 text-[#4C4A62]">Review quantities for your Thai gift-shop finds before checkout review.</p>
+					</div>
+				</section>
+				<section class="mx-auto w-full max-w-7xl px-5 py-14 sm:px-8 lg:py-20">
+					if len(vm.Lines) == 0 {
+						<section class="rounded-lg border border-dashed border-[#2D2A4A]/25 bg-white p-8 text-center shadow-sm">
+							<h2 class="text-xl font-bold text-[#2D2A4A]">Your cart is empty.</h2>
+							<p class="mt-2 text-sm leading-6 text-[#4C4A62]">Browse the latest Thai snacks, souvenirs, pantry favorites, and small keepsakes to start a gift bag.</p>
+							<a href="/products" class="mt-6 inline-flex h-12 items-center justify-center rounded-full bg-[#A51931] px-6 text-sm font-black text-white shadow-sm transition hover:bg-[#831426] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2D2A4A]">Continue shopping</a>
+						</section>
+					} else {
+						<div class="grid gap-8 lg:grid-cols-[1fr_22rem] lg:items-start">
+							<section aria-label="Cart line items" class="grid gap-4">
+								for _, line := range vm.Lines {
+									<article data-testid="cart-line-item" class="grid gap-4 rounded-lg border border-[#2D2A4A]/15 bg-white p-4 shadow-sm sm:grid-cols-[9rem_1fr] sm:p-5">
+										<img class="aspect-[4/3] w-full rounded-md bg-[#F4F5F8] object-cover" src={ line.Product.DisplayImageURL(vm.ProductImagePlaceholderURL) } alt={ line.Product.Name } loading="lazy"/>
+										<div class="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-start">
+											<div>
+												<a href={ "/products/" + line.Product.Slug } class="text-xl font-black leading-7 text-[#2D2A4A] transition hover:text-[#A51931]">{ line.Product.Name }</a>
+												<p class="mt-2 text-sm leading-6 text-[#4C4A62]">Unit price <span class="font-black text-[#A51931]">{ formatPrice(line.Product.PriceCents) }</span></p>
+												<p class="mt-1 text-sm leading-6 text-[#4C4A62]">Line total <span class="font-black text-[#2D2A4A]">{ formatPrice(lineTotalCents(line)) }</span></p>
+											</div>
+											<div class="grid gap-3 sm:min-w-48">
+												<form method="post" action={ "/cart/items/" + line.Product.Slug + "/quantity" } class="flex items-end gap-2">
+													<label class="grid gap-1 text-xs font-black uppercase tracking-wide text-[#4C4A62]">
+														Quantity
+														<input name="quantity" type="number" min="1" max={ strconv.Itoa(cartQuantityLimit(line.Product)) } value={ strconv.Itoa(line.Quantity) } class="h-11 w-24 rounded-full border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-sm font-black text-[#2D2A4A] focus:border-[#A51931] focus:outline-none"/>
+													</label>
+													<button type="submit" class="inline-flex h-11 items-center justify-center rounded-full bg-[#2D2A4A] px-4 text-sm font-black text-white shadow-sm transition hover:bg-[#17172A] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#A51931]">Update</button>
+												</form>
+												<form method="post" action={ "/cart/items/" + line.Product.Slug + "/remove" }>
+													<button type="submit" class="text-sm font-black text-[#A51931] transition hover:text-[#831426]">Remove</button>
+												</form>
+											</div>
+										</div>
+									</article>
+								}
+							</section>
+							<aside class="rounded-lg border border-[#2D2A4A]/15 bg-white p-6 shadow-sm">
+								<p class="text-sm font-black uppercase tracking-wide text-[#A51931]">Order summary</p>
+								<div class="mt-5 flex items-center justify-between border-t border-[#2D2A4A]/10 pt-5">
+									<p class="text-base font-black text-[#2D2A4A]">Subtotal</p>
+									<p class="text-2xl font-black text-[#A51931]">{ formatPrice(subtotalCents(vm.Lines)) }</p>
+								</div>
+								<p class="mt-3 text-sm leading-6 text-[#4C4A62]">Shipping, tax, and payment are not collected on this review-only checkout flow.</p>
+								<div class="mt-6 grid gap-3">
+									<a href="/checkout" class="inline-flex h-12 items-center justify-center rounded-full bg-[#A51931] px-6 text-sm font-black text-white shadow-sm transition hover:bg-[#831426] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2D2A4A]">Review checkout</a>
+									<a href="/products" class="inline-flex h-12 items-center justify-center rounded-full border border-[#2D2A4A]/20 bg-[#F8F4EE] px-6 text-sm font-black text-[#2D2A4A] transition hover:border-[#A51931]/40">Continue shopping</a>
+									<form method="post" action="/cart/clear">
+										<button type="submit" class="inline-flex h-12 w-full items-center justify-center rounded-full border border-[#A51931]/30 bg-white px-6 text-sm font-black text-[#A51931] transition hover:bg-[#A51931]/10">Clear cart</button>
+									</form>
+								</div>
+							</aside>
+						</div>
+					}
+				</section>
+			</main>
+			@siteFooter(vm.HeaderCartLabel)
+		</body>
+	</html>
+}

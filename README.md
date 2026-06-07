@@ -43,6 +43,8 @@ AWS_PROFILE=default AWS_REGION=us-east-1 CATALOG_TABLE_NAME=thailandgiftshop-cat
 
 `CATALOG_SLUG_INDEX_NAME`, `CATALOG_PUBLIC_INDEX_NAME`, and `CATALOG_RECENT_INDEX_NAME` default to `slug-index`, `public-index`, and `recent-index`, which match the CDK-provisioned table. The Home page displays latest active products from the recent index, and product cards use `image_url` from DynamoDB, falling back to `PRODUCT_IMAGE_PLACEHOLDER_URL` or `/images/placeholder-product.jpg` when the field is empty.
 
+Set `CART_COOKIE_SECRET` to a stable local-only value when exercising cart cookies locally. Production receives this value from a CDK-managed generated Secrets Manager secret, so no production cookie signing secret is stored in this repository.
+
 ## Seed Catalog
 
 Seed the deployed DynamoDB catalog with demo categories, products, and category-product rows:

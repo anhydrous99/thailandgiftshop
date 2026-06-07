@@ -11,11 +11,14 @@ templ productCard(product catalog.Product, productImagePlaceholderURL string) {
 				<p class="shrink-0 rounded-full bg-[#F4F5F8] px-3 py-1 text-sm font-black text-[#A51931]">{ formatPrice(product.PriceCents) }</p>
 			</div>
 			<p class="mt-3 line-clamp-3 text-sm leading-6 text-[#4C4A62]">{ product.Description }</p>
-			if product.OutOfStock() {
-				<p class="mt-4 inline-flex rounded-full bg-[#A51931]/10 px-3 py-1 text-xs font-black text-[#A51931]">Out of stock</p>
-			} else {
-				<p class="mt-4 inline-flex rounded-full bg-[#2D2A4A]/10 px-3 py-1 text-xs font-black text-[#2D2A4A]">In stock</p>
-			}
+			<div class="mt-4 flex items-center justify-between gap-3">
+				if product.OutOfStock() {
+					<p class="inline-flex rounded-full bg-[#A51931]/10 px-3 py-1 text-xs font-black text-[#A51931]">Out of stock</p>
+				} else {
+					<p class="inline-flex rounded-full bg-[#2D2A4A]/10 px-3 py-1 text-xs font-black text-[#2D2A4A]">In stock</p>
+				}
+				<span class="text-sm font-black text-[#A51931] transition group-hover:text-[#831426]">View details</span>
+			</div>
 		</div>
 	</a>
 }

@@ -1,6 +1,15 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
-test('home page assets, nav anchors, and product image route work end-to-end', async ({ page }) => {
+const excludedControlNames = ['Account', 'Search', 'Filter', 'Sort'];
+
+async function expectExcludedControlsAbsent(page: Page) {
+  for (const name of excludedControlNames) {
+    await expect(page.getByRole('link', { name, exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0);
+  }
+}
+
+test('home page assets, nav anchors, cart link, and aisle category route work end-to-end', async ({ page }) => {
   const htmxResponsePromise = page.waitForResponse((response) =>
     response.url().endsWith('/static/vendor/htmx.min.js') && response.status() === 200,
   );
@@ -26,17 +35,25 @@ test('home page assets, nav anchors, and product image route work end-to-end', a
   expect(heroResponse.status()).toBe(200);
   expect(heroResponse.headers()['content-type']).toContain('image/png');
 
-  await expect(page.getByRole('navigation', { name: 'Main navigation' })).toBeVisible();
-  await expect(page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: 'Thailand Gift Shop home' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Latest', exact: true })).toHaveAttribute('href', '#latest');
-  await expect(page.getByRole('link', { name: 'Aisles', exact: true })).toHaveAttribute('href', '#shop-aisles');
-  await expect(page.getByRole('link', { name: 'Categories', exact: true })).toHaveAttribute('href', '#categories');
-  await expect(page.getByRole('link', { name: 'Story', exact: true })).toHaveAttribute('href', '#story');
+  const mainNavigation = page.getByRole('navigation', { name: 'Main navigation' });
+  await expect(mainNavigation).toBeVisible();
+  await expect(mainNavigation.getByRole('link', { name: 'Thailand Gift Shop home' })).toBeVisible();
+  await expect(mainNavigation.getByRole('link', { name: 'Products', exact: true })).toHaveAttribute('href', '/products');
+  await expect(mainNavigation.getByRole('link', { name: 'Aisles', exact: true })).toHaveAttribute('href', '#shop-aisles');
+  await expect(mainNavigation.getByRole('link', { name: 'Categories', exact: true })).toHaveAttribute('href', '#categories');
+  await expect(mainNavigation.getByRole('link', { name: 'Story', exact: true })).toHaveAttribute('href', '#story');
+  await expect(mainNavigation.getByRole('link', { name: 'Cart', exact: true })).toHaveAttribute('href', '/cart');
   await expect(page.getByRole('heading', { name: 'Thailand Gift Shop', level: 1 })).toBeVisible();
   await expect(page.getByText('Bangkok gift shop online')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Latest products' })).toBeVisible();
   await expect(page.getByRole('link', { name: /Elephant Cotton Pouches/ })).toBeVisible();
-  await expect(page.getByRole('link', { name: /Bangkok Market Finds/ })).toBeVisible();
+  const marketFindsAisle = page.getByTestId('home-aisle-card').filter({ hasText: 'Bangkok Market Finds' });
+  await expect(marketFindsAisle).toBeVisible();
+  await expectExcludedControlsAbsent(page);
+
+  await marketFindsAisle.click();
+  await expect(page).toHaveURL(/\/categories\/market-finds$/);
+  await expect(page.getByRole('heading', { name: 'Bangkok Market Finds', level: 1 })).toBeVisible();
 });
 
 test.describe('without JavaScript', () => {
@@ -54,5 +71,7 @@ test.describe('without JavaScript', () => {
     await expect(page.getByText('Bangkok gift shop online')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Latest products' })).toBeVisible();
     await expect(page.getByRole('link', { name: /Elephant Cotton Pouches/ })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Cart', exact: true }).first()).toBeVisible();
+    await expectExcludedControlsAbsent(page);
   });
 });

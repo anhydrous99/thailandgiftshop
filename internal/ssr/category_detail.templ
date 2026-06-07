@@ -5,7 +5,7 @@ templ categoryDetailPage(vm categoryDetailPageViewModel) {
 	<html lang="en" class="scroll-smooth">
 		@siteHead(vm.Category.Name + " | Thailand Gift Shop")
 		<body class="min-h-screen bg-[#F8F4EE] text-[#17172A] antialiased">
-			@siteHeader("page")
+			@siteHeader("page", vm.HeaderCartLabel)
 			<main>
 				<section class="border-b border-[#2D2A4A]/10 bg-white px-5 py-14 sm:px-8 lg:py-18">
 					<div class="mx-auto w-full max-w-7xl">
@@ -29,7 +29,7 @@ templ categoryDetailPage(vm categoryDetailPageViewModel) {
 					}
 				</section>
 			</main>
-			@siteFooter()
+			@siteFooter(vm.HeaderCartLabel)
 		</body>
 	</html>
 }

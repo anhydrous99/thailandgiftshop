@@ -3,6 +3,7 @@ package main
 import (
 	"testing"
 
+	cartsession "github.com/anhydrous99/thailandgiftshop/internal/cart"
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/assertions"
@@ -90,6 +91,30 @@ func TestStackIncludesObservabilityResources(t *testing.T) {
 		},
 		"DefaultRouteSettings": map[string]interface{}{
 			"DetailedMetricsEnabled": true,
+		},
+	})
+}
+
+func TestStackIncludesSsrCartCookieSecret(t *testing.T) {
+	defer jsii.Close()
+
+	app := awscdk.NewApp(nil)
+	stack := NewThailandGiftshopStack(app, "TestStack", nil)
+	template := assertions.Template_FromStack(stack, nil)
+
+	template.HasResourceProperties(jsii.String("AWS::SecretsManager::Secret"), map[string]interface{}{
+		"Description": "Signing secret for thailandgiftshop.com cart cookies",
+		"GenerateSecretString": map[string]interface{}{
+			"ExcludePunctuation": true,
+			"PasswordLength":     64,
+		},
+	})
+	template.HasResourceProperties(jsii.String("AWS::Lambda::Function"), map[string]interface{}{
+		"FunctionName": "thailandgiftshop-ssr",
+		"Environment": map[string]interface{}{
+			"Variables": assertions.Match_ObjectLike(&map[string]interface{}{
+				cartsession.EnvCookieSecret: assertions.Match_AnyValue(),
+			}),
 		},
 	})
 }
@@ -219,6 +244,7 @@ func TestStackIncludesCatalogResources(t *testing.T) {
 				"CATALOG_PUBLIC_INDEX_NAME":     "public-index",
 				"CATALOG_RECENT_INDEX_NAME":     "recent-index",
 				"PRODUCT_IMAGE_PLACEHOLDER_URL": catalog.DefaultProductImagePlaceholderURL,
+				cartsession.EnvCookieSecret:     assertions.Match_AnyValue(),
 			},
 		},
 	})

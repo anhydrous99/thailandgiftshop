@@ -41,7 +41,7 @@ func categoryDetailPage(vm categoryDetailPageViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = siteHeader("page").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = siteHeader("page", vm.HeaderCartLabel).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -100,7 +100,7 @@ func categoryDetailPage(vm categoryDetailPageViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = siteFooter().Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = siteFooter(vm.HeaderCartLabel).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

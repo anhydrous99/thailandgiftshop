@@ -8,27 +8,35 @@ var (
 	_ = categoryIndexPageViewModel{}
 	_ = categoryDetailPageViewModel{}
 	_ = storyPageViewModel{}
+	_ = cartPageViewModel{}
+	_ = checkoutPageViewModel{}
 )
 
 type homePageViewModel struct {
 	Products                   []catalog.Product
 	Categories                 []catalog.Category
+	FeaturedCategories         []catalog.Category
 	ProductImagePlaceholderURL string
+	HeaderCartLabel            string
 }
 
 type productListingPageViewModel struct {
 	Products                   []catalog.Product
 	Categories                 []catalog.Category
 	ProductImagePlaceholderURL string
+	HeaderCartLabel            string
 }
 
 type productDetailPageViewModel struct {
 	Product                    catalog.Product
+	Categories                 []catalog.Category
 	ProductImagePlaceholderURL string
+	HeaderCartLabel            string
 }
 
 type categoryIndexPageViewModel struct {
-	Categories []catalog.Category
+	Categories      []catalog.Category
+	HeaderCartLabel string
 }
 
 type categoryDetailPageViewModel struct {
@@ -36,6 +44,21 @@ type categoryDetailPageViewModel struct {
 	Categories                 []catalog.Category
 	Products                   []catalog.Product
 	ProductImagePlaceholderURL string
+	HeaderCartLabel            string
 }
 
-type storyPageViewModel struct{}
+type storyPageViewModel struct {
+	HeaderCartLabel string
+}
+
+type cartPageViewModel struct {
+	Lines                      []cartLineView
+	ProductImagePlaceholderURL string
+	HeaderCartLabel            string
+}
+
+type checkoutPageViewModel struct {
+	Lines                      []cartLineView
+	ProductImagePlaceholderURL string
+	HeaderCartLabel            string
+}

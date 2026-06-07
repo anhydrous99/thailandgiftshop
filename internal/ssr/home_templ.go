@@ -8,6 +8,8 @@ package ssr
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
+import "github.com/anhydrous99/thailandgiftshop/internal/catalog"
+
 func home(vm homePageViewModel) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -41,7 +43,7 @@ func home(vm homePageViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = siteHeader("home").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = siteHeader("home", vm.HeaderCartLabel).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -50,7 +52,7 @@ func home(vm homePageViewModel) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if len(vm.Products) == 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<section class=\"rounded-lg border border-dashed border-[#2D2A4A]/25 bg-white p-8 text-center shadow-sm\"><h2 class=\"text-xl font-bold text-[#2D2A4A]\">No products are available yet.</h2><p class=\"mt-2 text-sm leading-6 text-[#4C4A62]\">Seed or publish catalog products to show them here.</p></section>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<section class=\"rounded-lg border border-dashed border-[#2D2A4A]/25 bg-white p-8 text-center shadow-sm\"><h2 class=\"text-xl font-bold text-[#2D2A4A]\">No products are available yet.</h2><p class=\"mt-2 text-sm leading-6 text-[#4C4A62]\">Check back soon for Thai gift-shop finds.</p></section>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -70,17 +72,34 @@ func home(vm homePageViewModel) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</section><section id=\"shop-aisles\" class=\"bg-white py-14 lg:py-20\"><div class=\"mx-auto w-full max-w-7xl px-5 sm:px-8\"><div class=\"grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-start\"><div><p class=\"text-sm font-black uppercase tracking-wide text-[#A51931]\">Shop aisles</p><h2 class=\"mt-2 text-3xl font-black text-[#2D2A4A] sm:text-4xl\">Browse like you are at a Bangkok gift shop.</h2><p class=\"mt-4 text-base leading-7 text-[#4C4A62]\">Move through familiar shelves of snacks, souvenirs, textiles, decor, and wellness finds.</p></div><div class=\"grid gap-4 sm:grid-cols-3\"><a href=\"#latest\" class=\"group overflow-hidden rounded-lg border border-[#2D2A4A]/15 bg-[#F8F4EE] text-[#17172A] shadow-sm transition hover:-translate-y-1 hover:border-[#A51931]/30 hover:shadow-md\"><span aria-hidden=\"true\" class=\"block h-1.5 bg-[#A51931]\"></span> <span class=\"block p-5\"><span class=\"block text-lg font-black text-[#2D2A4A]\">Snacks & Sweets</span> <span class=\"mt-3 block text-sm leading-6 text-[#4C4A62]\">Thai tea, coconut treats, curry pantry picks, sauces, and snackable tasting flights.</span></span></a> <a href=\"#latest\" class=\"group overflow-hidden rounded-lg border border-[#2D2A4A]/15 bg-[#F8F4EE] text-[#17172A] shadow-sm transition hover:-translate-y-1 hover:border-[#2D2A4A]/30 hover:shadow-md\"><span aria-hidden=\"true\" class=\"block h-1.5 bg-[#2D2A4A]\"></span> <span class=\"block p-5\"><span class=\"block text-lg font-black text-[#2D2A4A]\">Souvenirs & Keepsakes</span> <span class=\"mt-3 block text-sm leading-6 text-[#4C4A62]\">Magnets, carvings, pouches, bells, and shelf-size mementos.</span></span></a> <a href=\"#latest\" class=\"group overflow-hidden rounded-lg border border-[#2D2A4A]/15 bg-[#F8F4EE] text-[#17172A] shadow-sm transition hover:-translate-y-1 hover:border-[#D8AE5E]/50 hover:shadow-md\"><span aria-hidden=\"true\" class=\"block h-1.5 bg-[#D8AE5E]\"></span> <span class=\"block p-5\"><span class=\"block text-lg font-black text-[#2D2A4A]\">Home & Wellness</span> <span class=\"mt-3 block text-sm leading-6 text-[#4C4A62]\">Candles, cups, lemongrass, jasmine, textiles, and compact home accents.</span></span></a></div></div></div></section><section id=\"categories\" class=\"mx-auto w-full max-w-7xl px-5 py-14 sm:px-8 lg:py-20\"><div class=\"mb-8 max-w-3xl\"><p class=\"text-sm font-black uppercase tracking-wide text-[#A51931]\">Shop categories</p><h2 class=\"mt-2 text-3xl font-black text-[#2D2A4A] sm:text-4xl\">Clear categories for Thai gift-shop finds.</h2></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</section><section id=\"shop-aisles\" class=\"bg-white py-14 lg:py-20\"><div class=\"mx-auto w-full max-w-7xl px-5 sm:px-8\"><div class=\"grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-start\"><div><p class=\"text-sm font-black uppercase tracking-wide text-[#A51931]\">Shop aisles</p><h2 class=\"mt-2 text-3xl font-black text-[#2D2A4A] sm:text-4xl\">Browse like you are at a Bangkok gift shop.</h2><p class=\"mt-4 text-base leading-7 text-[#4C4A62]\">Move through familiar shelves of snacks, souvenirs, textiles, decor, and wellness finds.</p></div><div class=\"grid gap-4 sm:grid-cols-3\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if len(vm.Categories) == 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<section class=\"rounded-lg border border-dashed border-[#2D2A4A]/25 bg-white p-8 text-center shadow-sm\"><h2 class=\"text-xl font-bold text-[#2D2A4A]\">No categories are available yet.</h2><p class=\"mt-2 text-sm leading-6 text-[#4C4A62]\">Seed or publish catalog categories to show them here.</p></section>")
+		if len(vm.FeaturedCategories) == 0 {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<section class=\"rounded-lg border border-dashed border-[#2D2A4A]/25 bg-[#F8F4EE] p-5 text-[#17172A] shadow-sm sm:col-span-3\"><h3 class=\"text-lg font-black text-[#2D2A4A]\">Aisles are being prepared.</h3><p class=\"mt-3 text-sm leading-6 text-[#4C4A62]\">Check back soon for active Thai gift-shop categories.</p></section>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<div class=\"grid gap-4 sm:grid-cols-2 lg:grid-cols-4\">")
+			for _, category := range vm.FeaturedCategories {
+				templ_7745c5c3_Err = homeAisleCard(category).Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</div></div></div></section><section id=\"categories\" class=\"mx-auto w-full max-w-7xl px-5 py-14 sm:px-8 lg:py-20\"><div class=\"mb-8 max-w-3xl\"><p class=\"text-sm font-black uppercase tracking-wide text-[#A51931]\">Shop categories</p><h2 class=\"mt-2 text-3xl font-black text-[#2D2A4A] sm:text-4xl\">Clear categories for Thai gift-shop finds.</h2></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if len(vm.Categories) == 0 {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<section class=\"rounded-lg border border-dashed border-[#2D2A4A]/25 bg-white p-8 text-center shadow-sm\"><h2 class=\"text-xl font-bold text-[#2D2A4A]\">No categories are available yet.</h2><p class=\"mt-2 text-sm leading-6 text-[#4C4A62]\">Check back soon for more Thai gift-shop aisles.</p></section>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<div class=\"grid gap-4 sm:grid-cols-2 lg:grid-cols-4\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -90,20 +109,88 @@ func home(vm homePageViewModel) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</section><section id=\"story\" class=\"border-y border-[#2D2A4A]/10 bg-[#2D2A4A] py-14 text-white lg:py-20\"><div class=\"mx-auto grid w-full max-w-7xl gap-8 px-5 sm:px-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-center\"><div><p class=\"text-sm font-black uppercase tracking-wide text-[#F4F5F8]\">Gift shop point of view</p><h2 class=\"mt-2 text-3xl font-black sm:text-4xl\">An online Thai gift shop shaped by Bangkok color, craft, flavor, and easy browsing.</h2></div><div class=\"border-l-4 border-[#A51931] pl-5\"><p class=\"text-base leading-8 text-white/80\">Every section is built to move shoppers quickly from aisle to product: clear categories, strong imagery, concise details, and a brand system grounded in the Thai flag.</p></div></div></section></main>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</section><section id=\"story\" class=\"border-y border-[#2D2A4A]/10 bg-[#2D2A4A] py-14 text-white lg:py-20\"><div class=\"mx-auto grid w-full max-w-7xl gap-8 px-5 sm:px-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-center\"><div><p class=\"text-sm font-black uppercase tracking-wide text-[#F4F5F8]\">Gift shop point of view</p><h2 class=\"mt-2 text-3xl font-black sm:text-4xl\">An online Thai gift shop shaped by Bangkok color, craft, flavor, and easy browsing.</h2></div><div class=\"border-l-4 border-[#A51931] pl-5\"><p class=\"text-base leading-8 text-white/80\">Every section is built to move shoppers quickly from aisle to product: clear categories, strong imagery, concise details, and a brand system grounded in the Thai flag.</p></div></div></section></main>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = siteFooter().Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = siteFooter(vm.HeaderCartLabel).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</body></html>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+func homeAisleCard(category catalog.Category) templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var2 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var2 == nil {
+			templ_7745c5c3_Var2 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<a data-testid=\"home-aisle-card\" href=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var3 templ.SafeURL
+		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinURLErrs("/categories/" + category.Slug)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/home.templ`, Line: 114, Col: 71}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "\" class=\"group overflow-hidden rounded-lg border border-[#2D2A4A]/15 bg-[#F8F4EE] text-[#17172A] shadow-sm transition hover:-translate-y-1 hover:border-[#A51931]/30 hover:shadow-md\"><span aria-hidden=\"true\" class=\"block h-1.5 bg-[#A51931]\"></span> <span class=\"block p-5\"><span class=\"block text-lg font-black text-[#2D2A4A]\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var4 string
+		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(category.Name)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/home.templ`, Line: 117, Col: 72}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</span> <span class=\"mt-3 block text-sm leading-6 text-[#4C4A62]\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var5 string
+		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(category.Description)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/home.templ`, Line: 118, Col: 83}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</span></span></a>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
