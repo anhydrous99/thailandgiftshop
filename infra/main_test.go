@@ -50,18 +50,13 @@ func TestStackIncludesObservabilityResources(t *testing.T) {
 	stack := NewThailandGiftshopStack(app, "TestStack", nil)
 	template := assertions.Template_FromStack(stack, nil)
 
-	template.ResourceCountIs(jsii.String("AWS::Logs::LogGroup"), jsii.Number(4))
+	template.ResourceCountIs(jsii.String("AWS::Logs::LogGroup"), jsii.Number(3))
 	template.AllResourcesProperties(jsii.String("AWS::Logs::LogGroup"), map[string]any{
 		"RetentionInDays": 90,
 	})
 
 	template.HasResourceProperties(jsii.String("AWS::Logs::LogGroup"), map[string]any{
 		"LogGroupName":    "/aws/lambda/thailandgiftshop-ssr",
-		"RetentionInDays": 90,
-	})
-
-	template.HasResourceProperties(jsii.String("AWS::Logs::LogGroup"), map[string]any{
-		"LogGroupName":    "/aws/lambda/thailandgiftshop-admin",
 		"RetentionInDays": 90,
 	})
 
@@ -74,6 +69,15 @@ func TestStackIncludesObservabilityResources(t *testing.T) {
 		"LogGroupName":    "/aws/lambda/thailandgiftshop-static-assets-deployment",
 		"RetentionInDays": 90,
 	})
+	template.HasResourceProperties(jsii.String("Custom::LogRetention"), map[string]any{
+		"LogGroupName":    adminLambdaLogGroupName,
+		"RetentionInDays": 90,
+	})
+
+	templateJSON := template.ToJSON()
+	if managedLogGroupExists(t, templateJSON, adminLambdaLogGroupName) {
+		t.Fatalf("%s must be imported instead of managed as AWS::Logs::LogGroup to avoid CloudFormation collisions with existing Lambda log groups", adminLambdaLogGroupName)
+	}
 
 	template.HasResourceProperties(jsii.String("AWS::Lambda::Function"), map[string]any{
 		"FunctionName": "thailandgiftshop-ssr",
@@ -153,14 +157,9 @@ func TestStackIncludesAdminLambdaRoutesAndScopedPermissions(t *testing.T) {
 	stack := NewThailandGiftshopStack(app, "TestStack", nil)
 	template := assertions.Template_FromStack(stack, nil)
 
-	template.ResourceCountIs(jsii.String("AWS::Lambda::Function"), jsii.Number(3))
 	template.ResourceCountIs(jsii.String("AWS::ApiGatewayV2::Route"), jsii.Number(3))
 	template.ResourceCountIs(jsii.String("AWS::ApiGatewayV2::Integration"), jsii.Number(2))
 
-	template.HasResourceProperties(jsii.String("AWS::Logs::LogGroup"), map[string]any{
-		"LogGroupName":    "/aws/lambda/thailandgiftshop-admin",
-		"RetentionInDays": 90,
-	})
 	template.HasResourceProperties(jsii.String("AWS::Lambda::Function"), map[string]any{
 		"FunctionName": "thailandgiftshop-admin",
 		"Environment": map[string]any{
@@ -177,6 +176,9 @@ func TestStackIncludesAdminLambdaRoutesAndScopedPermissions(t *testing.T) {
 			},
 		},
 		"Handler": "bootstrap",
+		"LoggingConfig": map[string]any{
+			"LogGroup": adminLambdaLogGroupName,
+		},
 		"Runtime": "provided.al2023",
 		"TracingConfig": map[string]any{
 			"Mode": "Active",
@@ -1126,6 +1128,23 @@ func templateResources(t *testing.T, templateJSON *map[string]any) map[string]an
 	}
 
 	return resources
+}
+
+func managedLogGroupExists(t *testing.T, templateJSON *map[string]any, logGroupName string) bool {
+	t.Helper()
+
+	for _, resource := range templateResources(t, templateJSON) {
+		resourceMap := asStringMap(t, resource)
+		if resourceMap["Type"] != "AWS::Logs::LogGroup" {
+			continue
+		}
+		properties := asStringMap(t, resourceMap["Properties"])
+		if properties["LogGroupName"] == logGroupName {
+			return true
+		}
+	}
+
+	return false
 }
 
 func lambdaRoleID(t *testing.T, resources map[string]any, functionName string) string {

@@ -44,6 +44,7 @@ const (
 	staticAssetsKeyPrefix       = "static"
 	productImagesKeyPrefix      = "images"
 	adminCredentialsSecretName  = "thailandgiftshop/admin/credentials"
+	adminLambdaLogGroupName     = "/aws/lambda/thailandgiftshop-admin"
 	adminLoginAttemptsTableName = "thailandgiftshop-admin-login-attempts"
 	adminLoginAttemptsPKName    = "client_key"
 	adminLoginAttemptsTTLName   = "expires_at"
@@ -268,9 +269,11 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, productImagesBu
 }
 
 func addAdmin(stack awscdk.Stack, catalogTable awsdynamodb.ITable, productImagesBucket awss3.IBucket, adminLoginAttemptsTable awsdynamodb.ITable, adminOriginHeaderSecret awssecretsmanager.ISecret, httpAPI awsapigatewayv2.HttpApi) []awsapigatewayv2.HttpRoute {
-	lambdaLogGroup := awslogs.NewLogGroup(stack, jsii.String("AdminLambdaLogGroup"), &awslogs.LogGroupProps{
-		LogGroupName: jsii.String("/aws/lambda/thailandgiftshop-admin"),
-		Retention:    awslogs.RetentionDays_THREE_MONTHS,
+	lambdaLogGroup := awslogs.LogGroup_FromLogGroupName(stack, jsii.String("AdminLambdaLogGroup"), jsii.String(adminLambdaLogGroupName))
+	awslogs.NewLogRetention(stack, jsii.String("AdminLambdaLogRetention"), &awslogs.LogRetentionProps{
+		LogGroupName:  jsii.String(adminLambdaLogGroupName),
+		RemovalPolicy: awscdk.RemovalPolicy_RETAIN,
+		Retention:     awslogs.RetentionDays_THREE_MONTHS,
 	})
 
 	adminFunction := awslambda.NewFunction(stack, jsii.String("AdminLambda"), &awslambda.FunctionProps{
