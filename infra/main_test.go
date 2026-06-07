@@ -753,10 +753,10 @@ func TestStackIncludesStaticAssetsDistribution(t *testing.T) {
 				"HeaderBehavior": "whitelist",
 				"Headers": assertions.Match_ArrayWith(&[]any{
 					"CloudFront-Viewer-Address",
+					"CloudFront-Forwarded-Proto",
 					"Content-Type",
 					"HX-Request",
 					"X-CSRF-Token",
-					"X-Forwarded-Proto",
 				}),
 			},
 		},

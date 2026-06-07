@@ -322,7 +322,7 @@ func TestCartMutationsPostCartItemsSetsCookieAndRedirectsToCart(t *testing.T) {
 	body := base64.StdEncoding.EncodeToString([]byte("slug=mango-sticky-rice-kit&quantity=2"))
 	request := formPostRequest("/cart/items", body)
 	request.IsBase64Encoded = true
-	request.Headers["X-Forwarded-Proto"] = "https"
+	request.Headers["CloudFront-Forwarded-Proto"] = "https"
 
 	response, err := handler.Handle(context.Background(), request)
 	if err != nil {
@@ -632,7 +632,7 @@ func TestCheckoutPageExcludesDroppedStaleItems(t *testing.T) {
 func TestCartCookieFlagsHttpOnlySameSitePathMaxAgeAndHttpsSecure(t *testing.T) {
 	t.Setenv(cart.EnvCookieSecret, ssrTestCartSecret)
 	request := formPostRequest("/cart/items", "slug=mango-sticky-rice-kit&quantity=1")
-	request.Headers["x-forwarded-proto"] = "https"
+	request.Headers["cloudfront-forwarded-proto"] = "https"
 
 	response, err := NewHandler(cartRouteStore()).Handle(context.Background(), request)
 	if err != nil {
@@ -652,6 +652,20 @@ func TestCartCookieFlagsHttpOnlySameSitePathMaxAgeAndHttpsSecure(t *testing.T) {
 	}
 	if strings.Contains(response.Cookies[0], "Secure") {
 		t.Fatalf("localhost HTTP cookie = %q, want no Secure", response.Cookies[0])
+	}
+}
+
+func TestCartCookieFlagsHttpsSecureWithXForwardedProtoFallback(t *testing.T) {
+	t.Setenv(cart.EnvCookieSecret, ssrTestCartSecret)
+	request := formPostRequest("/cart/items", "slug=mango-sticky-rice-kit&quantity=1")
+	request.Headers["x-forwarded-proto"] = "https"
+
+	response, err := NewHandler(cartRouteStore()).Handle(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if cookie := response.Cookies[0]; !strings.Contains(cookie, "Secure") {
+		t.Fatalf("cookie = %q, want Secure", cookie)
 	}
 }
 

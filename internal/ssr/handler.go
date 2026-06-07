@@ -840,9 +840,11 @@ func clearCartCookie(request events.APIGatewayV2HTTPRequest) string {
 }
 
 func isHTTPSRequest(request events.APIGatewayV2HTTPRequest) bool {
-	for proto := range strings.SplitSeq(headerValue(request.Headers, "x-forwarded-proto"), ",") {
-		if strings.EqualFold(strings.TrimSpace(proto), "https") {
-			return true
+	for _, headerName := range []string{"cloudfront-forwarded-proto", "x-forwarded-proto"} {
+		for proto := range strings.SplitSeq(headerValue(request.Headers, headerName), ",") {
+			if strings.EqualFold(strings.TrimSpace(proto), "https") {
+				return true
+			}
 		}
 	}
 

@@ -464,10 +464,10 @@ func ssrOriginRequestPolicy(stack awscdk.Stack) awscloudfront.OriginRequestPolic
 		QueryStringBehavior:     awscloudfront.OriginRequestQueryStringBehavior_All(),
 		HeaderBehavior: awscloudfront.OriginRequestHeaderBehavior_AllowList(
 			jsii.String("CloudFront-Viewer-Address"),
+			jsii.String("CloudFront-Forwarded-Proto"),
 			jsii.String("Content-Type"),
 			jsii.String("HX-Request"),
 			jsii.String("X-CSRF-Token"),
-			jsii.String("X-Forwarded-Proto"),
 		),
 	})
 }
