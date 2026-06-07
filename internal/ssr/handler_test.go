@@ -25,11 +25,11 @@ var expectedHomeContent = []string{
 	`src="/static/home-hero.png"`,
 	`aria-label="Main navigation"`,
 	`href="#latest"`,
-	`href="#gift-sets"`,
+	`href="#shop-aisles"`,
 	`href="#categories"`,
 	`href="#story"`,
-	`Premium Thai gifting`,
-	`Curated Thai gifts for pantry nights`,
+	`Bangkok gift shop online`,
+	`Thai snacks, souvenirs`,
 	`Latest products`,
 	`No products are available yet.`,
 }
@@ -191,7 +191,7 @@ func TestHomeIncludesFrontendAssets(t *testing.T) {
 		`/static/vendor/htmx.min.js`,
 		`/static/logo.svg`,
 		`/static/home-hero.png`,
-		`Premium Thai gifting`,
+		`Bangkok gift shop online`,
 		`Latest products`,
 		`No products are available yet.`,
 	} {
@@ -207,8 +207,8 @@ func TestHomeRendersProductImageURLsFromCatalog(t *testing.T) {
 			{
 				ID:            "prod_001",
 				Slug:          "mango-sticky-rice-kit",
-				Name:          "Mango Sticky Rice Kit",
-				Description:   "A shelf-stable dessert gift kit.",
+				Name:          "Mango Sticky Rice Treats",
+				Description:   "Shelf-stable Thai dessert snacks.",
 				PriceCents:    2899,
 				ImageURL:      "/images/products/mango-sticky-rice-kit.jpg",
 				Status:        catalog.StatusActive,
@@ -217,7 +217,7 @@ func TestHomeRendersProductImageURLsFromCatalog(t *testing.T) {
 			{
 				ID:            "prod_002",
 				Slug:          "thai-tea-sampler",
-				Name:          "Thai Tea Sampler",
+				Name:          "Thai Tea Selection",
 				Description:   "Loose leaf Thai tea and sweet snacks.",
 				PriceCents:    2199,
 				Status:        catalog.StatusActive,
@@ -243,9 +243,9 @@ func TestHomeRendersProductImageURLsFromCatalog(t *testing.T) {
 	for _, want := range []string{
 		`src="/images/products/mango-sticky-rice-kit.jpg"`,
 		`src="/images/placeholder-product.jpg"`,
-		`Mango Sticky Rice Kit`,
+		`Mango Sticky Rice Treats`,
 		`$28.99`,
-		`Ready to gift`,
+		`In stock`,
 		`Out of stock`,
 	} {
 		if !strings.Contains(response.Body, want) {

@@ -31,7 +31,7 @@ templ home(products []catalog.Product, productImagePlaceholderURL string) {
 					</a>
 					<div class="hidden items-center gap-7 text-sm font-bold text-[#2D2A4A] md:flex">
 						<a class="transition hover:text-[#A51931]" href="#latest">Latest</a>
-						<a class="transition hover:text-[#A51931]" href="#gift-sets">Gift Sets</a>
+						<a class="transition hover:text-[#A51931]" href="#shop-aisles">Aisles</a>
 						<a class="transition hover:text-[#A51931]" href="#categories">Categories</a>
 						<a class="transition hover:text-[#A51931]" href="#story">Story</a>
 					</div>
@@ -46,17 +46,17 @@ templ home(products []catalog.Product, productImagePlaceholderURL string) {
 					<div aria-hidden="true" class="absolute left-0 top-0 h-full w-1.5 bg-[#A51931]"></div>
 					<div class="mx-auto grid min-h-[510px] w-full max-w-7xl content-end px-5 py-12 sm:min-h-[560px] sm:px-8 lg:py-16">
 						<div class="max-w-3xl">
-							<p class="mb-4 inline-flex rounded-full border border-white/25 bg-white/10 px-4 py-2 text-sm font-black text-white shadow-sm backdrop-blur">Premium Thai gifting</p>
+							<p class="mb-4 inline-flex rounded-full border border-white/25 bg-white/10 px-4 py-2 text-sm font-black text-white shadow-sm backdrop-blur">Bangkok gift shop online</p>
 							<h1 class="text-5xl font-black leading-none text-white sm:text-6xl lg:text-7xl">Thailand Gift Shop</h1>
-							<p class="mt-6 max-w-2xl text-lg leading-8 text-white/90">Curated Thai gifts for pantry nights, calm rituals, thoughtful keepsakes, and ready-to-wrap moments.</p>
+							<p class="mt-6 max-w-2xl text-lg leading-8 text-white/90">Thai snacks, souvenirs, textiles, home accents, and small keepsakes inspired by the gift shops travelers browse around Bangkok.</p>
 							<div class="mt-8 flex flex-wrap gap-3">
-								<a href="#latest" class="inline-flex h-12 items-center justify-center rounded-full bg-[#A51931] px-6 text-sm font-black text-white shadow-sm transition hover:bg-[#831426] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">Shop latest products</a>
-								<a href="#categories" class="inline-flex h-12 items-center justify-center rounded-full border border-white/45 bg-white/10 px-6 text-sm font-black text-white backdrop-blur transition hover:bg-white/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">Browse categories</a>
+								<a href="#latest" class="inline-flex h-12 items-center justify-center rounded-full bg-[#A51931] px-6 text-sm font-black text-white shadow-sm transition hover:bg-[#831426] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">Shop latest finds</a>
+								<a href="#shop-aisles" class="inline-flex h-12 items-center justify-center rounded-full border border-white/45 bg-white/10 px-6 text-sm font-black text-white backdrop-blur transition hover:bg-white/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">Browse aisles</a>
 							</div>
 							<ul class="mt-10 grid max-w-3xl gap-4 text-sm font-bold text-white/90 sm:grid-cols-3">
-								<li class="border-l-4 border-[#A51931] pl-4">Gift-ready pantry picks</li>
-								<li class="border-l-4 border-[#F4F5F8] pl-4">Textiles and keepsakes</li>
-								<li class="border-l-4 border-[#D8AE5E] pl-4">Small-batch home accents</li>
+								<li class="border-l-4 border-[#A51931] pl-4">Thai snack favorites</li>
+								<li class="border-l-4 border-[#F4F5F8] pl-4">Souvenirs and keepsakes</li>
+								<li class="border-l-4 border-[#D8AE5E] pl-4">Textiles and home accents</li>
 							</ul>
 						</div>
 					</div>
@@ -67,7 +67,7 @@ templ home(products []catalog.Product, productImagePlaceholderURL string) {
 							<p class="text-sm font-black uppercase tracking-wide text-[#A51931]">Just added</p>
 							<h2 class="mt-2 text-3xl font-black text-[#2D2A4A] sm:text-4xl">Latest products</h2>
 						</div>
-						<p class="max-w-2xl text-base leading-7 text-[#4C4A62]">Newly published gifts appear here first, with compact details that make browsing fast and confident.</p>
+						<p class="max-w-2xl text-base leading-7 text-[#4C4A62]">New arrivals appear here first, with compact details that make browsing fast and confident.</p>
 					</div>
 					if len(products) == 0 {
 						<section class="rounded-lg border border-dashed border-[#2D2A4A]/25 bg-white p-8 text-center shadow-sm">
@@ -88,7 +88,7 @@ templ home(products []catalog.Product, productImagePlaceholderURL string) {
 										if product.OutOfStock() {
 											<p class="mt-4 inline-flex rounded-full bg-[#A51931]/10 px-3 py-1 text-xs font-black text-[#A51931]">Out of stock</p>
 										} else {
-											<p class="mt-4 inline-flex rounded-full bg-[#2D2A4A]/10 px-3 py-1 text-xs font-black text-[#2D2A4A]">Ready to gift</p>
+											<p class="mt-4 inline-flex rounded-full bg-[#2D2A4A]/10 px-3 py-1 text-xs font-black text-[#2D2A4A]">In stock</p>
 										}
 									</div>
 								</article>
@@ -96,34 +96,34 @@ templ home(products []catalog.Product, productImagePlaceholderURL string) {
 						</section>
 					}
 				</section>
-				<section id="gift-sets" class="bg-white py-14 lg:py-20">
+				<section id="shop-aisles" class="bg-white py-14 lg:py-20">
 					<div class="mx-auto w-full max-w-7xl px-5 sm:px-8">
 						<div class="grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-start">
 							<div>
-								<p class="text-sm font-black uppercase tracking-wide text-[#A51931]">Gift paths</p>
-								<h2 class="mt-2 text-3xl font-black text-[#2D2A4A] sm:text-4xl">Choose by occasion, then make it unmistakably Thai.</h2>
-								<p class="mt-4 text-base leading-7 text-[#4C4A62]">Shop paths group pantry favorites, calming rituals, and home accents into giftable starting points.</p>
+								<p class="text-sm font-black uppercase tracking-wide text-[#A51931]">Shop aisles</p>
+								<h2 class="mt-2 text-3xl font-black text-[#2D2A4A] sm:text-4xl">Browse like you are at a Bangkok gift shop.</h2>
+								<p class="mt-4 text-base leading-7 text-[#4C4A62]">Move through familiar shelves of snacks, souvenirs, textiles, decor, and wellness finds.</p>
 							</div>
 							<div class="grid gap-4 sm:grid-cols-3">
 								<a href="#latest" class="group overflow-hidden rounded-lg border border-[#2D2A4A]/15 bg-[#F8F4EE] text-[#17172A] shadow-sm transition hover:-translate-y-1 hover:border-[#A51931]/30 hover:shadow-md">
 									<span aria-hidden="true" class="block h-1.5 bg-[#A51931]"></span>
 									<span class="block p-5">
-										<span class="block text-lg font-black text-[#2D2A4A]">Pantry Night</span>
-										<span class="mt-3 block text-sm leading-6 text-[#4C4A62]">Curry kits, Thai tea, sauces, rice sweets, and snackable tasting boxes.</span>
+										<span class="block text-lg font-black text-[#2D2A4A]">Snacks & Sweets</span>
+										<span class="mt-3 block text-sm leading-6 text-[#4C4A62]">Thai tea, coconut treats, curry pantry picks, sauces, and snackable tasting flights.</span>
 									</span>
 								</a>
 								<a href="#latest" class="group overflow-hidden rounded-lg border border-[#2D2A4A]/15 bg-[#F8F4EE] text-[#17172A] shadow-sm transition hover:-translate-y-1 hover:border-[#2D2A4A]/30 hover:shadow-md">
 									<span aria-hidden="true" class="block h-1.5 bg-[#2D2A4A]"></span>
 									<span class="block p-5">
-										<span class="block text-lg font-black text-[#2D2A4A]">Home Accent</span>
-										<span class="mt-3 block text-sm leading-6 text-[#4C4A62]">Candles, cups, brass pieces, magnets, and shelf-size keepsakes.</span>
+										<span class="block text-lg font-black text-[#2D2A4A]">Souvenirs & Keepsakes</span>
+										<span class="mt-3 block text-sm leading-6 text-[#4C4A62]">Magnets, carvings, pouches, bells, and shelf-size mementos.</span>
 									</span>
 								</a>
 								<a href="#latest" class="group overflow-hidden rounded-lg border border-[#2D2A4A]/15 bg-[#F8F4EE] text-[#17172A] shadow-sm transition hover:-translate-y-1 hover:border-[#D8AE5E]/50 hover:shadow-md">
 									<span aria-hidden="true" class="block h-1.5 bg-[#D8AE5E]"></span>
 									<span class="block p-5">
-										<span class="block text-lg font-black text-[#2D2A4A]">Spa Reset</span>
-										<span class="mt-3 block text-sm leading-6 text-[#4C4A62]">Lemongrass, jasmine, textiles, pouches, and unwind-ready bundles.</span>
+										<span class="block text-lg font-black text-[#2D2A4A]">Home & Wellness</span>
+										<span class="mt-3 block text-sm leading-6 text-[#4C4A62]">Candles, cups, lemongrass, jasmine, textiles, and compact home accents.</span>
 									</span>
 								</a>
 							</div>
@@ -132,13 +132,13 @@ templ home(products []catalog.Product, productImagePlaceholderURL string) {
 				</section>
 				<section id="categories" class="mx-auto w-full max-w-7xl px-5 py-14 sm:px-8 lg:py-20">
 					<div class="mb-8 max-w-3xl">
-						<p class="text-sm font-black uppercase tracking-wide text-[#A51931]">Shop structure</p>
-						<h2 class="mt-2 text-3xl font-black text-[#2D2A4A] sm:text-4xl">Clear categories for every gifting style.</h2>
+						<p class="text-sm font-black uppercase tracking-wide text-[#A51931]">Shop categories</p>
+						<h2 class="mt-2 text-3xl font-black text-[#2D2A4A] sm:text-4xl">Clear categories for Thai gift-shop finds.</h2>
 					</div>
 					<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
 						<a href="#latest" class="rounded-lg border border-[#2D2A4A]/15 bg-white p-5 shadow-sm transition hover:border-[#A51931]/30 hover:shadow-md">
-							<p class="text-base font-black text-[#2D2A4A]">Gift Sets</p>
-							<p class="mt-2 text-sm leading-6 text-[#4C4A62]">Ready-to-wrap combinations.</p>
+							<p class="text-base font-black text-[#2D2A4A]">Souvenirs</p>
+							<p class="mt-2 text-sm leading-6 text-[#4C4A62]">Travel-friendly keepsakes.</p>
 						</a>
 						<a href="#latest" class="rounded-lg border border-[#2D2A4A]/15 bg-white p-5 shadow-sm transition hover:border-[#A51931]/30 hover:shadow-md">
 							<p class="text-base font-black text-[#2D2A4A]">Thai Pantry</p>
@@ -157,11 +157,11 @@ templ home(products []catalog.Product, productImagePlaceholderURL string) {
 				<section id="story" class="border-y border-[#2D2A4A]/10 bg-[#2D2A4A] py-14 text-white lg:py-20">
 					<div class="mx-auto grid w-full max-w-7xl gap-8 px-5 sm:px-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
 						<div>
-							<p class="text-sm font-black uppercase tracking-wide text-[#F4F5F8]">Curation point of view</p>
-							<h2 class="mt-2 text-3xl font-black sm:text-4xl">A gift shop shaped by Thai color, craft, flavor, and ease.</h2>
+							<p class="text-sm font-black uppercase tracking-wide text-[#F4F5F8]">Gift shop point of view</p>
+							<h2 class="mt-2 text-3xl font-black sm:text-4xl">An online Thai gift shop shaped by Bangkok color, craft, flavor, and easy browsing.</h2>
 						</div>
 						<div class="border-l-4 border-[#A51931] pl-5">
-							<p class="text-base leading-8 text-white/80">Every section is built to move shoppers quickly from occasion to product: clear paths, strong imagery, concise details, and a brand system grounded in the Thai flag.</p>
+							<p class="text-base leading-8 text-white/80">Every section is built to move shoppers quickly from aisle to product: clear categories, strong imagery, concise details, and a brand system grounded in the Thai flag.</p>
 						</div>
 					</div>
 				</section>
@@ -171,7 +171,7 @@ templ home(products []catalog.Product, productImagePlaceholderURL string) {
 					<a href="/" aria-label="Thailand Gift Shop home" class="inline-flex w-fit rounded-md bg-white px-2 py-1">
 						<img class="h-9 w-auto" src="/static/logo.svg" alt="Thailand Gift Shop"/>
 					</a>
-					<p>Thai gifts, pantry favorites, and small-batch keepsakes.</p>
+					<p>Thai snacks, souvenirs, pantry favorites, and small-batch keepsakes.</p>
 				</div>
 			</footer>
 		</body>

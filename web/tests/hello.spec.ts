@@ -29,11 +29,11 @@ test('home page assets, nav anchors, and product image route work end-to-end', a
   await expect(page.getByRole('navigation', { name: 'Main navigation' })).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: 'Thailand Gift Shop home' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Latest', exact: true })).toHaveAttribute('href', '#latest');
-  await expect(page.getByRole('link', { name: 'Gift Sets', exact: true })).toHaveAttribute('href', '#gift-sets');
+  await expect(page.getByRole('link', { name: 'Aisles', exact: true })).toHaveAttribute('href', '#shop-aisles');
   await expect(page.getByRole('link', { name: 'Categories', exact: true })).toHaveAttribute('href', '#categories');
   await expect(page.getByRole('link', { name: 'Story', exact: true })).toHaveAttribute('href', '#story');
   await expect(page.getByRole('heading', { name: 'Thailand Gift Shop', level: 1 })).toBeVisible();
-  await expect(page.getByText('Premium Thai gifting')).toBeVisible();
+  await expect(page.getByText('Bangkok gift shop online')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Latest products' })).toBeVisible();
   const emptyState = page.getByRole('heading', { name: 'No products are available yet.' });
   await expect(emptyState).toBeVisible();
@@ -52,7 +52,7 @@ test.describe('without JavaScript', () => {
 
     await expect(page.getByRole('navigation', { name: 'Main navigation' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Thailand Gift Shop', level: 1 })).toBeVisible();
-    await expect(page.getByText('Premium Thai gifting')).toBeVisible();
+    await expect(page.getByText('Bangkok gift shop online')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Latest products' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'No products are available yet.' })).toBeVisible();
   });

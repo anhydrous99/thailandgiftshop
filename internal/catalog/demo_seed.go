@@ -24,9 +24,9 @@ type DemoSeedCounts struct {
 func DemoCatalogCategories() []Category {
 	return []Category{
 		{
-			Slug:        "gift-sets",
-			Name:        "Gift Sets",
-			Description: "Ready-to-wrap collections built around Thai pantry, spa, and souvenir favorites.",
+			Slug:        "market-finds",
+			Name:        "Bangkok Market Finds",
+			Description: "Popular Thai snacks, keepsakes, pantry items, and compact travel finds.",
 			Status:      StatusActive,
 			SortOrder:   10,
 			UpdatedAt:   demoUpdatedAt,
@@ -34,7 +34,7 @@ func DemoCatalogCategories() []Category {
 		{
 			Slug:        "pantry",
 			Name:        "Thai Pantry",
-			Description: "Sauces, spice kits, tea, curry staples, and shelf-stable cooking gifts.",
+			Description: "Sauces, curry staples, tea, snacks, and shelf-stable pantry favorites.",
 			Status:      StatusActive,
 			SortOrder:   20,
 			UpdatedAt:   demoUpdatedAt,
@@ -42,7 +42,7 @@ func DemoCatalogCategories() []Category {
 		{
 			Slug:        "snacks-sweets",
 			Name:        "Snacks & Sweets",
-			Description: "Thai tea treats, coconut sweets, fruit candies, and snackable tasting boxes.",
+			Description: "Thai tea treats, coconut sweets, fruit candies, and market snacks.",
 			Status:      StatusActive,
 			SortOrder:   30,
 			UpdatedAt:   demoUpdatedAt,
@@ -58,7 +58,7 @@ func DemoCatalogCategories() []Category {
 		{
 			Slug:        "textiles",
 			Name:        "Textiles",
-			Description: "Scarves, pouches, cotton goods, and easy-to-gift woven pieces.",
+			Description: "Scarves, pouches, cotton goods, and easy-to-pack woven pieces.",
 			Status:      StatusActive,
 			SortOrder:   50,
 			UpdatedAt:   demoUpdatedAt,
@@ -66,7 +66,7 @@ func DemoCatalogCategories() []Category {
 		{
 			Slug:        "wellness",
 			Name:        "Wellness",
-			Description: "Lemongrass, jasmine, spa, and aromatherapy gifts inspired by Thai markets.",
+			Description: "Lemongrass, jasmine, spa, and aromatherapy finds inspired by Thai markets.",
 			Status:      StatusActive,
 			SortOrder:   60,
 			UpdatedAt:   demoUpdatedAt,
@@ -74,7 +74,7 @@ func DemoCatalogCategories() []Category {
 		{
 			Slug:        "souvenirs",
 			Name:        "Souvenirs",
-			Description: "Lightweight keepsakes and travel-inspired gifts for easy shipping.",
+			Description: "Lightweight keepsakes and travel-inspired souvenirs for easy shipping.",
 			Status:      StatusActive,
 			SortOrder:   70,
 			UpdatedAt:   demoUpdatedAt,
@@ -87,8 +87,8 @@ func DemoCatalogProducts() []Product {
 		{
 			ID:            "prod_001",
 			Slug:          "mango-sticky-rice-kit",
-			Name:          "Mango Sticky Rice Kit",
-			Description:   "Coconut cream, sweet rice, mango candy, and a printed recipe card for a classic Thai dessert night.",
+			Name:          "Mango Sticky Rice Treats",
+			Description:   "Coconut cream, sweet rice, mango candy, and a printed recipe card inspired by a classic Thai dessert.",
 			PriceCents:    2899,
 			ImageURL:      "/images/products/mango-sticky-rice-kit.jpg",
 			Status:        StatusActive,
@@ -96,13 +96,13 @@ func DemoCatalogProducts() []Product {
 			StockQuantity: 18,
 			CreatedAt:     demoProductCreatedAt(18),
 			UpdatedAt:     demoUpdatedAt,
-			CategorySlugs: []string{"gift-sets", "snacks-sweets"},
+			CategorySlugs: []string{"market-finds", "snacks-sweets"},
 		},
 		{
 			ID:            "prod_002",
 			Slug:          "thai-tea-sampler",
-			Name:          "Thai Tea Sampler",
-			Description:   "Loose leaf Thai tea, condensed milk sweets, and two spice-forward blends for iced tea testing.",
+			Name:          "Thai Tea Selection",
+			Description:   "Loose leaf Thai tea, condensed milk sweets, and two spice-forward blends for iced tea at home.",
 			PriceCents:    2199,
 			ImageURL:      "/images/products/thai-tea-sampler.jpg",
 			Status:        StatusActive,
@@ -110,13 +110,13 @@ func DemoCatalogProducts() []Product {
 			StockQuantity: 31,
 			CreatedAt:     demoProductCreatedAt(16),
 			UpdatedAt:     demoUpdatedAt,
-			CategorySlugs: []string{"gift-sets", "pantry", "snacks-sweets"},
+			CategorySlugs: []string{"market-finds", "pantry", "snacks-sweets"},
 		},
 		{
 			ID:            "prod_003",
 			Slug:          "teak-elephant-carving",
 			Name:          "Teak Elephant Carving",
-			Description:   "A compact hand-carved teak accent sized for desks, bookshelves, and travel gift boxes.",
+			Description:   "A compact hand-carved teak accent sized for desks, bookshelves, and travel-friendly displays.",
 			PriceCents:    3999,
 			ImageURL:      "/images/products/teak-elephant-carving.jpg",
 			Status:        StatusActive,
@@ -129,7 +129,7 @@ func DemoCatalogProducts() []Product {
 		{
 			ID:            "prod_004",
 			Slug:          "lemongrass-spa-bundle",
-			Name:          "Lemongrass Spa Bundle",
+			Name:          "Lemongrass Spa Essentials",
 			Description:   "Soap, body oil, and a small incense pack with bright lemongrass and kaffir lime notes.",
 			PriceCents:    3499,
 			ImageURL:      "/images/products/lemongrass-spa-bundle.jpg",
@@ -138,7 +138,7 @@ func DemoCatalogProducts() []Product {
 			StockQuantity: 22,
 			CreatedAt:     demoProductCreatedAt(12),
 			UpdatedAt:     demoUpdatedAt,
-			CategorySlugs: []string{"gift-sets", "wellness"},
+			CategorySlugs: []string{"market-finds", "wellness"},
 		},
 		{
 			ID:            "prod_005",
@@ -157,7 +157,7 @@ func DemoCatalogProducts() []Product {
 		{
 			ID:            "prod_006",
 			Slug:          "coconut-curry-pantry-box",
-			Name:          "Coconut Curry Pantry Box",
+			Name:          "Coconut Curry Pantry Picks",
 			Description:   "Panang curry paste, coconut milk powder, rice noodles, and finishing aromatics for quick dinners.",
 			PriceCents:    3299,
 			ImageURL:      "/images/products/coconut-curry-pantry-box.jpg",
@@ -171,7 +171,7 @@ func DemoCatalogProducts() []Product {
 		{
 			ID:            "prod_007",
 			Slug:          "benjarong-cup-set",
-			Name:          "Benjarong Cup Set",
+			Name:          "Benjarong Tea Cups",
 			Description:   "Two patterned cups with jewel-toned details for tea, espresso, or a small shelf display.",
 			PriceCents:    5299,
 			ImageURL:      "/images/products/benjarong-cup-set.jpg",
@@ -185,8 +185,8 @@ func DemoCatalogProducts() []Product {
 		{
 			ID:            "prod_008",
 			Slug:          "ceramic-tuk-tuk-magnet-set",
-			Name:          "Ceramic Tuk Tuk Magnet Set",
-			Description:   "A trio of glazed tuk tuk magnets in market-bright colors for travel-inspired gift bags.",
+			Name:          "Ceramic Tuk Tuk Magnets",
+			Description:   "A trio of glazed tuk tuk magnets in market-bright colors for souvenir bags.",
 			PriceCents:    1499,
 			ImageURL:      "/images/products/ceramic-tuk-tuk-magnet-set.jpg",
 			Status:        StatusActive,
@@ -227,7 +227,7 @@ func DemoCatalogProducts() []Product {
 		{
 			ID:            "prod_011",
 			Slug:          "elephant-pouch-set",
-			Name:          "Elephant Pouch Set",
+			Name:          "Elephant Cotton Pouches",
 			Description:   "Two cotton zipper pouches with elephant linework for cards, cables, or small souvenirs.",
 			PriceCents:    2499,
 			ImageURL:      "/images/products/elephant-pouch-set.jpg",

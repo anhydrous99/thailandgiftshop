@@ -18,8 +18,8 @@ func TestProductItemRoundTripIncludesInventoryAndNoCurrency(t *testing.T) {
 	product := Product{
 		ID:            "prod_001",
 		Slug:          "mango-sticky-rice-kit",
-		Name:          "Mango Sticky Rice Kit",
-		Description:   "A shelf-stable dessert gift kit.",
+		Name:          "Mango Sticky Rice Treats",
+		Description:   "Shelf-stable Thai dessert snacks.",
 		PriceCents:    2499,
 		ImageURL:      "/images/products/mango.jpg",
 		Status:        StatusActive,
@@ -195,7 +195,7 @@ func TestDynamoStoreListActiveProductsUsesPublicIndex(t *testing.T) {
 	product := Product{
 		ID:            "prod_001",
 		Slug:          "mango-sticky-rice-kit",
-		Name:          "Mango Sticky Rice Kit",
+		Name:          "Mango Sticky Rice Treats",
 		PriceCents:    2499,
 		Status:        StatusActive,
 		SortOrder:     12,
@@ -242,7 +242,7 @@ func TestDynamoStoreListRecentlyAddedProductsUsesRecentIndex(t *testing.T) {
 	product := Product{
 		ID:            "prod_011",
 		Slug:          "elephant-pouch-set",
-		Name:          "Elephant Pouch Set",
+		Name:          "Elephant Cotton Pouches",
 		PriceCents:    2499,
 		Status:        StatusActive,
 		SortOrder:     110,
@@ -294,7 +294,7 @@ func TestDynamoStoreGetProductBySlugUsesSlugIndex(t *testing.T) {
 	product := Product{
 		ID:            "prod_001",
 		Slug:          "mango-sticky-rice-kit",
-		Name:          "Mango Sticky Rice Kit",
+		Name:          "Mango Sticky Rice Treats",
 		PriceCents:    2499,
 		Status:        StatusActive,
 		SortOrder:     12,
