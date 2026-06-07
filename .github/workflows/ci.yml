@@ -53,6 +53,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       AWS_REGION: us-east-1
+      CDK_DEFAULT_REGION: us-east-1
 
     steps:
       - name: Checkout
@@ -95,8 +96,19 @@ jobs:
       - name: Verify templ generated code
         run: |
           go tool templ generate
-          if ! git diff --exit-code -- internal/ssr/home_templ.go; then
+          tracked_templ_files="$(git ls-files '*_templ.go')"
+          if [ -z "$tracked_templ_files" ]; then
+            echo "No tracked generated templ files found."
+            exit 1
+          fi
+          if ! git diff --exit-code -- $tracked_templ_files; then
             echo "Generated templ files are out of date. Run go tool templ generate."
+            exit 1
+          fi
+          untracked_templ_files="$(git ls-files --others --exclude-standard '*_templ.go')"
+          if [ -n "$untracked_templ_files" ]; then
+            echo "Generated templ files are untracked:"
+            echo "$untracked_templ_files"
             exit 1
           fi
 

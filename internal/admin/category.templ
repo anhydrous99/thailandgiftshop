@@ -1,0 +1,149 @@
+package admin
+
+import "strconv"
+
+templ adminCategoryHeader(csrfValue string) {
+	<header class="sticky top-0 z-30 border-b border-[#2D2A4A]/10 bg-white/95 shadow-sm backdrop-blur">
+		<div aria-hidden="true" class="grid h-1 grid-cols-[1fr_1fr_2fr_1fr_1fr]"><span class="bg-[#A51931]"></span><span class="bg-[#F4F5F8]"></span><span class="bg-[#2D2A4A]"></span><span class="bg-[#F4F5F8]"></span><span class="bg-[#A51931]"></span></div>
+		<div class="mx-auto flex min-h-16 w-full max-w-7xl flex-col gap-4 px-5 py-4 sm:px-8 md:flex-row md:items-center md:justify-between">
+			<a href="/admin" aria-label="Thailand Gift Shop admin dashboard" class="flex min-w-0 items-center gap-3">
+				<img class="h-10 w-auto max-w-[52vw] sm:h-12 sm:max-w-[240px]" src="/static/logo.svg" alt="Thailand Gift Shop"/>
+				<span class="hidden rounded-full bg-[#2D2A4A]/10 px-3 py-1 text-xs font-black uppercase tracking-wide text-[#2D2A4A] sm:inline">Admin</span>
+			</a>
+			<div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+				<nav data-testid="admin-nav" aria-label="Admin navigation" class="flex flex-wrap gap-2 text-sm font-black text-[#2D2A4A]">
+					<a data-testid="admin-nav-dashboard" href="/admin" class="inline-flex h-10 items-center justify-center rounded-full border border-[#2D2A4A]/15 bg-white px-4 shadow-sm transition hover:border-[#A51931]/30 hover:text-[#A51931] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2D2A4A]">Dashboard</a>
+					<a data-testid="admin-nav-products" href="/admin/products" class="inline-flex h-10 items-center justify-center rounded-full border border-[#2D2A4A]/15 bg-white px-4 shadow-sm transition hover:border-[#A51931]/30 hover:text-[#A51931] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2D2A4A]">Products</a>
+					<a data-testid="admin-nav-categories" aria-current="page" href="/admin/categories" class="inline-flex h-10 items-center justify-center rounded-full bg-[#2D2A4A] px-4 text-white shadow-sm transition hover:bg-[#17172A] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#A51931]">Categories</a>
+				</nav>
+				<form method="post" action="/admin/logout" class="flex">
+					<input type="hidden" name="csrf_token" value={ csrfValue }/>
+					<button data-testid="admin-logout-button" type="submit" class="inline-flex h-10 items-center justify-center rounded-full bg-[#A51931] px-4 text-sm font-black text-white shadow-sm transition hover:bg-[#831426] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2D2A4A]">Logout</button>
+				</form>
+			</div>
+		</div>
+	</header>
+}
+
+templ adminCategoryListPage(vm adminCategoryListViewModel) {
+	<!DOCTYPE html>
+	<html lang="en" class="scroll-smooth">
+		@adminHead("Categories | Thailand Gift Shop Admin")
+		<body class="min-h-screen bg-[#F8F4EE] text-[#17172A] antialiased">
+			<div data-testid="admin-shell" class="min-h-screen">
+				@adminCategoryHeader(vm.CSRFValue)
+				<main id="admin-main" class="mx-auto w-full max-w-7xl px-5 py-10 sm:px-8 lg:py-14">
+					<section class="overflow-hidden rounded-lg border border-[#2D2A4A]/10 bg-[#2D2A4A] text-white shadow-sm">
+						<div class="grid gap-6 p-6 sm:p-8 lg:grid-cols-[1fr_auto] lg:items-end">
+							<div>
+								<p class="text-sm font-black uppercase tracking-wide text-[#F4F5F8]">Aisle workbench</p>
+								<h1 class="mt-3 text-5xl font-black leading-none text-white sm:text-6xl">Categories</h1>
+								<p class="mt-5 max-w-3xl text-lg leading-8 text-white/80">Shape public shop aisles, status, sort order, and product membership without deleting catalog history.</p>
+							</div>
+							<a data-testid="new-category-link" href="/admin/categories/new" class="inline-flex h-12 items-center justify-center rounded-full bg-[#A51931] px-6 text-sm font-black text-white shadow-sm transition hover:bg-[#831426] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">New category</a>
+						</div>
+					</section>
+					if vm.Flash != "" {
+						<p data-testid="admin-flash" role="alert" class="mt-6 rounded-lg border border-[#2D2A4A]/15 bg-white px-5 py-4 text-sm font-black text-[#2D2A4A] shadow-sm">Category { vm.Flash }.</p>
+					}
+					<form data-testid="admin-categories-filter-form" method="get" action="/admin/categories" class="mt-6 grid gap-3 rounded-lg border border-[#2D2A4A]/15 bg-white p-5 shadow-sm md:grid-cols-[1fr_auto_auto] md:items-end">
+						<label class="grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]">Search <input data-testid="admin-categories-search-input" name="q" value={ vm.Filters.Search } class="h-11 rounded-full border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-sm font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none"/></label>
+						<label class="grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]">Status <select data-testid="admin-categories-status-filter" name="status" class="h-11 rounded-full border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-sm font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none"><option value="">All</option><option value="active" selected?={ vm.Filters.Status == "active" }>Active</option><option value="draft" selected?={ vm.Filters.Status == "draft" }>Draft</option><option value="archived" selected?={ vm.Filters.Status == "archived" }>Archived</option></select></label>
+						<button data-testid="admin-categories-filter-button" type="submit" class="inline-flex h-11 items-center justify-center rounded-full border border-[#2D2A4A]/20 bg-white px-5 text-sm font-black text-[#2D2A4A] transition hover:border-[#A51931]/40 hover:text-[#A51931]">Filter</button>
+					</form>
+					<section class="mt-6 overflow-hidden rounded-lg border border-[#2D2A4A]/15 bg-white shadow-sm">
+						if len(vm.Categories) == 0 {
+							<div data-testid="admin-categories-empty" role="status" class="p-8 text-center"><h2 class="text-xl font-black text-[#2D2A4A]">No categories match these filters.</h2><p class="mt-2 text-sm leading-6 text-[#4C4A62]">Create a category or adjust the status or search filter.</p></div>
+						} else {
+							<div class="divide-y divide-[#2D2A4A]/10">
+								for _, category := range vm.Categories {
+									<article data-testid="admin-category-row" class="grid gap-4 p-5 md:grid-cols-[1fr_auto] md:items-center">
+										<div>
+											<a href={ "/admin/categories/" + category.Slug + "/edit" } class="text-xl font-black text-[#2D2A4A] transition hover:text-[#A51931]">{ category.Name }</a>
+											<p class="mt-1 text-sm font-bold text-[#4C4A62]">/{ category.Slug } · Sort { strconv.Itoa(category.SortOrder) } · version { strconv.Itoa(category.Version) }</p>
+											<p class="mt-2 inline-flex rounded-full bg-[#F4F5F8] px-3 py-1 text-xs font-black uppercase tracking-wide text-[#2D2A4A]">{ string(category.Status) }</p>
+										</div>
+										<a href={ "/admin/categories/" + category.Slug + "/edit" } class="inline-flex h-11 items-center justify-center rounded-full bg-[#2D2A4A] px-5 text-sm font-black text-white shadow-sm transition hover:bg-[#17172A]">Edit</a>
+									</article>
+								}
+							</div>
+						}
+					</section>
+				</main>
+			</div>
+		</body>
+	</html>
+}
+
+templ adminCategoryFormPage(vm adminCategoryFormViewModel) {
+	<!DOCTYPE html>
+	<html lang="en" class="scroll-smooth">
+		@adminHead(vm.Title + " | Thailand Gift Shop Admin")
+		<body class="min-h-screen bg-[#F8F4EE] text-[#17172A] antialiased">
+			<div data-testid="admin-shell" class="min-h-screen">
+				@adminCategoryHeader(vm.CSRFValue)
+				<main id="admin-main" class="mx-auto w-full max-w-7xl px-5 py-10 sm:px-8 lg:py-14">
+					<a href="/admin/categories" class="text-sm font-black text-[#A51931] transition hover:text-[#831426]">Back to categories</a>
+					<div class="mt-5 grid gap-8 lg:grid-cols-[0.8fr_1.2fr] lg:items-start">
+						<section class="overflow-hidden rounded-lg border border-[#2D2A4A]/10 bg-[#2D2A4A] text-white shadow-sm">
+							<div class="p-6 sm:p-8">
+								<p class="text-sm font-black uppercase tracking-wide text-[#F4F5F8]">Category editor</p>
+								<h1 class="mt-3 text-5xl font-black leading-none text-white sm:text-6xl">{ vm.Title }</h1>
+								<p class="mt-5 text-lg leading-8 text-white/80">Manage status, public sort order, and the product set that appears on this aisle.</p>
+								if vm.Mode == "edit" {
+									<p class="mt-5 rounded-lg border border-white/20 bg-white/10 p-4 text-sm font-bold text-white/90">Stable category slug: { vm.Category.Slug } · version { strconv.Itoa(vm.Category.Version) }</p>
+								}
+							</div>
+						</section>
+						<section class="rounded-lg border border-[#2D2A4A]/15 bg-white p-5 shadow-sm sm:p-6">
+							if vm.Flash != "" {
+								<p data-testid="admin-flash" role="alert" class="mb-5 rounded-lg border border-[#2D2A4A]/15 bg-[#F8F4EE] px-4 py-3 text-sm font-black text-[#2D2A4A]">Category { vm.Flash }.</p>
+							}
+							if len(vm.Errors) > 0 {
+								<div data-testid="category-validation-summary" role="alert" class="mb-5 rounded-lg border border-[#A51931]/25 bg-[#A51931]/10 p-4 text-sm font-black leading-6 text-[#A51931]">
+									<p>Fix these category details:</p>
+									<ul class="mt-2 list-disc pl-5">
+										for _, err := range vm.Errors {
+											<li>{ err }</li>
+										}
+									</ul>
+								</div>
+							}
+							<form data-testid="category-form" method="post" action={ vm.Action } class="grid gap-5">
+								<input type="hidden" name="csrf_token" value={ vm.CSRFValue }/>
+								<input type="hidden" name="version" value={ strconv.Itoa(vm.Category.Version) }/>
+								<div class="grid gap-4 md:grid-cols-2">
+									<label class="grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]">Name <input data-testid="category-name-input" required name="name" value={ vm.Category.Name } class="h-12 rounded-lg border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-base font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none"/></label>
+									<label class="grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]">Slug <input data-testid="category-slug-input" required name="slug" value={ vm.Category.Slug } readonly?={ vm.Mode == "edit" } class="h-12 rounded-lg border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-base font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none read-only:text-[#4C4A62]"/></label>
+								</div>
+								<label class="grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]">Description <textarea data-testid="category-description-input" required name="description" class="min-h-28 rounded-lg border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 py-3 text-base font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none">{ vm.Category.Description }</textarea></label>
+								<div class="grid gap-4 md:grid-cols-2">
+									<label class="grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]">Sort order <input data-testid="category-sort-order-input" name="sort_order" type="number" value={ strconv.Itoa(vm.Category.SortOrder) } class="h-12 rounded-lg border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-base font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none"/></label>
+									<label class="grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]">Status <select data-testid="category-status-select" name="status" class="h-12 rounded-lg border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-base font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none"><option value="draft" selected?={ statusSelected(vm.Category.Status, "draft") }>Draft</option><option value="active" selected?={ statusSelected(vm.Category.Status, "active") }>Active</option><option value="archived" selected?={ statusSelected(vm.Category.Status, "archived") }>Archived</option></select></label>
+								</div>
+								<section class="rounded-lg border border-[#2D2A4A]/10 bg-white p-4">
+									<p class="text-sm font-black uppercase tracking-wide text-[#A51931]">Product membership</p>
+									<p class="mt-1 text-sm font-bold text-[#4C4A62]">Checked products appear on this public category page while the category and product are active.</p>
+									<div class="mt-3 grid gap-2 sm:grid-cols-2">
+										for _, product := range vm.Products {
+											<label class="flex items-center gap-2 rounded-md border border-[#2D2A4A]/10 bg-[#F8F4EE] px-3 py-2 text-sm font-bold text-[#2D2A4A]"><input data-testid="category-product-checkbox" type="checkbox" name="product_ids" value={ product.ID } checked?={ categoryProductChecked(vm, product.ID) }/> { product.Name }</label>
+										}
+									</div>
+								</section>
+								<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+									<button data-testid="category-save-button" type="submit" class="inline-flex h-12 items-center justify-center rounded-full bg-[#A51931] px-6 text-sm font-black text-white shadow-sm transition hover:bg-[#831426] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2D2A4A]">{ vm.SubmitText }</button>
+									if vm.Mode == "edit" && string(vm.Category.Status) != "archived" {
+										<button data-testid="category-archive-button" form="archive-category-form" type="submit" class="inline-flex h-12 items-center justify-center rounded-full border border-[#A51931]/30 bg-white px-6 text-sm font-black text-[#A51931] transition hover:bg-[#A51931]/10">Archive category</button>
+									}
+								</div>
+							</form>
+							if vm.Mode == "edit" && string(vm.Category.Status) != "archived" {
+								<form id="archive-category-form" method="post" action={ "/admin/categories/" + vm.Category.Slug + "/archive" }><input type="hidden" name="csrf_token" value={ vm.CSRFValue }/></form>
+							}
+						</section>
+					</div>
+				</main>
+			</div>
+		</body>
+	</html>
+}

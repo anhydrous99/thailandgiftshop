@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 
+	adminauth "github.com/anhydrous99/thailandgiftshop/internal/admin"
 	cartsession "github.com/anhydrous99/thailandgiftshop/internal/cart"
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
 	"github.com/aws/aws-cdk-go/awscdk/v2"
@@ -12,6 +13,7 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfront"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfrontorigins"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsdynamodb"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awsiam"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awslambda"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awslogs"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsroute53"
@@ -38,8 +40,9 @@ const (
 	catalogRecentIndexPKName = "gsi3pk"
 	catalogRecentIndexSKName = "gsi3sk"
 
-	staticAssetsKeyPrefix  = "static"
-	productImagesKeyPrefix = "images"
+	staticAssetsKeyPrefix      = "static"
+	productImagesKeyPrefix     = "images"
+	adminCredentialsSecretName = "thailandgiftshop/admin/credentials"
 )
 
 type ThailandGiftshopStackProps struct {
@@ -58,8 +61,9 @@ func NewThailandGiftshopStack(scope constructs.Construct, id string, props *Thai
 	awscdk.Tags_Of(stack).Add(jsii.String("ManagedBy"), jsii.String("aws-cdk"), nil)
 
 	catalogTable := addCatalog(stack)
-	httpAPI := addSSR(stack, catalogTable)
-	addSite(stack, httpAPI)
+	productImagesBucket := addProductImagesBucket(stack)
+	httpAPI := addSSR(stack, catalogTable, productImagesBucket)
+	addSite(stack, httpAPI, productImagesBucket)
 
 	return stack
 }
@@ -132,7 +136,32 @@ func addCatalog(stack awscdk.Stack) awsdynamodb.Table {
 	return catalogTable
 }
 
-func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable) awsapigatewayv2.HttpApi {
+func addProductImagesBucket(stack awscdk.Stack) awss3.Bucket {
+	return awss3.NewBucket(stack, jsii.String("ProductImagesBucket"), &awss3.BucketProps{
+		BlockPublicAccess: awss3.BlockPublicAccess_BLOCK_ALL(),
+		Cors: &[]*awss3.CorsRule{
+			{
+				AllowedHeaders: &[]*string{
+					jsii.String("*"),
+				},
+				AllowedMethods: &[]awss3.HttpMethods{
+					awss3.HttpMethods_POST,
+				},
+				AllowedOrigins: &[]*string{
+					jsii.String("https://" + siteDomainName),
+					jsii.String("https://" + wwwDomainName),
+				},
+				MaxAge: jsii.Number(300),
+			},
+		},
+		Encryption:      awss3.BucketEncryption_S3_MANAGED,
+		EnforceSSL:      jsii.Bool(true),
+		ObjectOwnership: awss3.ObjectOwnership_BUCKET_OWNER_ENFORCED,
+		RemovalPolicy:   awscdk.RemovalPolicy_RETAIN,
+	})
+}
+
+func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, productImagesBucket awss3.IBucket) awsapigatewayv2.HttpApi {
 	lambdaLogGroup := awslogs.NewLogGroup(stack, jsii.String("SsrLambdaLogGroup"), &awslogs.LogGroupProps{
 		LogGroupName: jsii.String("/aws/lambda/thailandgiftshop-ssr"),
 		Retention:    awslogs.RetentionDays_THREE_MONTHS,
@@ -182,6 +211,7 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable) awsapigatewayv2
 			Timeout:              awscdk.Duration_Seconds(jsii.Number(10)),
 		}),
 	})
+	adminRoutes := addAdmin(stack, catalogTable, productImagesBucket, httpAPI)
 
 	accessLogGroup := awslogs.NewLogGroup(stack, jsii.String("SsrHttpApiAccessLogGroup"), &awslogs.LogGroupProps{
 		LogGroupName: jsii.String("/aws/apigateway/thailandgiftshop-ssr"),
@@ -202,6 +232,9 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable) awsapigatewayv2
 		StageName:   jsii.String("$default"),
 	})
 	stage.Node().AddDependency(defaultRoute)
+	for _, route := range adminRoutes {
+		stage.Node().AddDependency(route)
+	}
 
 	awscdk.NewCfnOutput(stack, jsii.String("SsrHttpApiUrl"), &awscdk.CfnOutputProps{
 		Description: jsii.String("Base URL for the SSR HTTP API"),
@@ -209,6 +242,82 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable) awsapigatewayv2
 	})
 
 	return httpAPI
+}
+
+func addAdmin(stack awscdk.Stack, catalogTable awsdynamodb.ITable, productImagesBucket awss3.IBucket, httpAPI awsapigatewayv2.HttpApi) []awsapigatewayv2.HttpRoute {
+	lambdaLogGroup := awslogs.NewLogGroup(stack, jsii.String("AdminLambdaLogGroup"), &awslogs.LogGroupProps{
+		LogGroupName: jsii.String("/aws/lambda/thailandgiftshop-admin"),
+		Retention:    awslogs.RetentionDays_THREE_MONTHS,
+	})
+
+	adminFunction := awslambda.NewFunction(stack, jsii.String("AdminLambda"), &awslambda.FunctionProps{
+		Architecture: awslambda.Architecture_ARM_64(),
+		Code: awslambda.Code_FromCustomCommand(jsii.String("cdk.out/admin-lambda"), &[]*string{
+			jsii.String("sh"),
+			jsii.String("-c"),
+			jsii.String("mkdir -p cdk.out/admin-lambda && GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -tags lambda.norpc -o cdk.out/admin-lambda/bootstrap ../cmd/admin"),
+		}, &awslambda.CustomCommandOptions{
+			DeployTime:  jsii.Bool(true),
+			DisplayName: jsii.String("admin-lambda"),
+		}),
+		Description: jsii.String("Admin HTML handler for thailandgiftshop.com"),
+		Environment: &map[string]*string{
+			catalog.EnvTableName:                    catalogTable.TableName(),
+			catalog.EnvSlugIndexName:                jsii.String(catalog.DefaultSlugIndexName),
+			catalog.EnvPublicIndexName:              jsii.String(catalog.DefaultPublicIndexName),
+			catalog.EnvRecentIndexName:              jsii.String(catalog.DefaultRecentIndexName),
+			adminauth.EnvProductImagesBucketName:    productImagesBucket.BucketName(),
+			adminauth.EnvProductImagesKeyPrefix:     jsii.String(productImagesKeyPrefix),
+			catalog.EnvProductImagePlaceholderURL:   jsii.String(catalog.DefaultProductImagePlaceholderURL),
+			adminauth.EnvAdminCredentialsSecretJSON: adminCredentialsSecretReference(adminCredentialsSecret(stack)),
+		},
+		FunctionName: jsii.String("thailandgiftshop-admin"),
+		Handler:      jsii.String("bootstrap"),
+		LogGroup:     lambdaLogGroup,
+		MemorySize:   jsii.Number(128),
+		Runtime:      awslambda.Runtime_PROVIDED_AL2023(),
+		Timeout:      awscdk.Duration_Seconds(jsii.Number(10)),
+		Tracing:      awslambda.Tracing_ACTIVE,
+	})
+	catalogTable.GrantReadWriteData(adminFunction)
+	adminFunction.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+		Actions: &[]*string{
+			jsii.String("dynamodb:TransactWriteItems"),
+		},
+		Resources: &[]*string{
+			catalogTable.TableArn(),
+		},
+	}))
+	productImagesBucket.GrantRead(adminFunction, jsii.String(productImagesKeyPrefix+"/*"))
+	productImagesBucket.GrantPut(adminFunction, jsii.String(productImagesKeyPrefix+"/*"))
+
+	adminIntegration := awsapigatewayv2integrations.NewHttpLambdaIntegration(jsii.String("AdminLambdaIntegration"), adminFunction, &awsapigatewayv2integrations.HttpLambdaIntegrationProps{
+		PayloadFormatVersion: awsapigatewayv2.PayloadFormatVersion_VERSION_2_0(),
+		Timeout:              awscdk.Duration_Seconds(jsii.Number(10)),
+	})
+	exactRoute := awsapigatewayv2.NewHttpRoute(stack, jsii.String("AdminRoute"), &awsapigatewayv2.HttpRouteProps{
+		HttpApi:     httpAPI,
+		RouteKey:    awsapigatewayv2.HttpRouteKey_With(jsii.String("/admin"), awsapigatewayv2.HttpMethod_ANY),
+		Integration: adminIntegration,
+	})
+	proxyRoute := awsapigatewayv2.NewHttpRoute(stack, jsii.String("AdminProxyRoute"), &awsapigatewayv2.HttpRouteProps{
+		HttpApi:     httpAPI,
+		RouteKey:    awsapigatewayv2.HttpRouteKey_With(jsii.String("/admin/{proxy+}"), awsapigatewayv2.HttpMethod_ANY),
+		Integration: adminIntegration,
+	})
+
+	return []awsapigatewayv2.HttpRoute{exactRoute, proxyRoute}
+}
+
+func adminCredentialsSecret(stack awscdk.Stack) awssecretsmanager.ISecret {
+	return awssecretsmanager.Secret_FromSecretNameV2(stack, jsii.String("AdminCredentialsSecret"), jsii.String(adminCredentialsSecretName))
+}
+
+func adminCredentialsSecretReference(secret awssecretsmanager.ISecret) *string {
+	return awscdk.NewCfnDynamicReference(
+		awscdk.CfnDynamicReferenceService_SECRETS_MANAGER,
+		secret.CfnDynamicReferenceKey(nil),
+	).ToString()
 }
 
 func addCartCookieSecret(stack awscdk.Stack) awssecretsmanager.Secret {
@@ -228,7 +337,7 @@ func cartCookieSecretReference(secret awssecretsmanager.ISecret) *string {
 	).ToString()
 }
 
-func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi) {
+func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi, productImagesBucket awss3.IBucket) {
 	hostedZone := siteHostedZone(stack)
 	certificate := awscertificatemanager.NewCertificate(stack, jsii.String("SiteCertificate"), &awscertificatemanager.CertificateProps{
 		DomainName: jsii.String(siteDomainName),
@@ -246,14 +355,6 @@ func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi) {
 		ObjectOwnership:   awss3.ObjectOwnership_BUCKET_OWNER_ENFORCED,
 		RemovalPolicy:     awscdk.RemovalPolicy_RETAIN,
 	})
-	productImagesBucket := awss3.NewBucket(stack, jsii.String("ProductImagesBucket"), &awss3.BucketProps{
-		BlockPublicAccess: awss3.BlockPublicAccess_BLOCK_ALL(),
-		Encryption:        awss3.BucketEncryption_S3_MANAGED,
-		EnforceSSL:        jsii.Bool(true),
-		ObjectOwnership:   awss3.ObjectOwnership_BUCKET_OWNER_ENFORCED,
-		RemovalPolicy:     awscdk.RemovalPolicy_RETAIN,
-	})
-
 	staticAssetsDeploymentLogGroup := awslogs.NewLogGroup(stack, jsii.String("StaticAssetsDeploymentLogGroup"), &awslogs.LogGroupProps{
 		LogGroupName: jsii.String("/aws/lambda/thailandgiftshop-static-assets-deployment"),
 		Retention:    awslogs.RetentionDays_THREE_MONTHS,
@@ -366,7 +467,7 @@ func siteSecurityHeaders(stack awscdk.Stack) awscloudfront.ResponseHeadersPolicy
 		Comment: jsii.String("Security headers for thailandgiftshop.com"),
 		SecurityHeadersBehavior: &awscloudfront.ResponseSecurityHeadersBehavior{
 			ContentSecurityPolicy: &awscloudfront.ResponseHeadersContentSecurityPolicy{
-				ContentSecurityPolicy: jsii.String("default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self'; manifest-src 'self'"),
+				ContentSecurityPolicy: jsii.String("default-src 'self'; base-uri 'self'; connect-src 'self' https://*.s3.amazonaws.com https://*.s3.us-east-1.amazonaws.com; frame-ancestors 'none'; form-action 'self' https://*.s3.amazonaws.com https://*.s3.us-east-1.amazonaws.com; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self'; manifest-src 'self'"),
 				Override:              jsii.Bool(true),
 			},
 			ContentTypeOptions: &awscloudfront.ResponseHeadersContentTypeOptions{

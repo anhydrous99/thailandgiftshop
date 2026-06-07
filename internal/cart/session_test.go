@@ -105,6 +105,44 @@ func TestCartAddSetRemoveClearAndCounts(t *testing.T) {
 	}
 }
 
+func TestCartLineIdentityIncludesVariantID(t *testing.T) {
+	cart := Empty()
+	var err error
+	cart, err = cart.AddLine("linen-shirt", "var-small", 2)
+	if err != nil {
+		t.Fatalf("AddLine small returned error: %v", err)
+	}
+	cart, err = cart.AddLine("linen-shirt", "var-large", 3)
+	if err != nil {
+		t.Fatalf("AddLine large returned error: %v", err)
+	}
+	cart, err = cart.AddLine("linen-shirt", "var-small", 4)
+	if err != nil {
+		t.Fatalf("AddLine duplicate small returned error: %v", err)
+	}
+
+	want := []Line{
+		{Slug: "linen-shirt", VariantID: "var-small", Quantity: 6},
+		{Slug: "linen-shirt", VariantID: "var-large", Quantity: 3},
+	}
+	if got := cart.Lines(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("variant lines = %#v, want %#v", got, want)
+	}
+
+	cart, err = cart.SetLineQuantity("linen-shirt", "var-large", 1)
+	if err != nil {
+		t.Fatalf("SetLineQuantity large returned error: %v", err)
+	}
+	cart, err = cart.RemoveLine("linen-shirt", "var-small")
+	if err != nil {
+		t.Fatalf("RemoveLine small returned error: %v", err)
+	}
+	want = []Line{{Slug: "linen-shirt", VariantID: "var-large", Quantity: 1}}
+	if got := cart.Lines(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("variant lines after set/remove = %#v, want %#v", got, want)
+	}
+}
+
 func TestCartSetQuantityCanAddAndRemove(t *testing.T) {
 	cart := Empty()
 	cart, err := cart.SetQuantity("mango", 8)
@@ -172,6 +210,42 @@ func TestCartCookieNormalizesDuplicateSlugs(t *testing.T) {
 	want := []Line{{Slug: "mango", Quantity: MaxQuantity}, {Slug: "tea", Quantity: 2}}
 	if got := decoded.Cart.Lines(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("normalized duplicate lines = %#v, want %#v", got, want)
+	}
+}
+
+func TestCartCookiePreservesLegacyLinesWithoutVariantID(t *testing.T) {
+	encoded := signedRawTestCookie(t, []byte(`{"version":1,"lines":[{"slug":"mango","quantity":2}]}`))
+
+	decoded := DecodeCookie(encoded, testSecret)
+	if decoded.NeedsClear {
+		t.Fatal("DecodeCookie legacy no-variant line NeedsClear = true, want false")
+	}
+	want := []Line{{Slug: "mango", Quantity: 2}}
+	if got := decoded.Cart.Lines(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("legacy decoded lines = %#v, want %#v", got, want)
+	}
+}
+
+func TestCartCookieNormalizesDuplicateVariantLinesBySlugAndVariantID(t *testing.T) {
+	encoded := signedTestCookie(t, cookiePayload{
+		Version: payloadVersion,
+		Lines: []Line{
+			{Slug: "linen-shirt", VariantID: "var-small", Quantity: 2},
+			{Slug: "linen-shirt", VariantID: "var-large", Quantity: 3},
+			{Slug: "linen-shirt", VariantID: "var-small", Quantity: 4},
+		},
+	})
+
+	decoded := DecodeCookie(encoded, testSecret)
+	if decoded.NeedsClear {
+		t.Fatal("DecodeCookie variant duplicate lines NeedsClear = true, want false")
+	}
+	want := []Line{
+		{Slug: "linen-shirt", VariantID: "var-small", Quantity: 6},
+		{Slug: "linen-shirt", VariantID: "var-large", Quantity: 3},
+	}
+	if got := decoded.Cart.Lines(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("normalized variant lines = %#v, want %#v", got, want)
 	}
 }
 

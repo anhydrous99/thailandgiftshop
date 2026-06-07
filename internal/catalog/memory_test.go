@@ -102,12 +102,14 @@ func TestMemoryStoreDefensivelyCopiesInputsAndResults(t *testing.T) {
 		Slug:          "copy-source",
 		Status:        StatusActive,
 		CategorySlugs: []string{"pantry"},
+		Variants:      []ProductVariant{{ID: "var_copy", Label: "Small", Status: StatusActive, StockQuantity: 3}},
 	}}
 	categories := []Category{{Slug: "pantry", Status: StatusActive}}
 	store := NewMemoryStore(products, categories)
 
 	products[0].Slug = "mutated-input"
 	products[0].CategorySlugs[0] = "mutated-category"
+	products[0].Variants[0].Label = "mutated-variant-input"
 	categories[0].Slug = "mutated-category"
 
 	listedProducts, err := store.ListActiveProducts(context.Background(), 0)
@@ -120,8 +122,12 @@ func TestMemoryStoreDefensivelyCopiesInputsAndResults(t *testing.T) {
 	if got := listedProducts[0].CategorySlugs[0]; got != "pantry" {
 		t.Fatalf("stored product category = %q, want pantry", got)
 	}
+	if got := listedProducts[0].Variants[0].Label; got != "Small" {
+		t.Fatalf("stored product variant label = %q, want Small", got)
+	}
 
 	listedProducts[0].CategorySlugs[0] = "mutated-result"
+	listedProducts[0].Variants[0].Label = "mutated-variant-result"
 	product, ok, err := store.GetProductBySlug(context.Background(), "copy-source")
 	if err != nil {
 		t.Fatalf("GetProductBySlug returned error: %v", err)
@@ -131,6 +137,9 @@ func TestMemoryStoreDefensivelyCopiesInputsAndResults(t *testing.T) {
 	}
 	if got := product.CategorySlugs[0]; got != "pantry" {
 		t.Fatalf("stored product category after result mutation = %q, want pantry", got)
+	}
+	if got := product.Variants[0].Label; got != "Small" {
+		t.Fatalf("stored product variant after result mutation = %q, want Small", got)
 	}
 
 	listedCategories, err := store.ListActiveCategories(context.Background())
@@ -170,6 +179,40 @@ func TestNewDemoStoreReturnsDeterministicCatalogStore(t *testing.T) {
 	}
 	if len(categories) != len(DemoCatalogCategories()) {
 		t.Fatalf("active demo category count = %d, want %d", len(categories), len(DemoCatalogCategories()))
+	}
+}
+
+func TestDemoCatalogProductsIncludesAdminE2EVariantProduct(t *testing.T) {
+	products := DemoCatalogProducts()
+	var product Product
+	found := false
+	for _, candidate := range products {
+		if candidate.Status == StatusActive && candidate.Slug == "handwoven-indigo-scarf" {
+			product = candidate
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("active demo variant product handwoven-indigo-scarf not found")
+	}
+
+	wantStocks := map[string]int{"S": 1, "M": 2, "XL": 0}
+	variants := product.ActiveVariants()
+	if len(variants) != len(wantStocks) {
+		t.Fatalf("active variants = %d, want %d", len(variants), len(wantStocks))
+	}
+	for _, variant := range variants {
+		wantStock, ok := wantStocks[variant.Label]
+		if !ok {
+			t.Fatalf("unexpected active variant label %q", variant.Label)
+		}
+		if variant.StockQuantity != wantStock {
+			t.Fatalf("variant %s stock = %d, want %d", variant.Label, variant.StockQuantity, wantStock)
+		}
+	}
+	if got := product.TotalAvailableStock(); got != 3 {
+		t.Fatalf("variant product total stock = %d, want 3", got)
 	}
 }
 

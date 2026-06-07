@@ -32,18 +32,36 @@ templ cartPage(vm cartPageViewModel) {
 										<div class="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-start">
 											<div>
 												<a href={ "/products/" + line.Product.Slug } class="text-xl font-black leading-7 text-[#2D2A4A] transition hover:text-[#A51931]">{ line.Product.Name }</a>
+												if line.VariantLabel != "" {
+													<p class="mt-2 inline-flex rounded-full bg-[#F4F5F8] px-3 py-1 text-xs font-black uppercase tracking-wide text-[#2D2A4A]">Size { line.VariantLabel }</p>
+												}
+												if !line.Available {
+													<p class="mt-3 rounded-lg border border-[#A51931]/20 bg-[#A51931]/10 px-4 py-3 text-sm font-black text-[#A51931]">{ line.UnavailableMessage }</p>
+												}
 												<p class="mt-2 text-sm leading-6 text-[#4C4A62]">Unit price <span class="font-black text-[#A51931]">{ formatPrice(line.Product.PriceCents) }</span></p>
 												<p class="mt-1 text-sm leading-6 text-[#4C4A62]">Line total <span class="font-black text-[#2D2A4A]">{ formatPrice(lineTotalCents(line)) }</span></p>
 											</div>
 											<div class="grid gap-3 sm:min-w-48">
-												<form method="post" action={ "/cart/items/" + line.Product.Slug + "/quantity" } class="flex items-end gap-2">
-													<label class="grid gap-1 text-xs font-black uppercase tracking-wide text-[#4C4A62]">
-														Quantity
-														<input name="quantity" type="number" min="1" max={ strconv.Itoa(cartQuantityLimit(line.Product)) } value={ strconv.Itoa(line.Quantity) } class="h-11 w-24 rounded-full border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-sm font-black text-[#2D2A4A] focus:border-[#A51931] focus:outline-none"/>
-													</label>
-													<button type="submit" class="inline-flex h-11 items-center justify-center rounded-full bg-[#2D2A4A] px-4 text-sm font-black text-white shadow-sm transition hover:bg-[#17172A] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#A51931]">Update</button>
-												</form>
+												if line.Available {
+													<form method="post" action={ "/cart/items/" + line.Product.Slug + "/quantity" } class="flex items-end gap-2">
+														<input type="hidden" name="variant_id" value={ line.VariantID }/>
+														<label class="grid gap-1 text-xs font-black uppercase tracking-wide text-[#4C4A62]">
+															Quantity
+															<input name="quantity" type="number" min="1" max={ strconv.Itoa(cartLineQuantityLimit(line)) } value={ strconv.Itoa(line.Quantity) } class="h-11 w-24 rounded-full border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-sm font-black text-[#2D2A4A] focus:border-[#A51931] focus:outline-none"/>
+														</label>
+														<button type="submit" class="inline-flex h-11 items-center justify-center rounded-full bg-[#2D2A4A] px-4 text-sm font-black text-white shadow-sm transition hover:bg-[#17172A] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#A51931]">Update</button>
+													</form>
+												} else {
+													<div class="flex items-end gap-2 opacity-70">
+														<label class="grid gap-1 text-xs font-black uppercase tracking-wide text-[#4C4A62]">
+															Quantity
+															<input name="quantity" type="number" value={ strconv.Itoa(line.Quantity) } class="h-11 w-24 rounded-full border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-sm font-black text-[#2D2A4A]" disabled/>
+														</label>
+														<button type="button" class="inline-flex h-11 items-center justify-center rounded-full bg-[#4C4A62]/40 px-4 text-sm font-black text-white" disabled>Update</button>
+													</div>
+												}
 												<form method="post" action={ "/cart/items/" + line.Product.Slug + "/remove" }>
+													<input type="hidden" name="variant_id" value={ line.VariantID }/>
 													<button type="submit" class="text-sm font-black text-[#A51931] transition hover:text-[#831426]">Remove</button>
 												</form>
 											</div>
@@ -59,7 +77,11 @@ templ cartPage(vm cartPageViewModel) {
 								</div>
 								<p class="mt-3 text-sm leading-6 text-[#4C4A62]">Shipping, tax, and payment are not collected on this review-only checkout flow.</p>
 								<div class="mt-6 grid gap-3">
-									<a href="/checkout" class="inline-flex h-12 items-center justify-center rounded-full bg-[#A51931] px-6 text-sm font-black text-white shadow-sm transition hover:bg-[#831426] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2D2A4A]">Review checkout</a>
+									if hasUnavailableCartLines(vm.Lines) {
+										<p class="rounded-lg border border-[#A51931]/20 bg-[#A51931]/10 px-4 py-3 text-sm font-black leading-6 text-[#A51931]">Remove unavailable sizes before checkout review.</p>
+									} else {
+										<a href="/checkout" class="inline-flex h-12 items-center justify-center rounded-full bg-[#A51931] px-6 text-sm font-black text-white shadow-sm transition hover:bg-[#831426] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2D2A4A]">Review checkout</a>
+									}
 									<a href="/products" class="inline-flex h-12 items-center justify-center rounded-full border border-[#2D2A4A]/20 bg-[#F8F4EE] px-6 text-sm font-black text-[#2D2A4A] transition hover:border-[#A51931]/40">Continue shopping</a>
 									<form method="post" action="/cart/clear">
 										<button type="submit" class="inline-flex h-12 w-full items-center justify-center rounded-full border border-[#A51931]/30 bg-white px-6 text-sm font-black text-[#A51931] transition hover:bg-[#A51931]/10">Clear cart</button>

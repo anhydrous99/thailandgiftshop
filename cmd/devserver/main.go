@@ -7,7 +7,9 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 
+	"github.com/anhydrous99/thailandgiftshop/internal/admin"
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
 	"github.com/anhydrous99/thailandgiftshop/internal/ssr"
 	"github.com/aws/aws-lambda-go/events"
@@ -28,7 +30,7 @@ func main() {
 	imageDir := envOrDefault("IMAGE_DIR", defaultImageDir)
 	address := net.JoinHostPort(host, port)
 
-	handler, err := newDevServerHandler(context.Background())
+	handlers, err := newDevServerHandlers(context.Background())
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -37,7 +39,11 @@ func main() {
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir(staticDir))))
 	mux.Handle("/images/", http.StripPrefix("/images/", http.FileServer(http.Dir(imageDir))))
 	mux.HandleFunc("/", func(responseWriter http.ResponseWriter, request *http.Request) {
-		handleSSR(handler, responseWriter, request)
+		if request.URL.Path == "/admin" || strings.HasPrefix(request.URL.Path, "/admin/") {
+			handleAdmin(handlers.admin, responseWriter, request)
+			return
+		}
+		handleSSR(handlers.ssr, responseWriter, request)
 	})
 
 	log.Printf("serving local SSR site at http://%s", address)
@@ -46,11 +52,36 @@ func main() {
 	}
 }
 
+type devServerHandlers struct {
+	ssr   *ssr.Handler
+	admin *admin.Handler
+}
+
+func newDevServerHandlers(ctx context.Context) (devServerHandlers, error) {
+	if os.Getenv(envDemoCatalogStore) == "1" {
+		store := catalog.NewMemoryStore(catalog.DemoCatalogProducts(), catalog.DemoCatalogCategories())
+		credentials, err := admin.CredentialsFromEnvironment(ctx)
+		if err != nil {
+			return devServerHandlers{}, err
+		}
+		return devServerHandlers{ssr: ssr.NewHandler(store), admin: admin.NewLocalDemoHandler(credentials, store)}, nil
+	}
+
+	ssrHandler, err := ssr.NewHandlerFromEnvironment(ctx)
+	if err != nil {
+		return devServerHandlers{}, err
+	}
+	adminHandler, err := admin.NewHandlerFromEnvironment(ctx)
+	if err != nil {
+		return devServerHandlers{}, err
+	}
+	return devServerHandlers{ssr: ssrHandler, admin: adminHandler}, nil
+}
+
 func newDevServerHandler(ctx context.Context) (*ssr.Handler, error) {
 	if os.Getenv(envDemoCatalogStore) == "1" {
 		return ssr.NewHandler(catalog.NewDemoStore()), nil
 	}
-
 	return ssr.NewHandlerFromEnvironment(ctx)
 }
 
@@ -64,6 +95,45 @@ func envOrDefault(name string, fallback string) string {
 }
 
 func handleSSR(handler *ssr.Handler, responseWriter http.ResponseWriter, request *http.Request) {
+	body, err := io.ReadAll(request.Body)
+	if err != nil {
+		http.Error(responseWriter, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	apiResponse, err := handler.Handle(request.Context(), events.APIGatewayV2HTTPRequest{
+		RawPath:               request.URL.Path,
+		RawQueryString:        request.URL.RawQuery,
+		Headers:               requestHeaders(request),
+		Cookies:               requestCookies(request),
+		Body:                  string(body),
+		IsBase64Encoded:       false,
+		QueryStringParameters: queryParameters(request),
+		RequestContext: events.APIGatewayV2HTTPRequestContext{
+			HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+				Method: request.Method,
+				Path:   request.URL.Path,
+			},
+		},
+	})
+	if err != nil {
+		http.Error(responseWriter, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	for key, value := range apiResponse.Headers {
+		responseWriter.Header().Set(key, value)
+	}
+	for _, cookie := range apiResponse.Cookies {
+		responseWriter.Header().Add("Set-Cookie", cookie)
+	}
+	responseWriter.WriteHeader(apiResponse.StatusCode)
+	if request.Method != http.MethodHead {
+		_, _ = responseWriter.Write([]byte(apiResponse.Body))
+	}
+}
+
+func handleAdmin(handler *admin.Handler, responseWriter http.ResponseWriter, request *http.Request) {
 	body, err := io.ReadAll(request.Body)
 	if err != nil {
 		http.Error(responseWriter, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)

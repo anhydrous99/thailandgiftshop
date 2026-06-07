@@ -158,7 +158,7 @@ func (h *Handler) Handle(ctx context.Context, request events.APIGatewayV2HTTPReq
 		var lines []cartLineView
 		currentCart, lines, cookies, err = h.cartFromRequest(ctx, request)
 		headerCartLabel = cartNavigationLabel(currentCart.TotalItemCount())
-		if err == nil && currentCart.LineCount() == 0 {
+		if err == nil && (currentCart.LineCount() == 0 || hasUnavailableCartLines(lines)) {
 			response := seeOtherResponse("/cart", cookies)
 			if method == http.MethodHead {
 				response.Body = ""
@@ -515,8 +515,13 @@ func (h *Handler) renderStory(ctx context.Context, headerCartLabel string) (stri
 }
 
 type cartLineView struct {
-	Product  catalog.Product
-	Quantity int
+	Product            catalog.Product
+	VariantID          string
+	VariantLabel       string
+	Quantity           int
+	StockLimit         int
+	Available          bool
+	UnavailableMessage string
 }
 
 func (h *Handler) handleCartMutation(ctx context.Context, request events.APIGatewayV2HTTPRequest, route pageRoute) events.APIGatewayV2HTTPResponse {
@@ -538,14 +543,22 @@ func (h *Handler) handleCartMutation(ctx context.Context, request events.APIGate
 			return htmlResponse(http.StatusBadRequest, "Invalid quantity", nil)
 		}
 		slug := form.Get("slug")
-		product, found, err := h.availableCartProduct(ctx, slug)
+		variantID := strings.TrimSpace(form.Get("variant_id"))
+		product, found, err := h.cartProduct(ctx, slug)
 		if err != nil {
 			return htmlResponse(http.StatusInternalServerError, "Internal server error", nil)
 		}
 		if !found {
 			return htmlResponse(http.StatusNotFound, "Not found", nil)
 		}
-		mutatedCart, err = currentCart.Add(product.Slug, min(quantity, product.StockQuantity, cart.MaxQuantity))
+		stockLimit, ok := availableStockForProduct(product, variantID, true)
+		if !ok {
+			if !product.UsesVariants() {
+				return htmlResponse(http.StatusNotFound, "Not found", nil)
+			}
+			return htmlResponse(http.StatusBadRequest, "Select an available size", nil)
+		}
+		mutatedCart, err = currentCart.AddLine(product.Slug, variantID, min(quantity, stockLimit, cart.MaxQuantity))
 		if err != nil {
 			return cartMutationErrorResponse(err)
 		}
@@ -554,26 +567,35 @@ func (h *Handler) handleCartMutation(ctx context.Context, request events.APIGate
 		if !ok {
 			return htmlResponse(http.StatusBadRequest, "Invalid quantity", nil)
 		}
-		product, found, err := h.availableCartProduct(ctx, route.slug)
+		variantID := strings.TrimSpace(form.Get("variant_id"))
+		product, found, err := h.cartProduct(ctx, route.slug)
 		if err != nil {
 			return htmlResponse(http.StatusInternalServerError, "Internal server error", nil)
 		}
 		if !found {
 			return htmlResponse(http.StatusNotFound, "Not found", nil)
 		}
-		mutatedCart, err = currentCart.SetQuantity(product.Slug, min(quantity, product.StockQuantity, cart.MaxQuantity))
+		stockLimit, ok := availableStockForProduct(product, variantID, false)
+		if !ok {
+			if !product.UsesVariants() {
+				return htmlResponse(http.StatusNotFound, "Not found", nil)
+			}
+			return htmlResponse(http.StatusBadRequest, "Bad request", nil)
+		}
+		mutatedCart, err = currentCart.SetLineQuantity(product.Slug, variantID, min(quantity, stockLimit, cart.MaxQuantity))
 		if err != nil {
 			return cartMutationErrorResponse(err)
 		}
 	case pageCartRemove:
-		product, found, err := h.availableCartProduct(ctx, route.slug)
+		variantID := strings.TrimSpace(form.Get("variant_id"))
+		product, found, err := h.cartProduct(ctx, route.slug)
 		if err != nil {
 			return htmlResponse(http.StatusInternalServerError, "Internal server error", nil)
 		}
 		if !found {
 			return htmlResponse(http.StatusNotFound, "Not found", nil)
 		}
-		mutatedCart, err = currentCart.Remove(product.Slug)
+		mutatedCart, err = currentCart.RemoveLine(product.Slug, variantID)
 		if err != nil {
 			return cartMutationErrorResponse(err)
 		}
@@ -604,13 +626,31 @@ func cartMutationErrorResponse(err error) events.APIGatewayV2HTTPResponse {
 	return htmlResponse(http.StatusInternalServerError, "Internal server error", nil)
 }
 
-func (h *Handler) availableCartProduct(ctx context.Context, slug string) (catalog.Product, bool, error) {
+func (h *Handler) cartProduct(ctx context.Context, slug string) (catalog.Product, bool, error) {
 	product, found, err := h.catalogStore.GetProductBySlug(ctx, slug)
-	if err != nil || !found || product.Status != catalog.StatusActive || product.StockQuantity <= 0 {
+	if err != nil || !found || product.Status != catalog.StatusActive {
 		return catalog.Product{}, false, err
 	}
 
 	return product, true, nil
+}
+
+func availableStockForProduct(product catalog.Product, variantID string, requireVariantForVariantProducts bool) (int, bool) {
+	if product.UsesVariants() {
+		if requireVariantForVariantProducts && variantID == "" {
+			return 0, false
+		}
+		stock, ok := product.AvailableStockForVariant(variantID)
+		if !ok || stock <= 0 {
+			return 0, false
+		}
+		return stock, true
+	}
+	if variantID != "" || product.StockQuantity <= 0 {
+		return 0, false
+	}
+
+	return product.StockQuantity, true
 }
 
 func (h *Handler) cartFromRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) (cart.Cart, []cartLineView, []string, error) {
@@ -650,21 +690,51 @@ func (h *Handler) normalizeCart(ctx context.Context, currentCart cart.Cart) (car
 		if err != nil {
 			return cart.Empty(), nil, false, err
 		}
-		if !found || product.Status != catalog.StatusActive || product.StockQuantity <= 0 {
+		if !found || product.Status != catalog.StatusActive {
 			changed = true
 			continue
 		}
 
-		quantity := min(line.Quantity, product.StockQuantity, cart.MaxQuantity)
+		lineView := cartLineView{
+			Product:    product,
+			VariantID:  line.VariantID,
+			Quantity:   line.Quantity,
+			Available:  true,
+			StockLimit: product.StockQuantity,
+		}
+		stockLimit := product.StockQuantity
+		if product.UsesVariants() {
+			variant, foundVariant := findProductVariant(product, line.VariantID)
+			lineView.Available = false
+			lineView.StockLimit = 0
+			lineView.UnavailableMessage = "Selected size is unavailable. Remove it to continue."
+			if foundVariant {
+				lineView.VariantLabel = variant.Label
+			}
+			if foundVariant && variant.Status == catalog.StatusActive && variant.StockQuantity > 0 {
+				lineView.Available = true
+				lineView.StockLimit = min(variant.StockQuantity, cart.MaxQuantity)
+				stockLimit = variant.StockQuantity
+			}
+		} else if line.VariantID != "" || product.StockQuantity <= 0 {
+			changed = true
+			continue
+		}
+
+		quantity := min(line.Quantity, stockLimit, cart.MaxQuantity)
+		if !lineView.Available {
+			quantity = min(line.Quantity, cart.MaxQuantity)
+		}
 		if quantity != line.Quantity {
 			changed = true
 		}
 		var setErr error
-		normalizedCart, setErr = normalizedCart.SetQuantity(product.Slug, quantity)
+		normalizedCart, setErr = normalizedCart.SetLineQuantity(product.Slug, line.VariantID, quantity)
 		if setErr != nil {
 			return cart.Empty(), nil, false, setErr
 		}
-		lines = append(lines, cartLineView{Product: product, Quantity: quantity})
+		lineView.Quantity = quantity
+		lines = append(lines, lineView)
 	}
 
 	return normalizedCart, lines, changed, nil
@@ -821,7 +891,34 @@ func subtotalCents(lines []cartLineView) int {
 }
 
 func cartQuantityLimit(product catalog.Product) int {
-	return min(product.StockQuantity, cart.MaxQuantity)
+	return min(product.TotalAvailableStock(), cart.MaxQuantity)
+}
+
+func cartLineQuantityLimit(line cartLineView) int {
+	if !line.Available || line.StockLimit <= 0 {
+		return 0
+	}
+	return min(line.StockLimit, cart.MaxQuantity)
+}
+
+var _ = cartLineQuantityLimit
+
+func hasUnavailableCartLines(lines []cartLineView) bool {
+	for _, line := range lines {
+		if !line.Available {
+			return true
+		}
+	}
+	return false
+}
+
+func findProductVariant(product catalog.Product, variantID string) (catalog.ProductVariant, bool) {
+	for _, variant := range product.Variants {
+		if variant.ID == variantID {
+			return variant, true
+		}
+	}
+	return catalog.ProductVariant{}, false
 }
 
 func (h *Handler) loadActiveCategories(ctx context.Context) ([]catalog.Category, error) {

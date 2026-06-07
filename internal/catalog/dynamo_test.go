@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -25,9 +26,14 @@ func TestProductItemRoundTripIncludesInventoryAndNoCurrency(t *testing.T) {
 		Status:        StatusActive,
 		SortOrder:     12,
 		StockQuantity: 0,
+		Version:       7,
 		CreatedAt:     createdAt,
 		UpdatedAt:     updatedAt,
 		CategorySlugs: []string{"food", "gifts"},
+		Variants: []ProductVariant{
+			{ID: "var_001_small", Label: "Small", StockQuantity: 2, Status: StatusActive, SortOrder: 10},
+			{ID: "var_001_large", Label: "Large", StockQuantity: 0, Status: StatusArchived, SortOrder: 20},
+		},
 	}
 
 	item, err := productItem(product)
@@ -64,8 +70,38 @@ func TestProductItemRoundTripIncludesInventoryAndNoCurrency(t *testing.T) {
 	if !reflect.DeepEqual(got, product) {
 		t.Fatalf("product round trip = %#v, want %#v", got, product)
 	}
-	if !got.OutOfStock() {
-		t.Fatal("OutOfStock = false, want true when stock quantity is zero")
+	if got.OutOfStock() {
+		t.Fatal("OutOfStock = true, want false when active variant stock is available")
+	}
+	if stock := got.TotalAvailableStock(); stock != 2 {
+		t.Fatalf("TotalAvailableStock = %d, want active variant stock 2", stock)
+	}
+}
+
+func TestDynamoProductFromItemPreservesLegacyProductWithoutVariantsOrVersion(t *testing.T) {
+	item := map[string]types.AttributeValue{
+		"pk":             &types.AttributeValueMemberS{Value: "PRODUCT#prod_legacy"},
+		"sk":             &types.AttributeValueMemberS{Value: productSK},
+		"entity_type":    &types.AttributeValueMemberS{Value: entityProduct},
+		"id":             &types.AttributeValueMemberS{Value: "prod_legacy"},
+		"slug":           &types.AttributeValueMemberS{Value: "legacy-product"},
+		"name":           &types.AttributeValueMemberS{Value: "Legacy Product"},
+		"status":         &types.AttributeValueMemberS{Value: string(StatusActive)},
+		"stock_quantity": &types.AttributeValueMemberN{Value: "6"},
+	}
+
+	product, err := productFromItem(item)
+	if err != nil {
+		t.Fatalf("productFromItem returned error: %v", err)
+	}
+	if product.Version != 0 {
+		t.Fatalf("legacy product Version = %d, want 0", product.Version)
+	}
+	if product.UsesVariants() {
+		t.Fatal("legacy product UsesVariants = true, want false when variants attribute is missing")
+	}
+	if got := product.TotalAvailableStock(); got != 6 {
+		t.Fatalf("legacy product TotalAvailableStock = %d, want stock_quantity 6", got)
 	}
 }
 
@@ -387,6 +423,257 @@ func TestDynamoStoreListActiveProductsByCategoryUsesBaseTable(t *testing.T) {
 	}
 }
 
+func TestDynamoAdminStoreCreateProductTransactionWritesProductSlugLockMembershipsAndVariants(t *testing.T) {
+	client := &fakeTransactWriteClient{}
+	store := NewDynamoAdminStore(client, dynamoTestConfig())
+	product := Product{
+		ID:            "prod_admin_001",
+		Slug:          "admin-mango-kit",
+		Name:          "Admin Mango Kit",
+		PriceCents:    2999,
+		ImageURL:      "/images/products/admin-mango.jpg",
+		Status:        StatusActive,
+		SortOrder:     14,
+		StockQuantity: 0,
+		CreatedAt:     time.Date(2026, 6, 7, 9, 0, 0, 0, time.UTC),
+		UpdatedAt:     time.Date(2026, 6, 7, 10, 0, 0, 0, time.UTC),
+		CategorySlugs: []string{"market-finds", "snacks-sweets"},
+		Variants:      []ProductVariant{{ID: "var_small", Label: "Small", StockQuantity: 5, Status: StatusActive, SortOrder: 10}},
+	}
+
+	written, err := store.CreateProduct(context.Background(), product)
+	if err != nil {
+		t.Fatalf("CreateProduct returned error: %v", err)
+	}
+	if written.Version != 1 {
+		t.Fatalf("created Version = %d, want 1", written.Version)
+	}
+	input := client.inputs[0]
+	if len(input.TransactItems) != 4 {
+		t.Fatalf("transaction item count = %d, want product, slug lock, and two memberships", len(input.TransactItems))
+	}
+	productPut := input.TransactItems[0].Put
+	if productPut == nil {
+		t.Fatal("first transaction item is not a Put")
+	}
+	if got := aws.ToString(productPut.ConditionExpression); got != "attribute_not_exists(#pk)" {
+		t.Fatalf("product create condition = %q", got)
+	}
+	if got := stringAttribute(t, productPut.Item, "gsi2pk"); got != activeProductsIndexPK {
+		t.Fatalf("active product public index pk = %q", got)
+	}
+	if got := stringAttribute(t, productPut.Item, "gsi3pk"); got != recentProductsIndexPK {
+		t.Fatalf("active product recent index pk = %q", got)
+	}
+	productRoundTrip, err := productFromItem(productPut.Item)
+	if err != nil {
+		t.Fatalf("created product item did not round trip: %v", err)
+	}
+	if productRoundTrip.Version != 1 || len(productRoundTrip.Variants) != 1 || productRoundTrip.Variants[0].ID != "var_small" {
+		t.Fatalf("created product round trip = %#v", productRoundTrip)
+	}
+
+	slugPut := input.TransactItems[1].Put
+	if slugPut == nil {
+		t.Fatal("second transaction item is not slug lock Put")
+	}
+	if _, ok := slugPut.Item["gsi1pk"]; ok {
+		t.Fatal("slug lock unexpectedly includes gsi1pk")
+	}
+	if got := stringAttribute(t, slugPut.Item, "pk"); got != "PRODUCT_SLUG#admin-mango-kit" {
+		t.Fatalf("slug lock pk = %q", got)
+	}
+	if got := stringAttribute(t, slugPut.Item, "product_id"); got != product.ID {
+		t.Fatalf("slug lock product_id = %q", got)
+	}
+	for index, wantCategory := range []string{"market-finds", "snacks-sweets"} {
+		put := input.TransactItems[index+2].Put
+		if put == nil {
+			t.Fatalf("membership transaction item %d is not a Put", index+2)
+		}
+		if got := stringAttribute(t, put.Item, "pk"); got != "CATEGORY#"+wantCategory {
+			t.Fatalf("membership pk = %q", got)
+		}
+		membership, err := productFromItem(put.Item)
+		if err != nil {
+			t.Fatalf("membership item did not round trip: %v", err)
+		}
+		if membership.Name != product.Name || len(membership.Variants) != 1 || membership.Version != 1 {
+			t.Fatalf("membership denormalized product = %#v", membership)
+		}
+	}
+}
+
+func TestDynamoAdminStoreUpdateProductVersionAndReplacesMembershipRows(t *testing.T) {
+	client := &fakeTransactWriteClient{}
+	store := NewDynamoAdminStore(client, dynamoTestConfig())
+	previous := Product{
+		ID:            "prod_admin_002",
+		Slug:          "teak-elephant",
+		Name:          "Teak Elephant",
+		PriceCents:    3999,
+		Status:        StatusActive,
+		SortOrder:     5,
+		StockQuantity: 2,
+		Version:       3,
+		CreatedAt:     time.Date(2026, 6, 1, 9, 0, 0, 0, time.UTC),
+		CategorySlugs: []string{"home-decor", "souvenirs"},
+	}
+	updated := previous
+	updated.Name = "Carved Teak Elephant"
+	updated.ImageURL = "/images/products/teak-new.jpg"
+	updated.SortOrder = 7
+	updated.StockQuantity = 9
+	updated.CategorySlugs = []string{"home-decor", "market-finds"}
+	updated.UpdatedAt = time.Date(2026, 6, 7, 11, 0, 0, 0, time.UTC)
+
+	written, err := store.UpdateProduct(context.Background(), previous, updated)
+	if err != nil {
+		t.Fatalf("UpdateProduct returned error: %v", err)
+	}
+	if written.Version != 4 {
+		t.Fatalf("updated Version = %d, want 4", written.Version)
+	}
+	items := client.inputs[0].TransactItems
+	if len(items) != 6 {
+		t.Fatalf("transaction item count = %d, want product, slug lock, two stale deletes, two puts", len(items))
+	}
+	productPut := items[0].Put
+	if got := aws.ToString(productPut.ConditionExpression); got != "#version = :expected_version" {
+		t.Fatalf("product update condition = %q", got)
+	}
+	if got := numberAttribute(t, productPut.ExpressionAttributeValues, ":expected_version"); got != "3" {
+		t.Fatalf("expected version value = %q", got)
+	}
+	for index, wantSK := range []string{"PRODUCT#0000000005#prod_admin_002", "PRODUCT#0000000005#prod_admin_002"} {
+		deleteItem := items[index+2].Delete
+		if deleteItem == nil {
+			t.Fatalf("stale membership item %d is not a Delete", index+2)
+		}
+		if got := stringAttribute(t, deleteItem.Key, "sk"); got != wantSK {
+			t.Fatalf("stale membership delete sk = %q", got)
+		}
+	}
+	for _, index := range []int{4, 5} {
+		membership, err := productFromItem(items[index].Put.Item)
+		if err != nil {
+			t.Fatalf("updated membership did not round trip: %v", err)
+		}
+		if membership.Name != updated.Name || membership.ImageURL != updated.ImageURL || membership.StockQuantity != 9 || membership.Version != 4 {
+			t.Fatalf("updated membership denormalized product = %#v", membership)
+		}
+	}
+}
+
+func TestDynamoAdminStoreDuplicateSlugAndStaleVersionConflicts(t *testing.T) {
+	product := Product{ID: "prod_admin_003", Slug: "duplicate-slug", Status: StatusActive, Version: 2}
+
+	duplicateClient := &fakeTransactWriteClient{err: transactionCanceledAt(1)}
+	duplicateStore := NewDynamoAdminStore(duplicateClient, dynamoTestConfig())
+	if _, err := duplicateStore.CreateProduct(context.Background(), product); !errors.Is(err, ErrSlugConflict) {
+		t.Fatalf("CreateProduct duplicate err = %v, want ErrSlugConflict", err)
+	}
+
+	staleClient := &fakeTransactWriteClient{err: transactionCanceledAt(0)}
+	staleStore := NewDynamoAdminStore(staleClient, dynamoTestConfig())
+	if _, err := staleStore.UpdateProduct(context.Background(), product, product); !errors.Is(err, ErrVersionConflict) {
+		t.Fatalf("UpdateProduct stale err = %v, want ErrVersionConflict", err)
+	}
+}
+
+func TestDynamoAdminStoreArchiveProductRemovesPublicIndexesAndKeepsAdminRows(t *testing.T) {
+	client := &fakeTransactWriteClient{}
+	store := NewDynamoAdminStore(client, dynamoTestConfig())
+	product := Product{
+		ID:            "prod_admin_004",
+		Slug:          "archive-me",
+		Name:          "Archive Me",
+		Status:        StatusActive,
+		SortOrder:     22,
+		Version:       6,
+		CreatedAt:     time.Date(2026, 6, 1, 9, 0, 0, 0, time.UTC),
+		UpdatedAt:     time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC),
+		CategorySlugs: []string{"pantry"},
+	}
+
+	archived, err := store.ArchiveProduct(context.Background(), product)
+	if err != nil {
+		t.Fatalf("ArchiveProduct returned error: %v", err)
+	}
+	if archived.Status != StatusArchived || archived.Version != 7 {
+		t.Fatalf("archived product = %#v", archived)
+	}
+	items := client.inputs[0].TransactItems
+	productPut := items[0].Put.Item
+	if _, ok := productPut["gsi2pk"]; ok {
+		t.Fatal("archived product retained public index pk")
+	}
+	if _, ok := productPut["gsi3pk"]; ok {
+		t.Fatal("archived product retained recent index pk")
+	}
+	if got := stringAttribute(t, productPut, "pk"); got != "PRODUCT#prod_admin_004" {
+		t.Fatalf("archived product pk = %q", got)
+	}
+	membership, err := productFromItem(items[len(items)-1].Put.Item)
+	if err != nil {
+		t.Fatalf("archived membership did not round trip: %v", err)
+	}
+	if membership.Status != StatusArchived || membership.Version != 7 {
+		t.Fatalf("archived membership = %#v", membership)
+	}
+}
+
+func TestDynamoAdminStoreCategoryCreateUpdateArchiveUsesVersionAndPublicIndex(t *testing.T) {
+	client := &fakeTransactWriteClient{}
+	store := NewDynamoAdminStore(client, dynamoTestConfig())
+	category := Category{Slug: "admin-category", Name: "Admin Category", Status: StatusActive, SortOrder: 9, UpdatedAt: time.Date(2026, 6, 7, 13, 0, 0, 0, time.UTC)}
+
+	created, err := store.CreateCategory(context.Background(), category)
+	if err != nil {
+		t.Fatalf("CreateCategory returned error: %v", err)
+	}
+	if created.Version != 1 {
+		t.Fatalf("created category version = %d, want 1", created.Version)
+	}
+	if got := stringAttribute(t, client.inputs[0].TransactItems[0].Put.Item, "gsi2pk"); got != activeCategoriesIndexPK {
+		t.Fatalf("active category public index pk = %q", got)
+	}
+
+	updated := created
+	updated.Name = "Updated Category"
+	written, err := store.UpdateCategory(context.Background(), updated, 1)
+	if err != nil {
+		t.Fatalf("UpdateCategory returned error: %v", err)
+	}
+	if written.Version != 2 {
+		t.Fatalf("updated category version = %d, want 2", written.Version)
+	}
+	if got := numberAttribute(t, client.inputs[1].TransactItems[0].Put.ExpressionAttributeValues, ":expected_version"); got != "1" {
+		t.Fatalf("category expected version = %q", got)
+	}
+
+	archived, err := store.ArchiveCategory(context.Background(), written)
+	if err != nil {
+		t.Fatalf("ArchiveCategory returned error: %v", err)
+	}
+	if archived.Status != StatusArchived || archived.Version != 3 {
+		t.Fatalf("archived category = %#v", archived)
+	}
+	if _, ok := client.inputs[2].TransactItems[0].Put.Item["gsi2pk"]; ok {
+		t.Fatal("archived category retained public index pk")
+	}
+}
+
+func TestDynamoAdminStoreDuplicateCategorySlugReturnsSlugConflict(t *testing.T) {
+	client := &fakeTransactWriteClient{err: transactionCanceledAt(0)}
+	store := NewDynamoAdminStore(client, dynamoTestConfig())
+	category := Category{Slug: "duplicate-category", Name: "Duplicate Category", Status: StatusActive, SortOrder: 11}
+
+	if _, err := store.CreateCategory(context.Background(), category); !errors.Is(err, ErrSlugConflict) {
+		t.Fatalf("CreateCategory duplicate err = %v, want ErrSlugConflict", err)
+	}
+}
+
 func stringAttribute(t *testing.T, attributes map[string]types.AttributeValue, key string) string {
 	t.Helper()
 
@@ -402,10 +689,54 @@ func stringAttribute(t *testing.T, attributes map[string]types.AttributeValue, k
 	return member.Value
 }
 
+func numberAttribute(t *testing.T, attributes map[string]types.AttributeValue, key string) string {
+	t.Helper()
+
+	value, ok := attributes[key]
+	if !ok {
+		t.Fatalf("attribute %q is missing", key)
+	}
+	member, ok := value.(*types.AttributeValueMemberN)
+	if !ok {
+		t.Fatalf("attribute %q is %T, want number attribute", key, value)
+	}
+
+	return member.Value
+}
+
+func dynamoTestConfig() DynamoConfig {
+	return DynamoConfig{
+		TableName:       "catalog-table",
+		SlugIndexName:   "slug-index",
+		PublicIndexName: "public-index",
+		RecentIndexName: "recent-index",
+	}
+}
+
 type fakeQueryClient struct {
 	inputs  []dynamodb.QueryInput
 	outputs []*dynamodb.QueryOutput
 	err     error
+}
+
+type fakeTransactWriteClient struct {
+	inputs []dynamodb.TransactWriteItemsInput
+	err    error
+}
+
+func (f *fakeTransactWriteClient) TransactWriteItems(ctx context.Context, input *dynamodb.TransactWriteItemsInput, optFns ...func(*dynamodb.Options)) (*dynamodb.TransactWriteItemsOutput, error) {
+	f.inputs = append(f.inputs, *input)
+	if f.err != nil {
+		return nil, f.err
+	}
+
+	return &dynamodb.TransactWriteItemsOutput{}, nil
+}
+
+func transactionCanceledAt(index int) error {
+	reasons := make([]types.CancellationReason, index+1)
+	reasons[index] = types.CancellationReason{Code: aws.String("ConditionalCheckFailed")}
+	return &types.TransactionCanceledException{CancellationReasons: reasons}
 }
 
 func (f *fakeQueryClient) Query(ctx context.Context, input *dynamodb.QueryInput, optFns ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error) {

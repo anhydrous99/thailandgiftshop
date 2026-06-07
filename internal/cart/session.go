@@ -28,8 +28,9 @@ var (
 )
 
 type Line struct {
-	Slug     string `json:"slug"`
-	Quantity int    `json:"quantity"`
+	Slug      string `json:"slug"`
+	VariantID string `json:"variant_id,omitempty"`
+	Quantity  int    `json:"quantity"`
 }
 
 type Cart struct {
@@ -59,6 +60,10 @@ func (c Cart) Lines() []Line {
 }
 
 func (c Cart) Add(slug string, quantity int) (Cart, error) {
+	return c.AddLine(slug, "", quantity)
+}
+
+func (c Cart) AddLine(slug string, variantID string, quantity int) (Cart, error) {
 	if !validSlug(slug) {
 		return c, ErrInvalidSlug
 	}
@@ -68,7 +73,7 @@ func (c Cart) Add(slug string, quantity int) (Cart, error) {
 
 	lines := cloneLines(c.lines)
 	for i, line := range lines {
-		if line.Slug != slug {
+		if line.Slug != slug || line.VariantID != variantID {
 			continue
 		}
 		lines[i].Quantity = capQuantity(line.Quantity + quantity)
@@ -78,18 +83,22 @@ func (c Cart) Add(slug string, quantity int) (Cart, error) {
 		return c, ErrLineItemLimit
 	}
 
-	lines = append(lines, Line{Slug: slug, Quantity: capQuantity(quantity)})
+	lines = append(lines, Line{Slug: slug, VariantID: variantID, Quantity: capQuantity(quantity)})
 	return Cart{lines: lines}, nil
 }
 
 func (c Cart) SetQuantity(slug string, quantity int) (Cart, error) {
+	return c.SetLineQuantity(slug, "", quantity)
+}
+
+func (c Cart) SetLineQuantity(slug string, variantID string, quantity int) (Cart, error) {
 	if !validSlug(slug) {
 		return c, ErrInvalidSlug
 	}
 
 	lines := cloneLines(c.lines)
 	for i, line := range lines {
-		if line.Slug != slug {
+		if line.Slug != slug || line.VariantID != variantID {
 			continue
 		}
 		if quantity <= 0 {
@@ -105,18 +114,22 @@ func (c Cart) SetQuantity(slug string, quantity int) (Cart, error) {
 		return c, ErrLineItemLimit
 	}
 
-	lines = append(lines, Line{Slug: slug, Quantity: capQuantity(quantity)})
+	lines = append(lines, Line{Slug: slug, VariantID: variantID, Quantity: capQuantity(quantity)})
 	return Cart{lines: lines}, nil
 }
 
 func (c Cart) Remove(slug string) (Cart, error) {
+	return c.RemoveLine(slug, "")
+}
+
+func (c Cart) RemoveLine(slug string, variantID string) (Cart, error) {
 	if !validSlug(slug) {
 		return c, ErrInvalidSlug
 	}
 
 	lines := cloneLines(c.lines)
 	for i, line := range lines {
-		if line.Slug == slug {
+		if line.Slug == slug && line.VariantID == variantID {
 			return Cart{lines: append(lines[:i], lines[i+1:]...)}, nil
 		}
 	}
@@ -220,7 +233,8 @@ func normalizeLines(lines []Line, capLineItems bool, rejectNonPositive bool) (Ca
 			continue
 		}
 
-		if index, ok := indexes[line.Slug]; ok {
+		key := lineKey(line)
+		if index, ok := indexes[key]; ok {
 			normalized[index].Quantity = capQuantity(normalized[index].Quantity + line.Quantity)
 			continue
 		}
@@ -231,11 +245,15 @@ func normalizeLines(lines []Line, capLineItems bool, rejectNonPositive bool) (Ca
 			return Cart{}, ErrLineItemLimit
 		}
 
-		indexes[line.Slug] = len(normalized)
-		normalized = append(normalized, Line{Slug: line.Slug, Quantity: capQuantity(line.Quantity)})
+		indexes[key] = len(normalized)
+		normalized = append(normalized, Line{Slug: line.Slug, VariantID: line.VariantID, Quantity: capQuantity(line.Quantity)})
 	}
 
 	return Cart{lines: normalized}, nil
+}
+
+func lineKey(line Line) string {
+	return line.Slug + "\x00" + line.VariantID
 }
 
 func validSlug(slug string) bool {

@@ -89,64 +89,87 @@ func checkoutPage(vm checkoutPageViewModel) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</h3><p class=\"mt-2 text-sm leading-6 text-[#4C4A62]\">Quantity ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</h3>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var5 string
-			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(line.Quantity)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 33, Col: 83}
+			if line.VariantLabel != "" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<p class=\"mt-2 inline-flex w-fit rounded-full bg-white px-3 py-1 text-xs font-black uppercase tracking-wide text-[#2D2A4A]\">Size ")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var5 string
+				templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(line.VariantLabel)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 34, Col: 159}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</p>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, " at <span class=\"font-black text-[#A51931]\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<p class=\"mt-2 text-sm leading-6 text-[#4C4A62]\">Quantity ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var6 string
-			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(formatPrice(line.Product.PriceCents))
+			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(line.Quantity)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 33, Col: 167}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 36, Col: 83}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</span> each</p><p class=\"mt-1 text-sm font-black text-[#2D2A4A]\">Line total ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, " at <span class=\"font-black text-[#A51931]\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var7 string
-			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(formatPrice(lineTotalCents(line)))
+			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(formatPrice(line.Product.PriceCents))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 34, Col: 106}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 36, Col: 167}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</p></div></article>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</span> each</p><p class=\"mt-1 text-sm font-black text-[#2D2A4A]\">Line total ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var8 string
+			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(formatPrice(lineTotalCents(line)))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 37, Col: 106}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</p></div></article>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</div></section><aside class=\"rounded-lg border border-[#2D2A4A]/15 bg-white p-6 shadow-sm\"><p class=\"text-sm font-black uppercase tracking-wide text-[#A51931]\">Review totals</p><div class=\"mt-5 flex items-center justify-between border-t border-[#2D2A4A]/10 pt-5\"><p class=\"text-base font-black text-[#2D2A4A]\">Subtotal</p><p class=\"text-2xl font-black text-[#A51931]\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</div></section><aside class=\"rounded-lg border border-[#2D2A4A]/15 bg-white p-6 shadow-sm\"><p class=\"text-sm font-black uppercase tracking-wide text-[#A51931]\">Review totals</p><div class=\"mt-5 flex items-center justify-between border-t border-[#2D2A4A]/10 pt-5\"><p class=\"text-base font-black text-[#2D2A4A]\">Subtotal</p><p class=\"text-2xl font-black text-[#A51931]\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var8 string
-		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(formatPrice(subtotalCents(vm.Lines)))
+		var templ_7745c5c3_Var9 string
+		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(formatPrice(subtotalCents(vm.Lines)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 44, Col: 91}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 47, Col: 91}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</p></div><div class=\"mt-5 grid gap-3 text-sm leading-6 text-[#4C4A62]\"><p>Shipping and tax are not calculated on this review page.</p><p>Payment is not collected, and no order is placed from this screen.</p><p>Return to the cart to adjust quantities or continue browsing products.</p></div><div class=\"mt-6 grid gap-3\"><a href=\"/cart\" class=\"inline-flex h-12 items-center justify-center rounded-full bg-[#A51931] px-6 text-sm font-black text-white shadow-sm transition hover:bg-[#831426] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2D2A4A]\">Back to cart</a> <a href=\"/products\" class=\"inline-flex h-12 items-center justify-center rounded-full border border-[#2D2A4A]/20 bg-[#F8F4EE] px-6 text-sm font-black text-[#2D2A4A] transition hover:border-[#A51931]/40\">Continue shopping</a></div></aside></section></main>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</p></div><div class=\"mt-5 grid gap-3 text-sm leading-6 text-[#4C4A62]\"><p>Shipping and tax are not calculated on this review page.</p><p>Payment is not collected, and no order is placed from this screen.</p><p>Return to the cart to adjust quantities or continue browsing products.</p></div><div class=\"mt-6 grid gap-3\"><a href=\"/cart\" class=\"inline-flex h-12 items-center justify-center rounded-full bg-[#A51931] px-6 text-sm font-black text-white shadow-sm transition hover:bg-[#831426] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2D2A4A]\">Back to cart</a> <a href=\"/products\" class=\"inline-flex h-12 items-center justify-center rounded-full border border-[#2D2A4A]/20 bg-[#F8F4EE] px-6 text-sm font-black text-[#2D2A4A] transition hover:border-[#A51931]/40\">Continue shopping</a></div></aside></section></main>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -154,7 +177,7 @@ func checkoutPage(vm checkoutPageViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

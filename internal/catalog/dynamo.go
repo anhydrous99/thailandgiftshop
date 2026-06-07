@@ -2,8 +2,10 @@ package catalog
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -17,12 +19,19 @@ const (
 	entityProduct         = "PRODUCT"
 	entityCategory        = "CATEGORY"
 	entityCategoryProduct = "CATEGORY_PRODUCT"
+	entityProductSlugLock = "PRODUCT_SLUG_LOCK"
 
 	productSK               = "PRODUCT"
 	categorySK              = "CATEGORY"
+	slugLockSK              = "SLUG_LOCK"
 	activeProductsIndexPK   = "PRODUCTS#ACTIVE"
 	recentProductsIndexPK   = "PRODUCTS#ACTIVE#RECENT"
 	activeCategoriesIndexPK = "CATEGORIES#ACTIVE"
+)
+
+var (
+	ErrSlugConflict    = errors.New("catalog slug already exists")
+	ErrVersionConflict = errors.New("catalog version conflict")
 )
 
 type DynamoConfig struct {
@@ -75,12 +84,212 @@ type queryClient interface {
 	Query(ctx context.Context, params *dynamodb.QueryInput, optFns ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error)
 }
 
+type transactWriteClient interface {
+	TransactWriteItems(ctx context.Context, params *dynamodb.TransactWriteItemsInput, optFns ...func(*dynamodb.Options)) (*dynamodb.TransactWriteItemsOutput, error)
+}
+
+type getItemClient interface {
+	GetItem(ctx context.Context, params *dynamodb.GetItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error)
+}
+
+type scanClient interface {
+	Scan(ctx context.Context, params *dynamodb.ScanInput, optFns ...func(*dynamodb.Options)) (*dynamodb.ScanOutput, error)
+}
+
 type DynamoStore struct {
 	client          queryClient
+	getClient       getItemClient
+	scanClient      scanClient
+	writeClient     transactWriteClient
 	tableName       string
 	slugIndexName   string
 	publicIndexName string
 	recentIndexName string
+}
+
+func NewDynamoAdminStore(client transactWriteClient, config DynamoConfig) *DynamoStore {
+	store := NewDynamoStore(nil, config)
+	store.writeClient = client
+	return store
+}
+
+func NewDynamoReadWriteStore(client interface {
+	queryClient
+	transactWriteClient
+	getItemClient
+	scanClient
+}, config DynamoConfig) *DynamoStore {
+	store := NewDynamoStore(client, config)
+	store.getClient = client
+	store.scanClient = client
+	store.writeClient = client
+	return store
+}
+
+func NewAdminStoreFromEnv(ctx context.Context) (AdminStore, bool, error) {
+	dynamoConfig, ok := DynamoConfigFromEnv()
+	if !ok {
+		return NewMemoryStore(nil, nil), false, nil
+	}
+	awsConfig, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		return nil, false, fmt.Errorf("load AWS config for catalog admin store: %w", err)
+	}
+	return NewDynamoReadWriteStore(dynamodb.NewFromConfig(awsConfig), dynamoConfig), true, nil
+}
+
+func (s *DynamoStore) ListProducts(ctx context.Context) ([]Product, error) {
+	items, err := s.scanByEntity(ctx, entityProduct)
+	if err != nil {
+		return nil, err
+	}
+	products, err := productsFromItems(items)
+	if err != nil {
+		return nil, err
+	}
+	sortProducts(products)
+	return products, nil
+}
+
+func (s *DynamoStore) GetProductByID(ctx context.Context, productID string) (Product, bool, error) {
+	if s.getClient == nil {
+		return Product{}, false, fmt.Errorf("catalog admin store is missing a get client")
+	}
+	output, err := s.getClient.GetItem(ctx, &dynamodb.GetItemInput{
+		TableName: aws.String(s.tableName),
+		Key: map[string]types.AttributeValue{
+			"pk": &types.AttributeValueMemberS{Value: productPK(productID)},
+			"sk": &types.AttributeValueMemberS{Value: productSK},
+		},
+	})
+	if err != nil {
+		return Product{}, false, err
+	}
+	if len(output.Item) == 0 {
+		return Product{}, false, nil
+	}
+	product, err := productFromItem(output.Item)
+	if err != nil {
+		return Product{}, false, err
+	}
+	return product, true, nil
+}
+
+func (s *DynamoStore) ListCategories(ctx context.Context) ([]Category, error) {
+	items, err := s.scanByEntity(ctx, entityCategory)
+	if err != nil {
+		return nil, err
+	}
+	categories := make([]Category, 0, len(items))
+	for _, item := range items {
+		category, err := categoryFromItem(item)
+		if err != nil {
+			return nil, err
+		}
+		categories = append(categories, category)
+	}
+	sort.SliceStable(categories, func(i int, j int) bool {
+		if categories[i].SortOrder == categories[j].SortOrder {
+			return categories[i].Name < categories[j].Name
+		}
+		return categories[i].SortOrder < categories[j].SortOrder
+	})
+	return categories, nil
+}
+
+func (s *DynamoStore) CreateProduct(ctx context.Context, product Product) (Product, error) {
+	if err := product.Validate(); err != nil {
+		return Product{}, err
+	}
+	product.Version = 1
+	items, err := s.productWriteItems(Product{}, product, true)
+	if err != nil {
+		return Product{}, err
+	}
+	if err := s.transactWrite(ctx, items); err != nil {
+		return Product{}, err
+	}
+
+	return product, nil
+}
+
+func (s *DynamoStore) UpdateProduct(ctx context.Context, previous Product, product Product) (Product, error) {
+	if err := product.Validate(); err != nil {
+		return Product{}, err
+	}
+	product.Version = previous.Version + 1
+	if product.CreatedAt.IsZero() {
+		product.CreatedAt = previous.CreatedAt
+	}
+	items, err := s.productWriteItems(previous, product, false)
+	if err != nil {
+		return Product{}, err
+	}
+	if err := s.transactWrite(ctx, items); err != nil {
+		return Product{}, err
+	}
+
+	return product, nil
+}
+
+func (s *DynamoStore) ArchiveProduct(ctx context.Context, product Product) (Product, error) {
+	archived := product
+	archived.Status = StatusArchived
+	return s.UpdateProduct(ctx, product, archived)
+}
+
+func (s *DynamoStore) CreateCategory(ctx context.Context, category Category) (Category, error) {
+	category.Version = 1
+	item, err := categoryItem(category)
+	if err != nil {
+		return Category{}, err
+	}
+	items := []types.TransactWriteItem{{Put: &types.Put{
+		TableName:           aws.String(s.tableName),
+		Item:                item,
+		ConditionExpression: aws.String("attribute_not_exists(#pk)"),
+		ExpressionAttributeNames: map[string]string{
+			"#pk": "pk",
+		},
+	}}}
+	if err := s.transactWrite(ctx, items); err != nil {
+		if errors.Is(err, ErrVersionConflict) {
+			return Category{}, fmt.Errorf("%w", ErrSlugConflict)
+		}
+		return Category{}, err
+	}
+
+	return category, nil
+}
+
+func (s *DynamoStore) UpdateCategory(ctx context.Context, category Category, expectedVersion int) (Category, error) {
+	category.Version = expectedVersion + 1
+	item, err := categoryItem(category)
+	if err != nil {
+		return Category{}, err
+	}
+	items := []types.TransactWriteItem{{Put: &types.Put{
+		TableName:           aws.String(s.tableName),
+		Item:                item,
+		ConditionExpression: aws.String("#version = :expected_version"),
+		ExpressionAttributeNames: map[string]string{
+			"#version": "version",
+		},
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":expected_version": &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", expectedVersion)},
+		},
+	}}}
+	if err := s.transactWrite(ctx, items); err != nil {
+		return Category{}, err
+	}
+
+	return category, nil
+}
+
+func (s *DynamoStore) ArchiveCategory(ctx context.Context, category Category) (Category, error) {
+	archived := category
+	archived.Status = StatusArchived
+	return s.UpdateCategory(ctx, archived, category.Version)
 }
 
 func NewDynamoStore(client queryClient, config DynamoConfig) *DynamoStore {
@@ -241,28 +450,188 @@ func (s *DynamoStore) query(ctx context.Context, input dynamodb.QueryInput, limi
 	}
 }
 
+func (s *DynamoStore) scanByEntity(ctx context.Context, entityType string) ([]map[string]types.AttributeValue, error) {
+	if s.scanClient == nil {
+		return nil, fmt.Errorf("catalog admin store is missing a scan client")
+	}
+	input := dynamodb.ScanInput{
+		TableName:        aws.String(s.tableName),
+		FilterExpression: aws.String("#entity_type = :entity_type"),
+		ExpressionAttributeNames: map[string]string{
+			"#entity_type": "entity_type",
+		},
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":entity_type": &types.AttributeValueMemberS{Value: entityType},
+		},
+	}
+	var items []map[string]types.AttributeValue
+	for {
+		output, err := s.scanClient.Scan(ctx, &input)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, output.Items...)
+		if len(output.LastEvaluatedKey) == 0 {
+			return items, nil
+		}
+		input.ExclusiveStartKey = output.LastEvaluatedKey
+	}
+}
+
+func sortProducts(products []Product) {
+	sort.SliceStable(products, func(i int, j int) bool {
+		if products[i].SortOrder == products[j].SortOrder {
+			return products[i].Name < products[j].Name
+		}
+		return products[i].SortOrder < products[j].SortOrder
+	})
+}
+
+func (s *DynamoStore) productWriteItems(previous Product, product Product, create bool) ([]types.TransactWriteItem, error) {
+	item, err := productItem(product)
+	if err != nil {
+		return nil, err
+	}
+	slugLock, err := productSlugLockItem(product)
+	if err != nil {
+		return nil, err
+	}
+
+	putProduct := &types.Put{
+		TableName: aws.String(s.tableName),
+		Item:      item,
+	}
+	if create {
+		putProduct.ConditionExpression = aws.String("attribute_not_exists(#pk)")
+		putProduct.ExpressionAttributeNames = map[string]string{"#pk": "pk"}
+	} else {
+		putProduct.ConditionExpression = aws.String("#version = :expected_version")
+		putProduct.ExpressionAttributeNames = map[string]string{"#version": "version"}
+		putProduct.ExpressionAttributeValues = map[string]types.AttributeValue{
+			":expected_version": &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", previous.Version)},
+		}
+	}
+
+	items := []types.TransactWriteItem{{Put: putProduct}}
+	lockPut := &types.Put{
+		TableName: aws.String(s.tableName),
+		Item:      slugLock,
+	}
+	if create {
+		lockPut.ConditionExpression = aws.String("attribute_not_exists(#pk)")
+		lockPut.ExpressionAttributeNames = map[string]string{"#pk": "pk"}
+	} else {
+		lockPut.ConditionExpression = aws.String("attribute_not_exists(#pk) OR #product_id = :product_id")
+		lockPut.ExpressionAttributeNames = map[string]string{
+			"#pk":         "pk",
+			"#product_id": "product_id",
+		}
+		lockPut.ExpressionAttributeValues = map[string]types.AttributeValue{
+			":product_id": &types.AttributeValueMemberS{Value: product.ID},
+		}
+	}
+	items = append(items, types.TransactWriteItem{Put: lockPut})
+
+	if !create {
+		for _, deleteItem := range staleCategoryProductDeletes(s.tableName, previous, product) {
+			items = append(items, deleteItem)
+		}
+	}
+	for _, categorySlug := range product.CategorySlugs {
+		membership, err := categoryProductItem(categorySlug, product)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, types.TransactWriteItem{Put: &types.Put{
+			TableName: aws.String(s.tableName),
+			Item:      membership,
+		}})
+	}
+
+	return items, nil
+}
+
+func (s *DynamoStore) transactWrite(ctx context.Context, items []types.TransactWriteItem) error {
+	if s.writeClient == nil {
+		return fmt.Errorf("catalog admin store is missing a transaction client")
+	}
+	_, err := s.writeClient.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{
+		TransactItems: items,
+	})
+	if err != nil {
+		return classifyTransactionError(err)
+	}
+
+	return nil
+}
+
+func classifyTransactionError(err error) error {
+	var canceled *types.TransactionCanceledException
+	if !errors.As(err, &canceled) {
+		return err
+	}
+	for index, reason := range canceled.CancellationReasons {
+		if aws.ToString(reason.Code) != "ConditionalCheckFailed" {
+			continue
+		}
+		if index == 1 {
+			return fmt.Errorf("%w", ErrSlugConflict)
+		}
+		return fmt.Errorf("%w", ErrVersionConflict)
+	}
+
+	return err
+}
+
+func staleCategoryProductDeletes(tableName string, previous Product, product Product) []types.TransactWriteItem {
+	currentKeys := map[string]bool{}
+	for _, categorySlug := range product.CategorySlugs {
+		currentKeys[categoryPK(categorySlug)+"\x00"+categoryProductSK(product)] = true
+	}
+
+	var deletes []types.TransactWriteItem
+	for _, categorySlug := range previous.CategorySlugs {
+		keyID := categoryPK(categorySlug) + "\x00" + categoryProductSK(previous)
+		if currentKeys[keyID] {
+			continue
+		}
+		deletes = append(deletes, types.TransactWriteItem{Delete: &types.Delete{
+			TableName: aws.String(tableName),
+			Key: map[string]types.AttributeValue{
+				"pk": &types.AttributeValueMemberS{Value: categoryPK(categorySlug)},
+				"sk": &types.AttributeValueMemberS{Value: categoryProductSK(previous)},
+			},
+		}})
+	}
+
+	return deletes
+}
+
 type catalogItem struct {
-	PK            string   `dynamodbav:"pk"`
-	SK            string   `dynamodbav:"sk"`
-	EntityType    string   `dynamodbav:"entity_type"`
-	ID            string   `dynamodbav:"id,omitempty"`
-	Slug          string   `dynamodbav:"slug,omitempty"`
-	Name          string   `dynamodbav:"name,omitempty"`
-	Description   string   `dynamodbav:"description,omitempty"`
-	PriceCents    *int     `dynamodbav:"price_cents,omitempty"`
-	ImageURL      string   `dynamodbav:"image_url,omitempty"`
-	Status        Status   `dynamodbav:"status,omitempty"`
-	SortOrder     int      `dynamodbav:"sort_order"`
-	StockQuantity *int     `dynamodbav:"stock_quantity,omitempty"`
-	CreatedAt     string   `dynamodbav:"created_at,omitempty"`
-	UpdatedAt     string   `dynamodbav:"updated_at,omitempty"`
-	CategorySlugs []string `dynamodbav:"category_slugs,omitempty"`
-	GSI1PK        string   `dynamodbav:"gsi1pk,omitempty"`
-	GSI1SK        string   `dynamodbav:"gsi1sk,omitempty"`
-	GSI2PK        string   `dynamodbav:"gsi2pk,omitempty"`
-	GSI2SK        string   `dynamodbav:"gsi2sk,omitempty"`
-	GSI3PK        string   `dynamodbav:"gsi3pk,omitempty"`
-	GSI3SK        string   `dynamodbav:"gsi3sk,omitempty"`
+	PK            string           `dynamodbav:"pk"`
+	SK            string           `dynamodbav:"sk"`
+	EntityType    string           `dynamodbav:"entity_type"`
+	ID            string           `dynamodbav:"id,omitempty"`
+	Slug          string           `dynamodbav:"slug,omitempty"`
+	Name          string           `dynamodbav:"name,omitempty"`
+	Description   string           `dynamodbav:"description,omitempty"`
+	PriceCents    *int             `dynamodbav:"price_cents,omitempty"`
+	ImageURL      string           `dynamodbav:"image_url,omitempty"`
+	Status        Status           `dynamodbav:"status,omitempty"`
+	SortOrder     int              `dynamodbav:"sort_order"`
+	StockQuantity *int             `dynamodbav:"stock_quantity,omitempty"`
+	Version       *int             `dynamodbav:"version,omitempty"`
+	CreatedAt     string           `dynamodbav:"created_at,omitempty"`
+	UpdatedAt     string           `dynamodbav:"updated_at,omitempty"`
+	CategorySlugs []string         `dynamodbav:"category_slugs,omitempty"`
+	Variants      []ProductVariant `dynamodbav:"variants,omitempty"`
+	ProductID     string           `dynamodbav:"product_id,omitempty"`
+	GSI1PK        string           `dynamodbav:"gsi1pk,omitempty"`
+	GSI1SK        string           `dynamodbav:"gsi1sk,omitempty"`
+	GSI2PK        string           `dynamodbav:"gsi2pk,omitempty"`
+	GSI2SK        string           `dynamodbav:"gsi2sk,omitempty"`
+	GSI3PK        string           `dynamodbav:"gsi3pk,omitempty"`
+	GSI3SK        string           `dynamodbav:"gsi3sk,omitempty"`
 }
 
 func productItem(product Product) (map[string]types.AttributeValue, error) {
@@ -279,9 +648,11 @@ func productItem(product Product) (map[string]types.AttributeValue, error) {
 		Status:        product.Status,
 		SortOrder:     product.SortOrder,
 		StockQuantity: intPtr(product.StockQuantity),
+		Version:       intPtr(product.Version),
 		CreatedAt:     formatCatalogTime(product.CreatedAt),
 		UpdatedAt:     formatUpdatedAt(product.UpdatedAt),
 		CategorySlugs: product.CategorySlugs,
+		Variants:      product.Variants,
 		GSI1PK:        productSlugIndexPK(product.Slug),
 		GSI1SK:        productSK,
 	}
@@ -305,6 +676,7 @@ func categoryItem(category Category) (map[string]types.AttributeValue, error) {
 		Description: category.Description,
 		Status:      category.Status,
 		SortOrder:   category.SortOrder,
+		Version:     intPtr(category.Version),
 		UpdatedAt:   formatUpdatedAt(category.UpdatedAt),
 	}
 	if category.Status == StatusActive {
@@ -313,6 +685,17 @@ func categoryItem(category Category) (map[string]types.AttributeValue, error) {
 	}
 
 	return attributevalue.MarshalMap(item)
+}
+
+func productSlugLockItem(product Product) (map[string]types.AttributeValue, error) {
+	return attributevalue.MarshalMap(catalogItem{
+		PK:         productSlugIndexPK(product.Slug),
+		SK:         slugLockSK,
+		EntityType: entityProductSlugLock,
+		Slug:       product.Slug,
+		ProductID:  product.ID,
+		UpdatedAt:  formatUpdatedAt(product.UpdatedAt),
+	})
 }
 
 func categoryProductItem(categorySlug string, product Product) (map[string]types.AttributeValue, error) {
@@ -329,8 +712,10 @@ func categoryProductItem(categorySlug string, product Product) (map[string]types
 		Status:        product.Status,
 		SortOrder:     product.SortOrder,
 		StockQuantity: intPtr(product.StockQuantity),
+		Version:       intPtr(product.Version),
 		CreatedAt:     formatCatalogTime(product.CreatedAt),
 		UpdatedAt:     formatUpdatedAt(product.UpdatedAt),
+		Variants:      product.Variants,
 	})
 }
 
@@ -375,9 +760,11 @@ func productFromItem(item map[string]types.AttributeValue) (Product, error) {
 		Status:        record.Status,
 		SortOrder:     record.SortOrder,
 		StockQuantity: intValue(record.StockQuantity),
+		Version:       intValue(record.Version),
 		CreatedAt:     createdAt,
 		UpdatedAt:     updatedAt,
 		CategorySlugs: record.CategorySlugs,
+		Variants:      record.Variants,
 	}, nil
 }
 
@@ -401,6 +788,7 @@ func categoryFromItem(item map[string]types.AttributeValue) (Category, error) {
 		Description: record.Description,
 		Status:      record.Status,
 		SortOrder:   record.SortOrder,
+		Version:     intValue(record.Version),
 		UpdatedAt:   updatedAt,
 	}, nil
 }

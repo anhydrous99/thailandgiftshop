@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -106,6 +107,34 @@ func TestDevserverWritesApiResponseCookies(t *testing.T) {
 	}
 	if !strings.Contains(setCookies[0], cart.CookieName+"=") || !strings.Contains(setCookies[0], "HttpOnly") {
 		t.Fatalf("Set-Cookie = %q, want serialized cart cookie", setCookies[0])
+	}
+}
+
+func TestREADMEAdminBootstrapDocsUsePlaceholdersOnly(t *testing.T) {
+	readme, err := os.ReadFile("../../README.md")
+	if err != nil {
+		t.Fatalf("read README.md: %v", err)
+	}
+	content := string(readme)
+
+	required := []string{
+		"ADMIN_PASSWORD_HASH=<bcrypt-hash>",
+		"ADMIN_SESSION_SECRET=<session-secret>",
+		"thailandgiftshop/admin/credentials",
+		"\"password_hash\": \"<bcrypt-hash>\"",
+		"\"session_secret\": \"<session-secret>\"",
+		"ADMIN_CREDENTIALS_SECRET_JSON",
+		"CATALOG_DEMO_STORE=1",
+		"without a live AWS account",
+	}
+	for _, requiredText := range required {
+		if !strings.Contains(content, requiredText) {
+			t.Fatalf("README.md missing %q", requiredText)
+		}
+	}
+
+	if strings.Contains(content, "presigned URL") {
+		t.Fatal("README.md contains a presigned URL reference in admin bootstrap docs")
 	}
 }
 

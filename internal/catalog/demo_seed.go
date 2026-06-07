@@ -149,10 +149,15 @@ func DemoCatalogProducts() []Product {
 			ImageURL:      "/images/products/handwoven-indigo-scarf.jpg",
 			Status:        StatusActive,
 			SortOrder:     50,
-			StockQuantity: 14,
+			StockQuantity: 3,
 			CreatedAt:     demoProductCreatedAt(10),
 			UpdatedAt:     demoUpdatedAt,
 			CategorySlugs: []string{"textiles"},
+			Variants: []ProductVariant{
+				{ID: "var_005_s", Label: "S", StockQuantity: 1, Status: StatusActive, SortOrder: 10},
+				{ID: "var_005_m", Label: "M", StockQuantity: 2, Status: StatusActive, SortOrder: 20},
+				{ID: "var_005_xl", Label: "XL", StockQuantity: 0, Status: StatusActive, SortOrder: 30},
+			},
 		},
 		{
 			ID:            "prod_006",

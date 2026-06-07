@@ -45,6 +45,23 @@ AWS_PROFILE=default AWS_REGION=us-east-1 CATALOG_TABLE_NAME=thailandgiftshop-cat
 
 Set `CART_COOKIE_SECRET` to a stable local-only value when exercising cart cookies locally. Production receives this value from a CDK-managed generated Secrets Manager secret, so no production cookie signing secret is stored in this repository.
 
+Use deterministic demo data for local browser tests or admin/public E2E work by opting into the in-memory catalog store:
+
+```sh
+CATALOG_DEMO_STORE=1 CART_COOKIE_SECRET=<cart-cookie-secret> go run ./cmd/devserver
+```
+
+When `CATALOG_DEMO_STORE=1` is set, the devserver skips DynamoDB and serves the checked-in demo catalog from memory. The demo catalog includes an active variant product, `handwoven-indigo-scarf`, with sizes `S=1`, `M=2`, and `XL=0` for stable admin and public E2E coverage. The default devserver path still uses environment-backed catalog loading, so local Go tests and Playwright tests can run without a live AWS account.
+
+For local admin work, set placeholder-only admin environment variables before starting the admin Lambda or any local wrapper that loads admin credentials from the environment:
+
+```sh
+export ADMIN_PASSWORD_HASH=<bcrypt-hash>
+export ADMIN_SESSION_SECRET=<session-secret>
+```
+
+Create the bcrypt hash and session secret outside the repository, then keep the real values in your shell, local secret manager, or CI secret store. Do not commit a plaintext admin password, generated bcrypt hash, or generated session secret. Local and dev code reads `ADMIN_PASSWORD_HASH` and `ADMIN_SESSION_SECRET` as a fallback; production reads `ADMIN_CREDENTIALS_SECRET_JSON` from the Lambda environment.
+
 ## Seed Catalog
 
 Seed the deployed DynamoDB catalog with demo categories, products, and category-product rows:
@@ -90,7 +107,7 @@ npm --prefix web run build
 Synthesize the CloudFormation template after frontend assets have been built:
 
 ```sh
-npm --prefix infra run synth
+AWS_REGION=us-east-1 CDK_DEFAULT_REGION=us-east-1 npm --prefix infra run synth
 ```
 
 For first-time local browser test runs, install Playwright Chromium:
@@ -129,13 +146,33 @@ npx cdk bootstrap aws://ACCOUNT_ID/us-east-1
 
 Replace `ACCOUNT_ID` as needed. Production deploys intentionally fail outside `us-east-1`.
 
+Bootstrap the production admin credentials as a manually managed Secrets Manager JSON secret named `thailandgiftshop/admin/credentials` before deploying the admin Lambda wiring:
+
+```sh
+aws secretsmanager create-secret \
+  --region us-east-1 \
+  --name thailandgiftshop/admin/credentials \
+  --secret-string '{"password_hash": "<bcrypt-hash>", "session_secret": "<session-secret>"}'
+```
+
+Rotate the same named secret by writing a new JSON value with the same fields:
+
+```sh
+aws secretsmanager put-secret-value \
+  --region us-east-1 \
+  --secret-id thailandgiftshop/admin/credentials \
+  --secret-string '{"password_hash": "<bcrypt-hash>", "session_secret": "<session-secret>"}'
+```
+
+The CDK stack imports that name and passes the secret string to the admin Lambda through the `ADMIN_CREDENTIALS_SECRET_JSON` dynamic reference. The JSON fields are `password_hash` and `session_secret`; the examples above are placeholders only.
+
 ## Deploy
 
 Local deployers should build frontend assets before synthesizing or deploying so `web/static/` contains the generated CSS and vendored HTMX files used by CDK:
 
 ```sh
 npm --prefix web run build
-npm --prefix infra run synth
+AWS_REGION=us-east-1 CDK_DEFAULT_REGION=us-east-1 npm --prefix infra run synth
 ```
 
 Deploy locally:
