@@ -7,15 +7,17 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
 	"github.com/anhydrous99/thailandgiftshop/internal/ssr"
 	"github.com/aws/aws-lambda-go/events"
 )
 
 const (
-	defaultHost      = "127.0.0.1"
-	defaultPort      = "8080"
-	defaultStaticDir = "web/static"
-	defaultImageDir  = "web/product-images"
+	defaultHost         = "127.0.0.1"
+	defaultPort         = "8080"
+	defaultStaticDir    = "web/static"
+	defaultImageDir     = "web/product-images"
+	envDemoCatalogStore = "CATALOG_DEMO_STORE"
 )
 
 func main() {
@@ -25,7 +27,7 @@ func main() {
 	imageDir := envOrDefault("IMAGE_DIR", defaultImageDir)
 	address := net.JoinHostPort(host, port)
 
-	handler, err := ssr.NewHandlerFromEnvironment(context.Background())
+	handler, err := newDevServerHandler(context.Background())
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -41,6 +43,14 @@ func main() {
 	if err := http.ListenAndServe(address, mux); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func newDevServerHandler(ctx context.Context) (*ssr.Handler, error) {
+	if os.Getenv(envDemoCatalogStore) == "1" {
+		return ssr.NewHandler(catalog.NewDemoStore()), nil
+	}
+
+	return ssr.NewHandlerFromEnvironment(ctx)
 }
 
 func envOrDefault(name string, fallback string) string {

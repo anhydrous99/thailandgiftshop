@@ -1,0 +1,30 @@
+package ssr
+
+templ productDetailPage(vm productDetailPageViewModel) {
+	<!DOCTYPE html>
+	<html lang="en" class="scroll-smooth">
+		@siteHead(vm.Product.Name + " | Thailand Gift Shop")
+		<body class="min-h-screen bg-[#F8F4EE] text-[#17172A] antialiased">
+			@siteHeader("page")
+			<main>
+				<section class="mx-auto grid w-full max-w-7xl gap-8 px-5 py-14 sm:px-8 lg:grid-cols-[1fr_0.9fr] lg:py-20">
+					<div class="overflow-hidden rounded-lg border border-[#2D2A4A]/15 bg-white shadow-sm">
+						<img class="aspect-[4/3] w-full bg-[#F4F5F8] object-cover" src={ vm.Product.DisplayImageURL(vm.ProductImagePlaceholderURL) } alt={ vm.Product.Name }/>
+					</div>
+					<div class="self-center">
+						<a href="/products" class="text-sm font-black text-[#A51931] transition hover:text-[#831426]">Back to products</a>
+						<h1 class="mt-5 text-5xl font-black leading-none text-[#2D2A4A] sm:text-6xl">{ vm.Product.Name }</h1>
+						<p class="mt-6 inline-flex rounded-full bg-white px-4 py-2 text-xl font-black text-[#A51931] shadow-sm">{ formatPrice(vm.Product.PriceCents) }</p>
+						<p class="mt-6 text-lg leading-8 text-[#4C4A62]">{ vm.Product.Description }</p>
+						if vm.Product.OutOfStock() {
+							<p class="mt-6 inline-flex rounded-full bg-[#A51931]/10 px-4 py-2 text-sm font-black text-[#A51931]">Out of stock</p>
+						} else {
+							<p class="mt-6 inline-flex rounded-full bg-[#2D2A4A]/10 px-4 py-2 text-sm font-black text-[#2D2A4A]">In stock</p>
+						}
+					</div>
+				</section>
+			</main>
+			@siteFooter()
+		</body>
+	</html>
+}

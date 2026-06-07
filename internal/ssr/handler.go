@@ -18,6 +18,25 @@ const allowedMethods = http.MethodGet + ", " + http.MethodHead
 const helloFragmentBody = "HTMX refreshed this greeting from the server"
 const latestProductLimit = 8
 
+type pageKind string
+
+const (
+	pageHome           pageKind = "home"
+	pageProducts       pageKind = "products"
+	pageProductDetail  pageKind = "product-detail"
+	pageCategories     pageKind = "categories"
+	pageCategoryDetail pageKind = "category-detail"
+	pageStory          pageKind = "story"
+	pageUnknown        pageKind = "unknown"
+)
+
+type pageRoute struct {
+	kind           pageKind
+	slug           string
+	redirectTo     string
+	knownPageShape bool
+}
+
 type Handler struct {
 	catalogStore               catalog.Store
 	productImagePlaceholderURL string
@@ -68,18 +87,47 @@ func (h *Handler) Handle(ctx context.Context, request events.APIGatewayV2HTTPReq
 		return handleHelloFragment(request), nil
 	}
 
-	if path != "/" {
-		return htmlResponse(http.StatusNotFound, "Not found", nil), nil
-	}
-
 	method := requestMethod(request)
-	if method != http.MethodGet && method != http.MethodHead {
+	route := routeForPath(path)
+	if route.knownPageShape && !isAllowedPageMethod(method) {
 		return htmlResponse(http.StatusMethodNotAllowed, "Method not allowed", map[string]string{
 			"Allow": allowedMethods,
 		}), nil
 	}
+	if route.redirectTo != "" {
+		return redirectResponse(route.redirectTo), nil
+	}
+	var body string
+	statusCode := http.StatusOK
+	var err error
 
-	body, err := h.renderHome(ctx)
+	switch route.kind {
+	case pageHome:
+		body, err = h.renderHome(ctx)
+	case pageProducts:
+		body, err = h.renderProductListing(ctx)
+	case pageProductDetail:
+		found := false
+		body, found, err = h.renderProductDetail(ctx, route.slug)
+		if !found {
+			statusCode = http.StatusNotFound
+			body = "Not found"
+		}
+	case pageCategories:
+		body, err = h.renderCategoryIndex(ctx)
+	case pageCategoryDetail:
+		found := false
+		body, found, err = h.renderCategoryDetail(ctx, route.slug)
+		if !found {
+			statusCode = http.StatusNotFound
+			body = "Not found"
+		}
+	case pageStory:
+		body, err = h.renderStory(ctx)
+	default:
+		statusCode = http.StatusNotFound
+		body = "Not found"
+	}
 	if err != nil {
 		return htmlResponse(http.StatusInternalServerError, "Internal server error", nil), nil
 	}
@@ -88,7 +136,76 @@ func (h *Handler) Handle(ctx context.Context, request events.APIGatewayV2HTTPReq
 		body = ""
 	}
 
-	return htmlResponse(http.StatusOK, body, nil), nil
+	return htmlResponse(statusCode, body, nil), nil
+}
+
+func routeForPath(path string) pageRoute {
+	switch path {
+	case "/":
+		return pageRoute{kind: pageHome, knownPageShape: true}
+	case "/shop":
+		return pageRoute{kind: pageProducts, redirectTo: "/products", knownPageShape: true}
+	case "/about":
+		return pageRoute{kind: pageStory, redirectTo: "/story", knownPageShape: true}
+	case "/products":
+		return pageRoute{kind: pageProducts, knownPageShape: true}
+	case "/products/":
+		return pageRoute{kind: pageProducts, redirectTo: "/products", knownPageShape: true}
+	case "/categories":
+		return pageRoute{kind: pageCategories, knownPageShape: true}
+	case "/categories/":
+		return pageRoute{kind: pageCategories, redirectTo: "/categories", knownPageShape: true}
+	case "/story":
+		return pageRoute{kind: pageStory, knownPageShape: true}
+	case "/story/":
+		return pageRoute{kind: pageStory, redirectTo: "/story", knownPageShape: true}
+	}
+
+	if route := detailRouteForPath(path, "/products/", pageProductDetail); route.knownPageShape {
+		return route
+	}
+	if route := detailRouteForPath(path, "/categories/", pageCategoryDetail); route.knownPageShape {
+		return route
+	}
+
+	return pageRoute{kind: pageUnknown}
+}
+
+func detailRouteForPath(path string, prefix string, kind pageKind) pageRoute {
+	if !strings.HasPrefix(path, prefix) {
+		return pageRoute{kind: pageUnknown}
+	}
+
+	slug := strings.TrimPrefix(path, prefix)
+	if slug == "" {
+		return pageRoute{kind: pageUnknown}
+	}
+	if strings.HasSuffix(slug, "/") {
+		slug = strings.TrimSuffix(slug, "/")
+		if slug == "" || strings.Contains(slug, "/") {
+			return pageRoute{kind: pageUnknown}
+		}
+		return pageRoute{kind: kind, slug: slug, redirectTo: prefix + slug, knownPageShape: true}
+	}
+	if strings.Contains(slug, "/") {
+		return pageRoute{kind: pageUnknown}
+	}
+
+	return pageRoute{kind: kind, slug: slug, knownPageShape: true}
+}
+
+func redirectResponse(location string) events.APIGatewayV2HTTPResponse {
+	return events.APIGatewayV2HTTPResponse{
+		StatusCode: http.StatusPermanentRedirect,
+		Headers: map[string]string{
+			"Content-Type": htmlContentType,
+			"Location":     location,
+		},
+	}
+}
+
+func isAllowedPageMethod(method string) bool {
+	return method == http.MethodGet || method == http.MethodHead
 }
 
 func handleHelloFragment(request events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
@@ -117,13 +234,130 @@ func (h *Handler) renderHome(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	categories, err := h.loadActiveCategories(ctx)
+	if err != nil {
+		return "", err
+	}
 
 	var body bytes.Buffer
-	if err := home(products, h.productImagePlaceholderURL).Render(ctx, &body); err != nil {
+	if err := home(homePageViewModel{
+		Products:                   products,
+		Categories:                 categories,
+		ProductImagePlaceholderURL: h.productImagePlaceholderURL,
+	}).Render(ctx, &body); err != nil {
 		return "", err
 	}
 
 	return body.String(), nil
+}
+
+func (h *Handler) renderProductListing(ctx context.Context) (string, error) {
+	products, err := h.catalogStore.ListActiveProducts(ctx, 0)
+	if err != nil {
+		return "", err
+	}
+	categories, err := h.loadActiveCategories(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	var body bytes.Buffer
+	if err := productListingPage(productListingPageViewModel{
+		Products:                   products,
+		Categories:                 categories,
+		ProductImagePlaceholderURL: h.productImagePlaceholderURL,
+	}).Render(ctx, &body); err != nil {
+		return "", err
+	}
+
+	return body.String(), nil
+}
+
+func (h *Handler) renderProductDetail(ctx context.Context, slug string) (string, bool, error) {
+	product, found, err := h.catalogStore.GetProductBySlug(ctx, slug)
+	if err != nil {
+		return "", false, err
+	}
+	if !found || product.Status != catalog.StatusActive {
+		return "", false, nil
+	}
+
+	var body bytes.Buffer
+	if err := productDetailPage(productDetailPageViewModel{
+		Product:                    product,
+		ProductImagePlaceholderURL: h.productImagePlaceholderURL,
+	}).Render(ctx, &body); err != nil {
+		return "", false, err
+	}
+
+	return body.String(), true, nil
+}
+
+func (h *Handler) renderCategoryIndex(ctx context.Context) (string, error) {
+	categories, err := h.loadActiveCategories(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	var body bytes.Buffer
+	if err := categoryIndexPage(categoryIndexPageViewModel{
+		Categories: categories,
+	}).Render(ctx, &body); err != nil {
+		return "", err
+	}
+
+	return body.String(), nil
+}
+
+func findCategoryBySlug(categories []catalog.Category, slug string) (catalog.Category, bool) {
+	for _, category := range categories {
+		if category.Slug == slug && category.Status == catalog.StatusActive {
+			return category, true
+		}
+	}
+
+	return catalog.Category{}, false
+}
+
+func (h *Handler) renderCategoryDetail(ctx context.Context, slug string) (string, bool, error) {
+	categories, err := h.loadActiveCategories(ctx)
+	if err != nil {
+		return "", false, err
+	}
+	category, found := findCategoryBySlug(categories, slug)
+	if !found {
+		return "", false, nil
+	}
+
+	products, err := h.catalogStore.ListActiveProductsByCategory(ctx, slug, 0)
+	if err != nil {
+		return "", false, err
+	}
+
+	var body bytes.Buffer
+	if err := categoryDetailPage(categoryDetailPageViewModel{
+		Category:                   category,
+		Categories:                 categories,
+		Products:                   products,
+		ProductImagePlaceholderURL: h.productImagePlaceholderURL,
+	}).Render(ctx, &body); err != nil {
+		return "", false, err
+	}
+
+	return body.String(), true, nil
+}
+
+func (h *Handler) renderStory(ctx context.Context) (string, error) {
+	var body bytes.Buffer
+	if err := storyPage(storyPageViewModel{}).Render(ctx, &body); err != nil {
+		return "", err
+	}
+
+	return body.String(), nil
+}
+
+func (h *Handler) loadActiveCategories(ctx context.Context) ([]catalog.Category, error) {
+	return h.catalogStore.ListActiveCategories(ctx)
 }
 
 func formatPrice(priceCents int) string {

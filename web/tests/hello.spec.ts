@@ -35,9 +35,8 @@ test('home page assets, nav anchors, and product image route work end-to-end', a
   await expect(page.getByRole('heading', { name: 'Thailand Gift Shop', level: 1 })).toBeVisible();
   await expect(page.getByText('Bangkok gift shop online')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Latest products' })).toBeVisible();
-  const emptyState = page.getByRole('heading', { name: 'No products are available yet.' });
-  await expect(emptyState).toBeVisible();
-  await expect(emptyState).toHaveCSS('font-weight', '700');
+  await expect(page.getByRole('link', { name: /Elephant Cotton Pouches/ })).toBeVisible();
+  await expect(page.getByRole('link', { name: /Bangkok Market Finds/ })).toBeVisible();
 });
 
 test.describe('without JavaScript', () => {
@@ -54,6 +53,6 @@ test.describe('without JavaScript', () => {
     await expect(page.getByRole('heading', { name: 'Thailand Gift Shop', level: 1 })).toBeVisible();
     await expect(page.getByText('Bangkok gift shop online')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Latest products' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'No products are available yet.' })).toBeVisible();
+    await expect(page.getByRole('link', { name: /Elephant Cotton Pouches/ })).toBeVisible();
   });
 });

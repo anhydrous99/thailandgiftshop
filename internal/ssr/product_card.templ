@@ -1,0 +1,21 @@
+package ssr
+
+import "github.com/anhydrous99/thailandgiftshop/internal/catalog"
+
+templ productCard(product catalog.Product, productImagePlaceholderURL string) {
+	<a data-testid="product-card" href={ "/products/" + product.Slug } class="group block overflow-hidden rounded-lg border border-[#2D2A4A]/15 bg-white shadow-sm transition hover:-translate-y-1 hover:border-[#A51931]/30 hover:shadow-lg">
+		<img class="aspect-[4/3] w-full bg-[#F4F5F8] object-cover transition duration-300 group-hover:scale-105" src={ product.DisplayImageURL(productImagePlaceholderURL) } alt={ product.Name } loading="lazy"/>
+		<div class="p-5">
+			<div class="flex items-start justify-between gap-4">
+				<h3 class="text-lg font-black leading-6 text-[#2D2A4A]">{ product.Name }</h3>
+				<p class="shrink-0 rounded-full bg-[#F4F5F8] px-3 py-1 text-sm font-black text-[#A51931]">{ formatPrice(product.PriceCents) }</p>
+			</div>
+			<p class="mt-3 line-clamp-3 text-sm leading-6 text-[#4C4A62]">{ product.Description }</p>
+			if product.OutOfStock() {
+				<p class="mt-4 inline-flex rounded-full bg-[#A51931]/10 px-3 py-1 text-xs font-black text-[#A51931]">Out of stock</p>
+			} else {
+				<p class="mt-4 inline-flex rounded-full bg-[#2D2A4A]/10 px-3 py-1 text-xs font-black text-[#2D2A4A]">In stock</p>
+			}
+		</div>
+	</a>
+}

@@ -16,6 +16,9 @@ export default defineConfig({
   webServer: {
     command: 'go run ./cmd/devserver',
     cwd: '..',
+    env: {
+      CATALOG_DEMO_STORE: '1',
+    },
     url: 'http://127.0.0.1:8080/',
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
