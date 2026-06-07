@@ -25,6 +25,24 @@ func TestStackSynthesizes(t *testing.T) {
 	}
 }
 
+func TestStackRejectsConcreteNonProductionRegion(t *testing.T) {
+	defer jsii.Close()
+
+	defer func() {
+		if recovered := recover(); recovered == nil {
+			t.Fatal("NewThailandGiftshopStack did not panic for concrete non-production region")
+		}
+	}()
+	app := awscdk.NewApp(nil)
+	NewThailandGiftshopStack(app, "TestStack", &ThailandGiftshopStackProps{
+		StackProps: awscdk.StackProps{
+			Env: &awscdk.Environment{
+				Region: jsii.String("us-east-2"),
+			},
+		},
+	})
+}
+
 func TestStackIncludesObservabilityResources(t *testing.T) {
 	defer jsii.Close()
 
@@ -147,13 +165,15 @@ func TestStackIncludesAdminLambdaRoutesAndScopedPermissions(t *testing.T) {
 		"FunctionName": "thailandgiftshop-admin",
 		"Environment": map[string]any{
 			"Variables": map[string]any{
-				"CATALOG_TABLE_NAME":                    assertions.Match_AnyValue(),
-				"CATALOG_SLUG_INDEX_NAME":               catalog.DefaultSlugIndexName,
-				"CATALOG_PUBLIC_INDEX_NAME":             catalog.DefaultPublicIndexName,
-				"CATALOG_RECENT_INDEX_NAME":             catalog.DefaultRecentIndexName,
-				adminauth.EnvProductImagesBucketName:    assertions.Match_AnyValue(),
-				adminauth.EnvProductImagesKeyPrefix:     productImagesKeyPrefix,
-				adminauth.EnvAdminCredentialsSecretJSON: assertions.Match_AnyValue(),
+				"CATALOG_TABLE_NAME":                     assertions.Match_AnyValue(),
+				"CATALOG_SLUG_INDEX_NAME":                catalog.DefaultSlugIndexName,
+				"CATALOG_PUBLIC_INDEX_NAME":              catalog.DefaultPublicIndexName,
+				"CATALOG_RECENT_INDEX_NAME":              catalog.DefaultRecentIndexName,
+				adminauth.EnvProductImagesBucketName:     assertions.Match_AnyValue(),
+				adminauth.EnvProductImagesKeyPrefix:      productImagesKeyPrefix,
+				adminauth.EnvAdminCredentialsSecretJSON:  assertions.Match_AnyValue(),
+				adminauth.EnvAdminLoginAttemptsTableName: assertions.Match_AnyValue(),
+				adminauth.EnvAdminOriginHeaderSecret:     assertions.Match_AnyValue(),
 			},
 		},
 		"Handler": "bootstrap",
@@ -202,13 +222,119 @@ func TestStackIncludesAdminLambdaRoutesAndScopedPermissions(t *testing.T) {
 	}
 }
 
+func TestStackIncludesAdminLoginAttemptThrottleStorage(t *testing.T) {
+	defer jsii.Close()
+
+	app := awscdk.NewApp(nil)
+	stack := NewThailandGiftshopStack(app, "TestStack", nil)
+	template := assertions.Template_FromStack(stack, nil)
+
+	template.HasResource(jsii.String("AWS::DynamoDB::Table"), map[string]any{
+		"DeletionPolicy":      "Retain",
+		"UpdateReplacePolicy": "Retain",
+		"Properties": assertions.Match_ObjectLike(&map[string]any{
+			"TableName":   adminLoginAttemptsTableName,
+			"BillingMode": "PAY_PER_REQUEST",
+			"KeySchema": assertions.Match_ArrayWith(&[]any{
+				map[string]any{
+					"AttributeName": adminLoginAttemptsPKName,
+					"KeyType":       "HASH",
+				},
+			}),
+			"TimeToLiveSpecification": map[string]any{
+				"AttributeName": adminLoginAttemptsTTLName,
+				"Enabled":       true,
+			},
+		}),
+	})
+
+	templateJSON := template.ToJSON()
+	adminVariables := lambdaEnvironmentVariables(t, templateJSON, "thailandgiftshop-admin")
+	if _, found := adminVariables[adminauth.EnvAdminLoginAttemptsTableName]; !found {
+		t.Fatalf("admin lambda missing %s env var: %#v", adminauth.EnvAdminLoginAttemptsTableName, adminVariables)
+	}
+	for _, action := range []string{"dynamodb:GetItem", "dynamodb:UpdateItem", "dynamodb:DeleteItem"} {
+		if !policyForFunctionHasActionOnAdminLoginAttemptsTable(t, templateJSON, "thailandgiftshop-admin", action) {
+			t.Fatalf("admin lambda policy missing %s on admin login attempts table", action)
+		}
+	}
+}
+
+func TestStackIncludesAdminCloudFrontWAFRateLimits(t *testing.T) {
+	defer jsii.Close()
+
+	app := awscdk.NewApp(nil)
+	stack := NewThailandGiftshopStack(app, "TestStack", nil)
+	template := assertions.Template_FromStack(stack, nil)
+
+	template.ResourceCountIs(jsii.String("AWS::WAFv2::WebACL"), jsii.Number(1))
+	template.HasResourceProperties(jsii.String("AWS::WAFv2::WebACL"), map[string]any{
+		"Scope": "CLOUDFRONT",
+		"DefaultAction": map[string]any{
+			"Allow": map[string]any{},
+		},
+		"Rules": assertions.Match_ArrayWith(&[]any{
+			assertions.Match_ObjectLike(&map[string]any{
+				"Name": "AdminLoginPostRateLimit",
+				"Action": map[string]any{
+					"Block": map[string]any{
+						"CustomResponse": map[string]any{
+							"ResponseCode": 429,
+						},
+					},
+				},
+				"Statement": map[string]any{
+					"RateBasedStatement": assertions.Match_ObjectLike(&map[string]any{
+						"AggregateKeyType":    "IP",
+						"Limit":               100,
+						"EvaluationWindowSec": 300,
+						"ScopeDownStatement": map[string]any{
+							"AndStatement": map[string]any{
+								"Statements": assertions.Match_ArrayWith(&[]any{
+									byteMatchAssertion("UriPath", "/admin/login", "EXACTLY"),
+									byteMatchAssertion("Method", "POST", "EXACTLY"),
+								}),
+							},
+						},
+					}),
+				},
+			}),
+			assertions.Match_ObjectLike(&map[string]any{
+				"Name": "AdminPathRateLimit",
+				"Statement": map[string]any{
+					"RateBasedStatement": assertions.Match_ObjectLike(&map[string]any{
+						"AggregateKeyType":    "IP",
+						"Limit":               500,
+						"EvaluationWindowSec": 300,
+						"ScopeDownStatement": map[string]any{
+							"OrStatement": map[string]any{
+								"Statements": assertions.Match_ArrayWith(&[]any{
+									byteMatchAssertion("UriPath", "/admin", "EXACTLY"),
+									byteMatchAssertion("UriPath", "/admin/", "STARTS_WITH"),
+								}),
+							},
+						},
+					}),
+				},
+			}),
+		}),
+	})
+	template.HasResourceProperties(jsii.String("AWS::CloudFront::Distribution"), map[string]any{
+		"DistributionConfig": assertions.Match_ObjectLike(&map[string]any{
+			"WebACLId": map[string]any{
+				"Fn::GetAtt": []any{"AdminCloudFrontWebACL", "Arn"},
+			},
+		}),
+	})
+}
+
 func TestStackWiresAdminCredentialsSecretReference(t *testing.T) {
 	defer jsii.Close()
 
 	app := awscdk.NewApp(nil)
 	stack := NewThailandGiftshopStack(app, "TestStack", nil)
 	template := assertions.Template_FromStack(stack, nil)
-	template.ResourceCountIs(jsii.String("AWS::SecretsManager::Secret"), jsii.Number(1))
+	template.ResourceCountIs(jsii.String("AWS::SecretsManager::Secret"), jsii.Number(2))
 
 	templateJSON := template.ToJSON()
 	adminVariables := lambdaEnvironmentVariables(t, templateJSON, "thailandgiftshop-admin")
@@ -220,6 +346,49 @@ func TestStackWiresAdminCredentialsSecretReference(t *testing.T) {
 	ssrVariables := lambdaEnvironmentVariables(t, templateJSON, "thailandgiftshop-ssr")
 	if _, found := ssrVariables[adminauth.EnvAdminCredentialsSecretJSON]; found {
 		t.Fatalf("public SSR lambda must not receive %s; got %#v", adminauth.EnvAdminCredentialsSecretJSON, ssrVariables)
+	}
+}
+
+func TestStackWiresAdminOriginHeaderSecretThroughCloudFrontAndAdminLambda(t *testing.T) {
+	defer jsii.Close()
+
+	app := awscdk.NewApp(nil)
+	stack := NewThailandGiftshopStack(app, "TestStack", nil)
+	template := assertions.Template_FromStack(stack, nil)
+
+	template.HasResourceProperties(jsii.String("AWS::SecretsManager::Secret"), map[string]any{
+		"Description": "Shared origin header secret for thailandgiftshop.com admin requests through CloudFront",
+		"GenerateSecretString": map[string]any{
+			"ExcludePunctuation": true,
+			"PasswordLength":     64,
+		},
+	})
+	template.HasResourceProperties(jsii.String("AWS::CloudFront::Distribution"), map[string]any{
+		"DistributionConfig": assertions.Match_ObjectLike(&map[string]any{
+			"Origins": assertions.Match_ArrayWith(&[]any{
+				assertions.Match_ObjectLike(&map[string]any{
+					"OriginCustomHeaders": assertions.Match_ArrayWith(&[]any{
+						assertions.Match_ObjectLike(&map[string]any{
+							"HeaderName": "X-TGS-Origin-Secret",
+						}),
+					}),
+				}),
+			}),
+		}),
+	})
+
+	templateJSON := template.ToJSON()
+	adminVariables := lambdaEnvironmentVariables(t, templateJSON, "thailandgiftshop-admin")
+	adminOriginSecret, found := adminVariables[adminauth.EnvAdminOriginHeaderSecret]
+	if !found {
+		t.Fatalf("admin lambda missing %s env var: %#v", adminauth.EnvAdminOriginHeaderSecret, adminVariables)
+	}
+	originHeaderValue := cloudFrontAPIOriginCustomHeaderValue(t, templateJSON, "X-TGS-Origin-Secret")
+	if templateValueString(t, originHeaderValue) != templateValueString(t, adminOriginSecret) {
+		t.Fatalf("CloudFront origin header and admin lambda env use different secrets:\norigin=%s\nenv=%s", templateValueString(t, originHeaderValue), templateValueString(t, adminOriginSecret))
+	}
+	if value := templateValueString(t, adminOriginSecret); !strings.Contains(value, "AdminOriginHeaderSecret") || !strings.Contains(value, "SecretString") {
+		t.Fatalf("admin origin secret reference = %s, want generated AdminOriginHeaderSecret SecretString", value)
 	}
 }
 
@@ -538,7 +707,7 @@ func TestStackIncludesStaticAssetsDistribution(t *testing.T) {
 				}),
 				"CachePolicyId":           "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",
 				"Compress":                true,
-				"OriginRequestPolicyId":   "b689b0a8-53d0-40ab-baf2-68738e2966ac",
+				"OriginRequestPolicyId":   assertions.Match_AnyValue(),
 				"ResponseHeadersPolicyId": assertions.Match_AnyValue(),
 				"ViewerProtocolPolicy":    "redirect-to-https",
 			},
@@ -566,6 +735,28 @@ func TestStackIncludesStaticAssetsDistribution(t *testing.T) {
 			"ViewerCertificate": assertions.Match_ObjectLike(&map[string]any{
 				"SslSupportMethod": "sni-only",
 			}),
+		},
+	})
+
+	template.HasResourceProperties(jsii.String("AWS::CloudFront::OriginRequestPolicy"), map[string]any{
+		"OriginRequestPolicyConfig": map[string]any{
+			"Name": ssrOriginRequestPolicyName,
+			"CookiesConfig": map[string]any{
+				"CookieBehavior": "all",
+			},
+			"QueryStringsConfig": map[string]any{
+				"QueryStringBehavior": "all",
+			},
+			"HeadersConfig": map[string]any{
+				"HeaderBehavior": "whitelist",
+				"Headers": assertions.Match_ArrayWith(&[]any{
+					"CloudFront-Viewer-Address",
+					"Content-Type",
+					"HX-Request",
+					"X-CSRF-Token",
+					"X-Forwarded-Proto",
+				}),
+			},
 		},
 	})
 
@@ -781,6 +972,32 @@ func policyForFunctionHasActionOnCatalogTable(t *testing.T, templateJSON *map[st
 	return false
 }
 
+func policyForFunctionHasActionOnAdminLoginAttemptsTable(t *testing.T, templateJSON *map[string]any, functionName string, expectedAction string) bool {
+	t.Helper()
+
+	resources := templateResources(t, templateJSON)
+	roleID := lambdaRoleID(t, resources, functionName)
+	for _, resource := range resources {
+		resourceMap := asStringMap(t, resource)
+		if resourceMap["Type"] != "AWS::IAM::Policy" {
+			continue
+		}
+		properties := asStringMap(t, resourceMap["Properties"])
+		if !policyAppliesToRole(properties["Roles"], roleID) {
+			continue
+		}
+		policyDocument := asStringMap(t, properties["PolicyDocument"])
+		for _, statement := range asSlice(t, policyDocument["Statement"]) {
+			statementMap := asStringMap(t, statement)
+			if containsAction(policyStatementActions(t, statementMap["Action"]), expectedAction) && statementResourceReferencesAdminLoginAttemptsTable(t, statementMap["Resource"]) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
 func statementResourceReferencesCatalogTable(t *testing.T, value any) bool {
 	t.Helper()
 
@@ -803,6 +1020,71 @@ func statementResourceReferencesCatalogTable(t *testing.T, value any) bool {
 	default:
 		return false
 	}
+}
+
+func statementResourceReferencesAdminLoginAttemptsTable(t *testing.T, value any) bool {
+	t.Helper()
+
+	switch resource := value.(type) {
+	case string:
+		return strings.Contains(resource, adminLoginAttemptsTableName)
+	case []any:
+		for _, item := range resource {
+			if statementResourceReferencesAdminLoginAttemptsTable(t, item) {
+				return true
+			}
+		}
+		return false
+	case map[string]any:
+		encoded, err := json.Marshal(resource)
+		if err != nil {
+			t.Fatalf("marshal policy resource: %v", err)
+		}
+		return strings.Contains(string(encoded), adminLoginAttemptsTableName) || strings.Contains(string(encoded), "AdminLoginAttemptsTable")
+	default:
+		return false
+	}
+}
+
+func byteMatchAssertion(fieldName string, search string, positionalConstraint string) any {
+	return assertions.Match_ObjectLike(&map[string]any{
+		"ByteMatchStatement": map[string]any{
+			"FieldToMatch": map[string]any{
+				fieldName: map[string]any{},
+			},
+			"SearchString":         search,
+			"PositionalConstraint": positionalConstraint,
+		},
+	})
+}
+
+func cloudFrontAPIOriginCustomHeaderValue(t *testing.T, templateJSON *map[string]any, headerName string) any {
+	t.Helper()
+
+	for _, resource := range templateResources(t, templateJSON) {
+		resourceMap := asStringMap(t, resource)
+		if resourceMap["Type"] != "AWS::CloudFront::Distribution" {
+			continue
+		}
+		properties := asStringMap(t, resourceMap["Properties"])
+		distributionConfig := asStringMap(t, properties["DistributionConfig"])
+		for _, origin := range asSlice(t, distributionConfig["Origins"]) {
+			originMap := asStringMap(t, origin)
+			if !strings.Contains(templateValueString(t, originMap["DomainName"]), ".execute-api.") {
+				continue
+			}
+			for _, header := range asSlice(t, originMap["OriginCustomHeaders"]) {
+				headerMap := asStringMap(t, header)
+				if headerMap["HeaderName"] == headerName {
+					return headerMap["HeaderValue"]
+				}
+			}
+			t.Fatalf("API Gateway origin missing custom header %q: %#v", headerName, originMap)
+		}
+	}
+
+	t.Fatal("CloudFront API Gateway origin not found")
+	return nil
 }
 
 func lambdaEnvironmentVariables(t *testing.T, templateJSON *map[string]any, functionName string) map[string]any {

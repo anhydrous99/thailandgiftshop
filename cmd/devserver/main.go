@@ -111,8 +111,9 @@ func handleSSR(handler *ssr.Handler, responseWriter http.ResponseWriter, request
 		QueryStringParameters: queryParameters(request),
 		RequestContext: events.APIGatewayV2HTTPRequestContext{
 			HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
-				Method: request.Method,
-				Path:   request.URL.Path,
+				Method:   request.Method,
+				Path:     request.URL.Path,
+				SourceIP: requestSourceIP(request),
 			},
 		},
 	})
@@ -150,8 +151,9 @@ func handleAdmin(handler *admin.Handler, responseWriter http.ResponseWriter, req
 		QueryStringParameters: queryParameters(request),
 		RequestContext: events.APIGatewayV2HTTPRequestContext{
 			HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
-				Method: request.Method,
-				Path:   request.URL.Path,
+				Method:   request.Method,
+				Path:     request.URL.Path,
+				SourceIP: requestSourceIP(request),
 			},
 		},
 	})
@@ -195,6 +197,14 @@ func requestCookies(request *http.Request) []string {
 		values = append(values, cookie.Name+"="+cookie.Value)
 	}
 	return values
+}
+
+func requestSourceIP(request *http.Request) string {
+	host, _, err := net.SplitHostPort(request.RemoteAddr)
+	if err == nil {
+		return host
+	}
+	return request.RemoteAddr
 }
 
 func queryParameters(request *http.Request) map[string]string {

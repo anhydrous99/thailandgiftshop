@@ -2,11 +2,16 @@ package admin
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"maps"
+	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,20 +29,23 @@ const logoutAllowedMethods = http.MethodPost
 const uploadAllowedMethods = http.MethodPost
 
 const csrfHeaderName = "X-CSRF-Token"
+const adminOriginHeaderName = "X-TGS-Origin-Secret"
+const cloudFrontViewerAddressHeaderName = "CloudFront-Viewer-Address"
 const passwordFieldName = "password"
 const csrfFieldName = "csrf_token"
 
 const dummyBcryptHash = "$2a$04$Vn0nSllZrX4bNwFaMifZAuS4xCZ9oE4DngJ02k8pYDz7zlXzpOfgK"
 
 type Handler struct {
-	credentials Credentials
-	now         func() time.Time
-	catalog     catalog.AdminStore
-	uploads     productImageUploads
+	credentials   Credentials
+	now           func() time.Time
+	catalog       catalog.AdminStore
+	uploads       productImageUploads
+	loginThrottle adminLoginThrottle
 }
 
 func NewHandler() *Handler {
-	return &Handler{now: time.Now}
+	return &Handler{now: time.Now, loginThrottle: noopAdminLoginThrottle{}}
 }
 
 func NewHandlerWithCredentials(credentials Credentials) *Handler {
@@ -67,7 +75,13 @@ func NewHandlerFromEnvironment(ctx context.Context) (*Handler, error) {
 		return nil, err
 	}
 
-	return NewHandlerWithCredentialsAndCatalog(credentials, adminStore), nil
+	loginThrottle, err := adminLoginThrottleFromEnvironment(ctx, credentials.SessionSecret)
+	if err != nil {
+		return nil, err
+	}
+	handler := NewHandlerWithCredentialsAndCatalog(credentials, adminStore)
+	handler.loginThrottle = loginThrottle
+	return handler, nil
 }
 
 var defaultHandler = NewHandler()
@@ -78,11 +92,14 @@ func Handle(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events
 
 func (h *Handler) Handle(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	path := requestPath(request)
-	if path == "/admin/" {
-		return adminRedirectResponse(http.StatusPermanentRedirect, "/admin", nil), nil
-	}
 	if path != "/admin" && !strings.HasPrefix(path, "/admin/") {
 		return htmlResponse(http.StatusNotFound, "Not found", nil), nil
+	}
+	if !validAdminOrigin(request) {
+		return adminHTMLResponse(http.StatusForbidden, "Forbidden", nil, nil), nil
+	}
+	if path == "/admin/" {
+		return adminRedirectResponse(http.StatusPermanentRedirect, "/admin", nil), nil
 	}
 
 	switch path {
@@ -108,16 +125,32 @@ func (h *Handler) handleLogin(ctx context.Context, request events.APIGatewayV2HT
 		return adminHTMLResponse(http.StatusOK, body, nil, nil)
 	}
 
-	values, err := formValues(request)
-	if err != nil || !h.validPassword(ctx, values.Get(passwordFieldName)) {
-		return adminHTMLResponse(http.StatusUnauthorized, loginPageBody("Invalid credentials"), nil, nil)
-	}
-
-	session, sessionValue, err := newAdminSession(h.credentials.SessionSecret, h.currentTime())
+	credentials := h.credentialsForRequest(ctx)
+	client := adminLoginClient(request)
+	status, err := h.loginThrottleForRequest().ReserveAttempt(ctx, client, h.currentTime())
 	if err != nil {
 		return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 	}
-	csrfValue, err := newAdminCSRFToken(session, h.credentials.SessionSecret)
+	if !status.Allowed {
+		return adminLoginThrottleResponse(status, h.currentTime())
+	}
+
+	values, err := formValues(request)
+	if err != nil || !h.validPasswordWithCredentials(credentials, values.Get(passwordFieldName)) {
+		if status.Locked(h.currentTime()) {
+			return adminLoginThrottleResponse(status, h.currentTime())
+		}
+		return adminHTMLResponse(http.StatusUnauthorized, loginPageBody("Invalid credentials"), nil, nil)
+	}
+	if err := h.loginThrottleForRequest().Clear(ctx, client); err != nil {
+		return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
+	}
+
+	session, sessionValue, err := newAdminSession(credentials.SessionSecret, h.currentTime())
+	if err != nil {
+		return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
+	}
+	csrfValue, err := newAdminCSRFToken(session, credentials.SessionSecret)
 	if err != nil {
 		return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 	}
@@ -190,6 +223,10 @@ func (h *Handler) handleProtectedAdmin(ctx context.Context, request events.APIGa
 }
 
 func (h *Handler) validPassword(ctx context.Context, password string) bool {
+	return h.validPasswordWithCredentials(h.credentialsForRequest(ctx), password)
+}
+
+func (h *Handler) credentialsForRequest(ctx context.Context) Credentials {
 	credentials := h.credentials
 	if credentials.PasswordHash == "" || credentials.SessionSecret == "" {
 		loadedCredentials, err := CredentialsFromEnvironment(ctx)
@@ -197,7 +234,13 @@ func (h *Handler) validPassword(ctx context.Context, password string) bool {
 			credentials = loadedCredentials
 		}
 	}
+	if credentials.PasswordHash != "" || credentials.SessionSecret != "" {
+		h.credentials = credentials
+	}
+	return credentials
+}
 
+func (h *Handler) validPasswordWithCredentials(credentials Credentials, password string) bool {
 	passwordHash := credentials.PasswordHash
 	if passwordHash == "" {
 		passwordHash = dummyBcryptHash
@@ -335,6 +378,19 @@ func (h *Handler) productImageUploads(ctx context.Context) (productImageUploads,
 	return uploads, nil
 }
 
+func (h *Handler) loginThrottleForRequest() adminLoginThrottle {
+	if h.loginThrottle == nil {
+		return noopAdminLoginThrottle{}
+	}
+	return h.loginThrottle
+}
+
+func adminLoginThrottleResponse(status adminLoginThrottleStatus, now time.Time) events.APIGatewayV2HTTPResponse {
+	return adminHTMLResponse(http.StatusTooManyRequests, "Too many login attempts. Try again later.", map[string]string{
+		"Retry-After": strconv.Itoa(status.RetryAfter(now)),
+	}, nil)
+}
+
 func loginPageBody(errorMessage string) string {
 	errorHTML := ""
 	if errorMessage != "" {
@@ -401,6 +457,58 @@ func headerValue(headers map[string]string, name string) string {
 		}
 	}
 
+	return ""
+}
+
+func validAdminOrigin(request events.APIGatewayV2HTTPRequest) bool {
+	secret := strings.TrimSpace(os.Getenv(EnvAdminOriginHeaderSecret))
+	if secret == "" {
+		return true
+	}
+	provided := headerValue(request.Headers, adminOriginHeaderName)
+	providedDigest := sha256.Sum256([]byte(provided))
+	secretDigest := sha256.Sum256([]byte(secret))
+	return subtle.ConstantTimeCompare(providedDigest[:], secretDigest[:]) == 1
+}
+
+func adminLoginClient(request events.APIGatewayV2HTTPRequest) string {
+	if client := normalizedAdminClientAddress(headerValue(request.Headers, cloudFrontViewerAddressHeaderName)); client != "" {
+		return client
+	}
+	sourceIP := strings.TrimSpace(request.RequestContext.HTTP.SourceIP)
+	if sourceIP == "" {
+		return unknownAdminLoginClient
+	}
+	if client := normalizedAdminClientAddress(sourceIP); client != "" {
+		return client
+	}
+	return sourceIP
+}
+
+func normalizedAdminClientAddress(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if host, _, err := net.SplitHostPort(value); err == nil {
+		host = strings.Trim(host, "[]")
+		if host != "" {
+			return host
+		}
+	}
+	if ip := net.ParseIP(strings.Trim(value, "[]")); ip != nil {
+		return ip.String()
+	}
+	if host, _, found := strings.Cut(value, ":"); found {
+		if ip := net.ParseIP(strings.Trim(host, "[]")); ip != nil {
+			return ip.String()
+		}
+	}
+	if split := strings.LastIndex(value, ":"); split > 0 {
+		if ip := net.ParseIP(strings.Trim(value[:split], "[]")); ip != nil {
+			return ip.String()
+		}
+	}
 	return ""
 }
 

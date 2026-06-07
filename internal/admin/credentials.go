@@ -11,6 +11,7 @@ import (
 const EnvAdminPasswordHash = "ADMIN_PASSWORD_HASH"
 const EnvAdminSessionSecret = "ADMIN_SESSION_SECRET"
 const EnvAdminCredentialsSecretJSON = "ADMIN_CREDENTIALS_SECRET_JSON"
+const EnvAdminOriginHeaderSecret = "ADMIN_ORIGIN_HEADER_SECRET"
 
 type Credentials struct {
 	PasswordHash  string

@@ -62,6 +62,8 @@ export ADMIN_SESSION_SECRET=<session-secret>
 
 Create the bcrypt hash and session secret outside the repository, then keep the real values in your shell, local secret manager, or CI secret store. Do not commit a plaintext admin password, generated bcrypt hash, or generated session secret. Local and dev code reads `ADMIN_PASSWORD_HASH` and `ADMIN_SESSION_SECRET` as a fallback; production reads `ADMIN_CREDENTIALS_SECRET_JSON` from the Lambda environment.
 
+Leave `ADMIN_ORIGIN_HEADER_SECRET` unset for local direct `/admin` work. In production, CDK generates this secret, configures CloudFront to send it as `X-TGS-Origin-Secret`, and configures the admin Lambda to reject `/admin` requests that do not include the matching header.
+
 ## Seed Catalog
 
 Seed the deployed DynamoDB catalog with demo categories, products, and category-product rows:
@@ -166,6 +168,10 @@ aws secretsmanager put-secret-value \
 
 The CDK stack imports that name and passes the secret string to the admin Lambda through the `ADMIN_CREDENTIALS_SECRET_JSON` dynamic reference. The JSON fields are `password_hash` and `session_secret`; the examples above are placeholders only.
 
+The stack also creates a retained DynamoDB table named `thailandgiftshop-admin-login-attempts` and passes its name to the admin Lambda as `ADMIN_LOGIN_ATTEMPTS_TABLE_NAME`. Failed admin logins are tracked per client, locked after 8 failures in 15 minutes, and receive a generic `429` with `Retry-After` during the 15-minute lockout.
+
+CloudFront has an admin-scoped AWS WAF web ACL with rate limits for `POST /admin/login` and `/admin*`. Direct API Gateway access through the `SsrHttpApiUrl` output remains useful for public SSR checks, but production admin access must use `https://thailandgiftshop.com/admin` so CloudFront can apply WAF rules and inject the admin origin header.
+
 ## Deploy
 
 Local deployers should build frontend assets before synthesizing or deploying so `web/static/` contains the generated CSS and vendored HTMX files used by CDK:
@@ -184,7 +190,7 @@ AWS_REGION=us-east-1 npx cdk deploy ThailandGiftshopStack --parameters HostedZon
 
 Replace `ROUTE53_HOSTED_ZONE_ID` with the public Route 53 hosted zone ID for `thailandgiftshop.com`.
 
-The stack outputs `SiteUrl` as `https://thailandgiftshop.com` and also outputs `SiteDistributionDomainName` for the underlying CloudFront distribution. The existing `SsrHttpApiUrl` output remains available for direct API Gateway access while CloudFront handles normal site traffic. Catalog infrastructure outputs include `CatalogTableName` and `CatalogTableArn`; product image infrastructure outputs include `ProductImagesBucketName` and `ProductImagesBaseUrl`.
+The stack outputs `SiteUrl` as `https://thailandgiftshop.com` and also outputs `SiteDistributionDomainName` for the underlying CloudFront distribution. The existing `SsrHttpApiUrl` output remains available for direct public API Gateway checks while CloudFront handles normal site traffic and all production admin traffic. Catalog infrastructure outputs include `CatalogTableName` and `CatalogTableArn`; product image infrastructure outputs include `ProductImagesBucketName` and `ProductImagesBaseUrl`.
 
 After changing seeded image URLs, product creation dates, or catalog indexes, reseed the catalog so DynamoDB points at `/images/products/...` and populates the latest-products access pattern:
 

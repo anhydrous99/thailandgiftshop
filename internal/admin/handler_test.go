@@ -3,9 +3,11 @@ package admin
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -72,6 +74,246 @@ func TestLoginCorrectPasswordSetsAdminSessionAndCSRFTokenCookies(t *testing.T) {
 	assertNoStore(t, response)
 }
 
+func TestLoginFailuresLockClientAndReturnQuiet429(t *testing.T) {
+	handler, _ := newAuthTestHandler(t)
+	throttle := newTestAdminLoginThrottle()
+	handler.loginThrottle = throttle
+
+	for attempt := 1; attempt <= adminLoginAttemptLimit; attempt++ {
+		request := adminFormRequest(http.MethodPost, "/admin/login", url.Values{
+			"password": {string(testWrongPassword(t))},
+		})
+		request.RequestContext.HTTP.SourceIP = "203.0.113.10"
+		response, err := handler.Handle(context.Background(), request)
+		if err != nil {
+			t.Fatalf("Handle attempt %d returned error: %v", attempt, err)
+		}
+		if attempt < adminLoginAttemptLimit {
+			if response.StatusCode != http.StatusUnauthorized {
+				t.Fatalf("attempt %d status = %d, want %d", attempt, response.StatusCode, http.StatusUnauthorized)
+			}
+			continue
+		}
+		if response.StatusCode != http.StatusTooManyRequests {
+			t.Fatalf("attempt %d status = %d, want %d", attempt, response.StatusCode, http.StatusTooManyRequests)
+		}
+		if response.Body != "Too many login attempts. Try again later." {
+			t.Fatalf("lockout body = %q, want quiet generic response", response.Body)
+		}
+		if response.Headers["Retry-After"] != "900" {
+			t.Fatalf("Retry-After = %q, want 900", response.Headers["Retry-After"])
+		}
+		if _, found := responseCookieValue(response, adminSessionCookieName); found {
+			t.Fatalf("locked response cookies = %#v, want no session cookie", response.Cookies)
+		}
+		assertNoStore(t, response)
+	}
+}
+
+func TestLockedLoginDoesNotIssueSessionOrRecordAnotherFailure(t *testing.T) {
+	handler, currentTime := newAuthTestHandler(t)
+	throttle := newTestAdminLoginThrottle()
+	throttle.lockClient("203.0.113.10", currentTime.Add(adminLoginLockout))
+	handler.loginThrottle = throttle
+
+	request := adminFormRequest(http.MethodPost, "/admin/login", url.Values{
+		"password": {string(testPassword(t))},
+	})
+	request.RequestContext.HTTP.SourceIP = "203.0.113.10"
+	response, err := handler.Handle(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusTooManyRequests)
+	}
+	if throttle.clearCalls != 0 {
+		t.Fatalf("clearCalls = %d, want 0 for already locked client", throttle.clearCalls)
+	}
+	if _, found := responseCookieValue(response, adminSessionCookieName); found {
+		t.Fatalf("locked response cookies = %#v, want no session cookie", response.Cookies)
+	}
+}
+
+func TestParallelLoginBurstLimitsReservedPasswordChecks(t *testing.T) {
+	handler, _ := newAuthTestHandler(t)
+	throttle := newTestAdminLoginThrottle()
+	handler.loginThrottle = throttle
+	wrongPassword := string(testWrongPassword(t))
+
+	const requests = adminLoginAttemptLimit * 2
+	var waitGroup sync.WaitGroup
+	start := make(chan struct{})
+	statuses := make(chan int, requests)
+	for index := 0; index < requests; index++ {
+		waitGroup.Add(1)
+		go func() {
+			defer waitGroup.Done()
+			<-start
+			request := adminFormRequest(http.MethodPost, "/admin/login", url.Values{
+				"password": {wrongPassword},
+			})
+			request.RequestContext.HTTP.SourceIP = "203.0.113.30"
+			response, err := handler.Handle(context.Background(), request)
+			if err != nil {
+				t.Errorf("Handle returned error: %v", err)
+				return
+			}
+			statuses <- response.StatusCode
+		}()
+	}
+	close(start)
+	waitGroup.Wait()
+	close(statuses)
+
+	counts := map[int]int{}
+	for status := range statuses {
+		counts[status]++
+	}
+	if throttle.allowedReservations != adminLoginAttemptLimit {
+		t.Fatalf("allowedReservations = %d, want %d", throttle.allowedReservations, adminLoginAttemptLimit)
+	}
+	if counts[http.StatusUnauthorized] != adminLoginAttemptLimit-1 {
+		t.Fatalf("401 responses = %d, want %d; all counts = %#v", counts[http.StatusUnauthorized], adminLoginAttemptLimit-1, counts)
+	}
+	if counts[http.StatusTooManyRequests] != requests-adminLoginAttemptLimit+1 {
+		t.Fatalf("429 responses = %d, want %d; all counts = %#v", counts[http.StatusTooManyRequests], requests-adminLoginAttemptLimit+1, counts)
+	}
+}
+
+func TestLoginThrottleReserveFailureDoesNotIssueSessionCookie(t *testing.T) {
+	handler, _ := newAuthTestHandler(t)
+	throttle := newTestAdminLoginThrottle()
+	throttle.reserveErr = errors.New("throttle unavailable")
+	handler.loginThrottle = throttle
+
+	response, err := handler.Handle(context.Background(), adminFormRequest(http.MethodPost, "/admin/login", url.Values{
+		"password": {string(testPassword(t))},
+	}))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusInternalServerError)
+	}
+	if _, found := responseCookieValue(response, adminSessionCookieName); found {
+		t.Fatalf("response cookies = %#v, want no session cookie", response.Cookies)
+	}
+}
+
+func TestLoginThrottleClearFailureDoesNotIssueSessionCookie(t *testing.T) {
+	handler, _ := newAuthTestHandler(t)
+	throttle := newTestAdminLoginThrottle()
+	throttle.clearErr = errors.New("clear unavailable")
+	handler.loginThrottle = throttle
+
+	response, err := handler.Handle(context.Background(), adminFormRequest(http.MethodPost, "/admin/login", url.Values{
+		"password": {string(testPassword(t))},
+	}))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusInternalServerError)
+	}
+	if _, found := responseCookieValue(response, adminSessionCookieName); found {
+		t.Fatalf("response cookies = %#v, want no session cookie", response.Cookies)
+	}
+}
+
+func TestSuccessfulLoginClearsPriorFailures(t *testing.T) {
+	handler, _ := newAuthTestHandler(t)
+	throttle := newTestAdminLoginThrottle()
+	handler.loginThrottle = throttle
+
+	failedRequest := adminFormRequest(http.MethodPost, "/admin/login", url.Values{
+		"password": {string(testWrongPassword(t))},
+	})
+	failedRequest.RequestContext.HTTP.SourceIP = "203.0.113.20"
+	if _, err := handler.Handle(context.Background(), failedRequest); err != nil {
+		t.Fatalf("Handle failed login returned error: %v", err)
+	}
+
+	successRequest := adminFormRequest(http.MethodPost, "/admin/login", url.Values{
+		"password": {string(testPassword(t))},
+	})
+	successRequest.RequestContext.HTTP.SourceIP = "203.0.113.20"
+	response, err := handler.Handle(context.Background(), successRequest)
+	if err != nil {
+		t.Fatalf("Handle success login returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusSeeOther {
+		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusSeeOther)
+	}
+	if throttle.clearCalls != 1 {
+		t.Fatalf("clearCalls = %d, want 1", throttle.clearCalls)
+	}
+	if throttle.failures["203.0.113.20"] != 0 {
+		t.Fatalf("failures after success = %d, want cleared", throttle.failures["203.0.113.20"])
+	}
+}
+
+func TestLoginThrottleUsesStableUnknownClientWhenSourceIPIsMissing(t *testing.T) {
+	handler, _ := newAuthTestHandler(t)
+	throttle := newTestAdminLoginThrottle()
+	handler.loginThrottle = throttle
+
+	response, err := handler.Handle(context.Background(), adminFormRequest(http.MethodPost, "/admin/login", url.Values{
+		"password": {string(testWrongPassword(t))},
+	}))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusUnauthorized)
+	}
+	if throttle.lastClient != unknownAdminLoginClient {
+		t.Fatalf("lastClient = %q, want %q", throttle.lastClient, unknownAdminLoginClient)
+	}
+}
+
+func TestLoginThrottlePrefersCloudFrontViewerAddress(t *testing.T) {
+	handler, _ := newAuthTestHandler(t)
+	throttle := newTestAdminLoginThrottle()
+	handler.loginThrottle = throttle
+
+	request := adminFormRequest(http.MethodPost, "/admin/login", url.Values{
+		"password": {string(testWrongPassword(t))},
+	})
+	request.Headers[cloudFrontViewerAddressHeaderName] = "198.51.100.42:53124"
+	request.RequestContext.HTTP.SourceIP = "10.0.0.1"
+	response, err := handler.Handle(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusUnauthorized)
+	}
+	if throttle.lastClient != "198.51.100.42" {
+		t.Fatalf("lastClient = %q, want CloudFront viewer IP", throttle.lastClient)
+	}
+}
+
+func TestLoginThrottleNormalizesIPv6CloudFrontViewerAddress(t *testing.T) {
+	request := adminFormRequest(http.MethodPost, "/admin/login", url.Values{})
+	request.Headers[cloudFrontViewerAddressHeaderName] = "[2001:db8::5]:443"
+	request.RequestContext.HTTP.SourceIP = "10.0.0.1"
+
+	if client := adminLoginClient(request); client != "2001:db8::5" {
+		t.Fatalf("adminLoginClient = %q, want normalized IPv6 viewer address", client)
+	}
+}
+
+func TestLoginThrottleFallsBackWhenCloudFrontViewerAddressIsMalformed(t *testing.T) {
+	request := adminFormRequest(http.MethodPost, "/admin/login", url.Values{})
+	request.Headers[cloudFrontViewerAddressHeaderName] = "bad address"
+	request.RequestContext.HTTP.SourceIP = "203.0.113.44"
+
+	if client := adminLoginClient(request); client != "203.0.113.44" {
+		t.Fatalf("adminLoginClient = %q, want source IP fallback", client)
+	}
+}
+
 func TestProtectedAdminRootRequiresAuthenticatedSession(t *testing.T) {
 	handler, _ := newAuthTestHandler(t)
 
@@ -91,6 +333,38 @@ func TestProtectedAdminRootRequiresAuthenticatedSession(t *testing.T) {
 		}
 	}
 	assertNoStore(t, response)
+}
+
+func TestAdminOriginSecretBlocksDirectAdminRequestsWhenConfigured(t *testing.T) {
+	handler, _ := newAuthTestHandler(t)
+	t.Setenv(EnvAdminOriginHeaderSecret, "origin-secret")
+
+	blocked, err := handler.Handle(context.Background(), adminRequest(http.MethodGet, "/admin/login"))
+	if err != nil {
+		t.Fatalf("Handle blocked returned error: %v", err)
+	}
+	if blocked.StatusCode != http.StatusForbidden {
+		t.Fatalf("blocked status = %d, want %d", blocked.StatusCode, http.StatusForbidden)
+	}
+	assertNoStore(t, blocked)
+
+	allowedRequest := adminRequest(http.MethodGet, "/admin/login")
+	allowedRequest.Headers = map[string]string{adminOriginHeaderName: "origin-secret"}
+	allowed, err := handler.Handle(context.Background(), allowedRequest)
+	if err != nil {
+		t.Fatalf("Handle allowed returned error: %v", err)
+	}
+	if allowed.StatusCode != http.StatusOK {
+		t.Fatalf("allowed status = %d, want %d", allowed.StatusCode, http.StatusOK)
+	}
+
+	blockedRedirect, err := handler.Handle(context.Background(), adminRequest(http.MethodGet, "/admin/"))
+	if err != nil {
+		t.Fatalf("Handle blocked redirect returned error: %v", err)
+	}
+	if blockedRedirect.StatusCode != http.StatusForbidden {
+		t.Fatalf("blocked redirect status = %d, want %d", blockedRedirect.StatusCode, http.StatusForbidden)
+	}
 }
 
 func TestDashboardServesAuthenticatedShellFromRequestCookies(t *testing.T) {
@@ -376,6 +650,65 @@ func newAuthTestHandler(t *testing.T) (*Handler, *time.Time) {
 	})
 	handler.now = func() time.Time { return currentTime }
 	return handler, &currentTime
+}
+
+type testAdminLoginThrottle struct {
+	mutex               sync.Mutex
+	failures            map[string]int
+	lockedUntil         map[string]time.Time
+	lastClient          string
+	reserveCalls        int
+	allowedReservations int
+	clearCalls          int
+	reserveErr          error
+	clearErr            error
+}
+
+func newTestAdminLoginThrottle() *testAdminLoginThrottle {
+	return &testAdminLoginThrottle{
+		failures:    map[string]int{},
+		lockedUntil: map[string]time.Time{},
+	}
+}
+
+func (t *testAdminLoginThrottle) ReserveAttempt(ctx context.Context, client string, now time.Time) (adminLoginThrottleStatus, error) {
+	_ = ctx
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
+	t.reserveCalls++
+	t.lastClient = client
+	if t.reserveErr != nil {
+		return adminLoginThrottleStatus{}, t.reserveErr
+	}
+	if t.lockedUntil[client].After(now.UTC()) {
+		return adminLoginThrottleStatus{LockedUntil: t.lockedUntil[client]}, nil
+	}
+	t.failures[client]++
+	t.allowedReservations++
+	if t.failures[client] >= adminLoginAttemptLimit {
+		t.lockedUntil[client] = now.UTC().Add(adminLoginLockout)
+	}
+	return adminLoginThrottleStatus{Allowed: true, LockedUntil: t.lockedUntil[client]}, nil
+}
+
+func (t *testAdminLoginThrottle) Clear(ctx context.Context, client string) error {
+	_ = ctx
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
+	t.clearCalls++
+	t.lastClient = client
+	if t.clearErr != nil {
+		return t.clearErr
+	}
+	delete(t.failures, client)
+	delete(t.lockedUntil, client)
+	return nil
+}
+
+func (t *testAdminLoginThrottle) lockClient(client string, lockedUntil time.Time) {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
+	t.lockedUntil[client] = lockedUntil
 }
 
 func testPasswordHash(t *testing.T) string {

@@ -21,6 +21,7 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awss3"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awss3deployment"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssecretsmanager"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awswafv2"
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
 )
@@ -40,9 +41,14 @@ const (
 	catalogRecentIndexPKName = "gsi3pk"
 	catalogRecentIndexSKName = "gsi3sk"
 
-	staticAssetsKeyPrefix      = "static"
-	productImagesKeyPrefix     = "images"
-	adminCredentialsSecretName = "thailandgiftshop/admin/credentials"
+	staticAssetsKeyPrefix       = "static"
+	productImagesKeyPrefix      = "images"
+	adminCredentialsSecretName  = "thailandgiftshop/admin/credentials"
+	adminLoginAttemptsTableName = "thailandgiftshop-admin-login-attempts"
+	adminLoginAttemptsPKName    = "client_key"
+	adminLoginAttemptsTTLName   = "expires_at"
+
+	ssrOriginRequestPolicyName = "thailandgiftshop-ssr-origin"
 )
 
 type ThailandGiftshopStackProps struct {
@@ -54,6 +60,7 @@ func NewThailandGiftshopStack(scope constructs.Construct, id string, props *Thai
 	if props != nil {
 		stackProps = props.StackProps
 	}
+	validateStackRegion(stackProps)
 
 	stack := awscdk.NewStack(scope, &id, &stackProps)
 
@@ -62,8 +69,10 @@ func NewThailandGiftshopStack(scope constructs.Construct, id string, props *Thai
 
 	catalogTable := addCatalog(stack)
 	productImagesBucket := addProductImagesBucket(stack)
-	httpAPI := addSSR(stack, catalogTable, productImagesBucket)
-	addSite(stack, httpAPI, productImagesBucket)
+	adminLoginAttemptsTable := addAdminLoginAttempts(stack)
+	adminOriginHeaderSecret := addAdminOriginHeaderSecret(stack)
+	httpAPI := addSSR(stack, catalogTable, productImagesBucket, adminLoginAttemptsTable, adminOriginHeaderSecret)
+	addSite(stack, httpAPI, productImagesBucket, adminOriginHeaderSecret)
 
 	return stack
 }
@@ -161,7 +170,21 @@ func addProductImagesBucket(stack awscdk.Stack) awss3.Bucket {
 	})
 }
 
-func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, productImagesBucket awss3.IBucket) awsapigatewayv2.HttpApi {
+func addAdminLoginAttempts(stack awscdk.Stack) awsdynamodb.Table {
+	return awsdynamodb.NewTable(stack, jsii.String("AdminLoginAttemptsTable"), &awsdynamodb.TableProps{
+		BillingMode: awsdynamodb.BillingMode_PAY_PER_REQUEST,
+		Encryption:  awsdynamodb.TableEncryption_AWS_MANAGED,
+		PartitionKey: &awsdynamodb.Attribute{
+			Name: jsii.String(adminLoginAttemptsPKName),
+			Type: awsdynamodb.AttributeType_STRING,
+		},
+		RemovalPolicy:       awscdk.RemovalPolicy_RETAIN,
+		TableName:           jsii.String(adminLoginAttemptsTableName),
+		TimeToLiveAttribute: jsii.String(adminLoginAttemptsTTLName),
+	})
+}
+
+func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, productImagesBucket awss3.IBucket, adminLoginAttemptsTable awsdynamodb.ITable, adminOriginHeaderSecret awssecretsmanager.ISecret) awsapigatewayv2.HttpApi {
 	lambdaLogGroup := awslogs.NewLogGroup(stack, jsii.String("SsrLambdaLogGroup"), &awslogs.LogGroupProps{
 		LogGroupName: jsii.String("/aws/lambda/thailandgiftshop-ssr"),
 		Retention:    awslogs.RetentionDays_THREE_MONTHS,
@@ -211,7 +234,7 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, productImagesBu
 			Timeout:              awscdk.Duration_Seconds(jsii.Number(10)),
 		}),
 	})
-	adminRoutes := addAdmin(stack, catalogTable, productImagesBucket, httpAPI)
+	adminRoutes := addAdmin(stack, catalogTable, productImagesBucket, adminLoginAttemptsTable, adminOriginHeaderSecret, httpAPI)
 
 	accessLogGroup := awslogs.NewLogGroup(stack, jsii.String("SsrHttpApiAccessLogGroup"), &awslogs.LogGroupProps{
 		LogGroupName: jsii.String("/aws/apigateway/thailandgiftshop-ssr"),
@@ -244,7 +267,7 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, productImagesBu
 	return httpAPI
 }
 
-func addAdmin(stack awscdk.Stack, catalogTable awsdynamodb.ITable, productImagesBucket awss3.IBucket, httpAPI awsapigatewayv2.HttpApi) []awsapigatewayv2.HttpRoute {
+func addAdmin(stack awscdk.Stack, catalogTable awsdynamodb.ITable, productImagesBucket awss3.IBucket, adminLoginAttemptsTable awsdynamodb.ITable, adminOriginHeaderSecret awssecretsmanager.ISecret, httpAPI awsapigatewayv2.HttpApi) []awsapigatewayv2.HttpRoute {
 	lambdaLogGroup := awslogs.NewLogGroup(stack, jsii.String("AdminLambdaLogGroup"), &awslogs.LogGroupProps{
 		LogGroupName: jsii.String("/aws/lambda/thailandgiftshop-admin"),
 		Retention:    awslogs.RetentionDays_THREE_MONTHS,
@@ -262,14 +285,16 @@ func addAdmin(stack awscdk.Stack, catalogTable awsdynamodb.ITable, productImages
 		}),
 		Description: jsii.String("Admin HTML handler for thailandgiftshop.com"),
 		Environment: &map[string]*string{
-			catalog.EnvTableName:                    catalogTable.TableName(),
-			catalog.EnvSlugIndexName:                jsii.String(catalog.DefaultSlugIndexName),
-			catalog.EnvPublicIndexName:              jsii.String(catalog.DefaultPublicIndexName),
-			catalog.EnvRecentIndexName:              jsii.String(catalog.DefaultRecentIndexName),
-			adminauth.EnvProductImagesBucketName:    productImagesBucket.BucketName(),
-			adminauth.EnvProductImagesKeyPrefix:     jsii.String(productImagesKeyPrefix),
-			catalog.EnvProductImagePlaceholderURL:   jsii.String(catalog.DefaultProductImagePlaceholderURL),
-			adminauth.EnvAdminCredentialsSecretJSON: adminCredentialsSecretReference(adminCredentialsSecret(stack)),
+			catalog.EnvTableName:                     catalogTable.TableName(),
+			catalog.EnvSlugIndexName:                 jsii.String(catalog.DefaultSlugIndexName),
+			catalog.EnvPublicIndexName:               jsii.String(catalog.DefaultPublicIndexName),
+			catalog.EnvRecentIndexName:               jsii.String(catalog.DefaultRecentIndexName),
+			adminauth.EnvProductImagesBucketName:     productImagesBucket.BucketName(),
+			adminauth.EnvProductImagesKeyPrefix:      jsii.String(productImagesKeyPrefix),
+			catalog.EnvProductImagePlaceholderURL:    jsii.String(catalog.DefaultProductImagePlaceholderURL),
+			adminauth.EnvAdminCredentialsSecretJSON:  adminCredentialsSecretReference(adminCredentialsSecret(stack)),
+			adminauth.EnvAdminLoginAttemptsTableName: adminLoginAttemptsTable.TableName(),
+			adminauth.EnvAdminOriginHeaderSecret:     adminOriginHeaderSecretReference(adminOriginHeaderSecret),
 		},
 		FunctionName: jsii.String("thailandgiftshop-admin"),
 		Handler:      jsii.String("bootstrap"),
@@ -290,6 +315,16 @@ func addAdmin(stack awscdk.Stack, catalogTable awsdynamodb.ITable, productImages
 	}))
 	productImagesBucket.GrantRead(adminFunction, jsii.String(productImagesKeyPrefix+"/*"))
 	productImagesBucket.GrantPut(adminFunction, jsii.String(productImagesKeyPrefix+"/*"))
+	adminFunction.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+		Actions: &[]*string{
+			jsii.String("dynamodb:GetItem"),
+			jsii.String("dynamodb:UpdateItem"),
+			jsii.String("dynamodb:DeleteItem"),
+		},
+		Resources: &[]*string{
+			adminLoginAttemptsTable.TableArn(),
+		},
+	}))
 
 	adminIntegration := awsapigatewayv2integrations.NewHttpLambdaIntegration(jsii.String("AdminLambdaIntegration"), adminFunction, &awsapigatewayv2integrations.HttpLambdaIntegrationProps{
 		PayloadFormatVersion: awsapigatewayv2.PayloadFormatVersion_VERSION_2_0(),
@@ -320,6 +355,127 @@ func adminCredentialsSecretReference(secret awssecretsmanager.ISecret) *string {
 	).ToString()
 }
 
+func addAdminCloudFrontWebACL(stack awscdk.Stack) awswafv2.CfnWebACL {
+	return adminRateLimitWebACL(stack, "AdminCloudFrontWebACL", "thailandgiftshop-admin-cloudfront", "CLOUDFRONT", "ThailandGiftshopAdminCloudFront")
+}
+
+func adminRateLimitWebACL(stack awscdk.Stack, id string, name string, scope string, metricName string) awswafv2.CfnWebACL {
+	return awswafv2.NewCfnWebACL(stack, jsii.String(id), &awswafv2.CfnWebACLProps{
+		Name:  jsii.String(name),
+		Scope: jsii.String(scope),
+		DefaultAction: &awswafv2.CfnWebACL_DefaultActionProperty{
+			Allow: &awswafv2.CfnWebACL_AllowActionProperty{},
+		},
+		VisibilityConfig: wafVisibility(metricName),
+		Rules: []interface{}{
+			adminRateLimitRule("AdminLoginPostRateLimit", 0, 100, loginPostStatement(), metricName+"LoginPost"),
+			adminRateLimitRule("AdminPathRateLimit", 1, 500, adminPathStatement(), metricName+"Path"),
+		},
+	})
+}
+
+func adminRateLimitRule(name string, priority int, limit int, statement interface{}, metricName string) *awswafv2.CfnWebACL_RuleProperty {
+	return &awswafv2.CfnWebACL_RuleProperty{
+		Name:     jsii.String(name),
+		Priority: jsii.Number(priority),
+		Action: &awswafv2.CfnWebACL_RuleActionProperty{
+			Block: &awswafv2.CfnWebACL_BlockActionProperty{
+				CustomResponse: &awswafv2.CfnWebACL_CustomResponseProperty{
+					ResponseCode: jsii.Number(429),
+				},
+			},
+		},
+		Statement: &awswafv2.CfnWebACL_StatementProperty{
+			RateBasedStatement: &awswafv2.CfnWebACL_RateBasedStatementProperty{
+				AggregateKeyType:    jsii.String("IP"),
+				Limit:               jsii.Number(limit),
+				EvaluationWindowSec: jsii.Number(300),
+				ScopeDownStatement:  statement,
+			},
+		},
+		VisibilityConfig: wafVisibility(metricName),
+	}
+}
+
+func loginPostStatement() *awswafv2.CfnWebACL_StatementProperty {
+	return &awswafv2.CfnWebACL_StatementProperty{
+		AndStatement: &awswafv2.CfnWebACL_AndStatementProperty{
+			Statements: []interface{}{
+				byteMatchStatement(&awswafv2.CfnWebACL_FieldToMatchProperty{UriPath: map[string]interface{}{}}, "/admin/login", "EXACTLY"),
+				byteMatchStatement(&awswafv2.CfnWebACL_FieldToMatchProperty{Method: map[string]interface{}{}}, "POST", "EXACTLY"),
+			},
+		},
+	}
+}
+
+func adminPathStatement() *awswafv2.CfnWebACL_StatementProperty {
+	return &awswafv2.CfnWebACL_StatementProperty{
+		OrStatement: &awswafv2.CfnWebACL_OrStatementProperty{
+			Statements: []interface{}{
+				byteMatchStatement(&awswafv2.CfnWebACL_FieldToMatchProperty{UriPath: map[string]interface{}{}}, "/admin", "EXACTLY"),
+				byteMatchStatement(&awswafv2.CfnWebACL_FieldToMatchProperty{UriPath: map[string]interface{}{}}, "/admin/", "STARTS_WITH"),
+			},
+		},
+	}
+}
+
+func byteMatchStatement(fieldToMatch interface{}, search string, positionalConstraint string) *awswafv2.CfnWebACL_StatementProperty {
+	return &awswafv2.CfnWebACL_StatementProperty{
+		ByteMatchStatement: &awswafv2.CfnWebACL_ByteMatchStatementProperty{
+			FieldToMatch:         fieldToMatch,
+			SearchString:         jsii.String(search),
+			PositionalConstraint: jsii.String(positionalConstraint),
+			TextTransformations: []interface{}{
+				&awswafv2.CfnWebACL_TextTransformationProperty{
+					Priority: jsii.Number(0),
+					Type:     jsii.String("NONE"),
+				},
+			},
+		},
+	}
+}
+
+func wafVisibility(metricName string) *awswafv2.CfnWebACL_VisibilityConfigProperty {
+	return &awswafv2.CfnWebACL_VisibilityConfigProperty{
+		CloudWatchMetricsEnabled: jsii.Bool(true),
+		MetricName:               jsii.String(metricName),
+		SampledRequestsEnabled:   jsii.Bool(true),
+	}
+}
+
+func addAdminOriginHeaderSecret(stack awscdk.Stack) awssecretsmanager.Secret {
+	return awssecretsmanager.NewSecret(stack, jsii.String("AdminOriginHeaderSecret"), &awssecretsmanager.SecretProps{
+		Description: jsii.String("Shared origin header secret for thailandgiftshop.com admin requests through CloudFront"),
+		GenerateSecretString: &awssecretsmanager.SecretStringGenerator{
+			ExcludePunctuation: jsii.Bool(true),
+			PasswordLength:     jsii.Number(64),
+		},
+	})
+}
+
+func ssrOriginRequestPolicy(stack awscdk.Stack) awscloudfront.OriginRequestPolicy {
+	return awscloudfront.NewOriginRequestPolicy(stack, jsii.String("SsrOriginRequestPolicy"), &awscloudfront.OriginRequestPolicyProps{
+		OriginRequestPolicyName: jsii.String(ssrOriginRequestPolicyName),
+		Comment:                 jsii.String("Headers, cookies, and query strings for thailandgiftshop.com SSR origin"),
+		CookieBehavior:          awscloudfront.OriginRequestCookieBehavior_All(),
+		QueryStringBehavior:     awscloudfront.OriginRequestQueryStringBehavior_All(),
+		HeaderBehavior: awscloudfront.OriginRequestHeaderBehavior_AllowList(
+			jsii.String("CloudFront-Viewer-Address"),
+			jsii.String("Content-Type"),
+			jsii.String("HX-Request"),
+			jsii.String("X-CSRF-Token"),
+			jsii.String("X-Forwarded-Proto"),
+		),
+	})
+}
+
+func adminOriginHeaderSecretReference(secret awssecretsmanager.ISecret) *string {
+	return awscdk.NewCfnDynamicReference(
+		awscdk.CfnDynamicReferenceService_SECRETS_MANAGER,
+		secret.CfnDynamicReferenceKey(nil),
+	).ToString()
+}
+
 func addCartCookieSecret(stack awscdk.Stack) awssecretsmanager.Secret {
 	return awssecretsmanager.NewSecret(stack, jsii.String("CartCookieSecret"), &awssecretsmanager.SecretProps{
 		Description: jsii.String("Signing secret for thailandgiftshop.com cart cookies"),
@@ -337,7 +493,7 @@ func cartCookieSecretReference(secret awssecretsmanager.ISecret) *string {
 	).ToString()
 }
 
-func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi, productImagesBucket awss3.IBucket) {
+func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi, productImagesBucket awss3.IBucket, adminOriginHeaderSecret awssecretsmanager.ISecret) {
 	hostedZone := siteHostedZone(stack)
 	certificate := awscertificatemanager.NewCertificate(stack, jsii.String("SiteCertificate"), &awscertificatemanager.CertificateProps{
 		DomainName: jsii.String(siteDomainName),
@@ -347,6 +503,8 @@ func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi, productImagesB
 		Validation: awscertificatemanager.CertificateValidation_FromDns(hostedZone),
 	})
 	securityHeadersPolicy := siteSecurityHeaders(stack)
+	adminWebACL := addAdminCloudFrontWebACL(stack)
+	originRequestPolicy := ssrOriginRequestPolicy(stack)
 
 	staticBucket := awss3.NewBucket(stack, jsii.String("StaticAssetsBucket"), &awss3.BucketProps{
 		BlockPublicAccess: awss3.BlockPublicAccess_BLOCK_ALL(),
@@ -371,8 +529,8 @@ func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi, productImagesB
 			AllowedMethods:        awscloudfront.AllowedMethods_ALLOW_ALL(),
 			CachePolicy:           awscloudfront.CachePolicy_CACHING_DISABLED(),
 			Compress:              jsii.Bool(true),
-			Origin:                ssrOrigin(httpAPI),
-			OriginRequestPolicy:   awscloudfront.OriginRequestPolicy_ALL_VIEWER_EXCEPT_HOST_HEADER(),
+			Origin:                ssrOrigin(httpAPI, adminOriginHeaderSecret),
+			OriginRequestPolicy:   originRequestPolicy,
 			ResponseHeadersPolicy: securityHeadersPolicy,
 			ViewerProtocolPolicy:  awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
 		},
@@ -394,6 +552,7 @@ func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi, productImagesB
 				ViewerProtocolPolicy:  awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
 			},
 		},
+		WebAclId: adminWebACL.AttrArn(),
 	})
 
 	addSiteAliasRecords(stack, hostedZone, distribution)
@@ -511,8 +670,11 @@ func addSiteAliasRecords(stack awscdk.Stack, hostedZone awsroute53.IHostedZone, 
 	})
 }
 
-func ssrOrigin(httpAPI awsapigatewayv2.HttpApi) awscloudfront.IOrigin {
+func ssrOrigin(httpAPI awsapigatewayv2.HttpApi, adminOriginHeaderSecret awssecretsmanager.ISecret) awscloudfront.IOrigin {
 	return awscloudfrontorigins.NewHttpOrigin(apiGatewayDomainName(httpAPI), &awscloudfrontorigins.HttpOriginProps{
+		CustomHeaders: &map[string]*string{
+			"X-TGS-Origin-Secret": adminOriginHeaderSecretReference(adminOriginHeaderSecret),
+		},
 		ProtocolPolicy: awscloudfront.OriginProtocolPolicy_HTTPS_ONLY,
 	})
 }
@@ -555,6 +717,15 @@ func env() *awscdk.Environment {
 	return &awscdk.Environment{
 		Account: stringOrNil(account),
 		Region:  stringOrNil(region),
+	}
+}
+
+func validateStackRegion(stackProps awscdk.StackProps) {
+	if stackProps.Env == nil || stackProps.Env.Region == nil || *stackProps.Env.Region == "" {
+		return
+	}
+	if *stackProps.Env.Region != productionRegion {
+		panic("ThailandGiftshopStack must be synthesized in " + productionRegion + " when a concrete region is configured, got " + *stackProps.Env.Region)
 	}
 }
 

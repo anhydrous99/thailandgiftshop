@@ -110,6 +110,33 @@ func TestDevserverWritesApiResponseCookies(t *testing.T) {
 	}
 }
 
+func TestRequestSourceIPParsesRemoteAddrHostPort(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	request.RemoteAddr = "203.0.113.10:53124"
+
+	if sourceIP := requestSourceIP(request); sourceIP != "203.0.113.10" {
+		t.Fatalf("requestSourceIP = %q, want IPv4 host", sourceIP)
+	}
+}
+
+func TestRequestSourceIPParsesIPv6RemoteAddrHostPort(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	request.RemoteAddr = "[2001:db8::10]:53124"
+
+	if sourceIP := requestSourceIP(request); sourceIP != "2001:db8::10" {
+		t.Fatalf("requestSourceIP = %q, want IPv6 host", sourceIP)
+	}
+}
+
+func TestRequestSourceIPFallsBackForMalformedRemoteAddr(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	request.RemoteAddr = "malformed"
+
+	if sourceIP := requestSourceIP(request); sourceIP != "malformed" {
+		t.Fatalf("requestSourceIP = %q, want malformed fallback", sourceIP)
+	}
+}
+
 func TestREADMEAdminBootstrapDocsUsePlaceholdersOnly(t *testing.T) {
 	readme, err := os.ReadFile("../../README.md")
 	if err != nil {
