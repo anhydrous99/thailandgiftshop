@@ -76,6 +76,12 @@ func TestAdminMetricsRecordOriginRejection(t *testing.T) {
 		"Operation": metricOperationOrigin,
 		"Outcome":   metricOutcomeRejected,
 	})
+	assertRecordedMetricWithUnit(t, recorder, observability.MetricRouteDurationMs, observability.UnitMilliseconds, map[string]string{
+		"Service": metricServiceAdmin,
+		"Route":   "origin_rejected",
+		"Method":  http.MethodGet,
+		"Status":  "403",
+	})
 }
 
 func TestAdminMetricsRecordCatalogWriteOutcomes(t *testing.T) {
@@ -135,6 +141,50 @@ func TestAdminMetricsRecordProductImageUploadOutcome(t *testing.T) {
 	})
 }
 
+func TestAdminMetricsRecordRouteDurationAndColdStartWithoutChangingResponse(t *testing.T) {
+	adminColdStartRecorded.Store(false)
+	plainHandler, _ := newAuthTestHandler(t)
+	plainResponse, err := plainHandler.Handle(context.Background(), adminRequest(http.MethodGet, "/admin/login"))
+	if err != nil {
+		t.Fatalf("plain Handle returned error: %v", err)
+	}
+
+	handler, _ := newAuthTestHandler(t)
+	recorder := &testMetricRecorder{}
+	handler.metrics = recorder
+	instrumentedResponse, err := handler.Handle(context.Background(), adminRequest(http.MethodGet, "/admin/login"))
+	if err != nil {
+		t.Fatalf("instrumented Handle returned error: %v", err)
+	}
+	if instrumentedResponse.StatusCode != plainResponse.StatusCode || instrumentedResponse.Body != plainResponse.Body {
+		t.Fatalf("instrumented response changed: got status %d body %q, want status %d body %q", instrumentedResponse.StatusCode, instrumentedResponse.Body, plainResponse.StatusCode, plainResponse.Body)
+	}
+
+	assertRecordedMetricWithUnit(t, recorder, observability.MetricRouteColdStart, observability.UnitCount, map[string]string{
+		"Service": metricServiceAdmin,
+	})
+	assertRecordedMetricWithUnit(t, recorder, observability.MetricRouteDurationMs, observability.UnitMilliseconds, map[string]string{
+		"Service": metricServiceAdmin,
+		"Route":   "login",
+		"Method":  http.MethodGet,
+		"Status":  "200",
+	})
+
+	_, err = handler.Handle(context.Background(), adminRequest(http.MethodGet, "/products"))
+	if err != nil {
+		t.Fatalf("second Handle returned error: %v", err)
+	}
+	if got := recordedMetricCount(recorder, observability.MetricRouteColdStart); got != 1 {
+		t.Fatalf("cold-start metric count = %d, want 1", got)
+	}
+	assertRecordedMetricWithUnit(t, recorder, observability.MetricRouteDurationMs, observability.UnitMilliseconds, map[string]string{
+		"Service": metricServiceAdmin,
+		"Route":   "not_found",
+		"Method":  http.MethodGet,
+		"Status":  "404",
+	})
+}
+
 type testMetricRecorder struct {
 	metrics []observability.Metric
 }
@@ -145,15 +195,33 @@ func (r *testMetricRecorder) Record(metric observability.Metric) {
 
 func assertRecordedMetric(t *testing.T, recorder *testMetricRecorder, name string, dimensions map[string]string) {
 	t.Helper()
+	assertRecordedMetricWithUnit(t, recorder, name, "", dimensions)
+}
+
+func assertRecordedMetricWithUnit(t *testing.T, recorder *testMetricRecorder, name string, unit string, dimensions map[string]string) {
+	t.Helper()
 	for _, metric := range recorder.metrics {
 		if metric.Name != name {
+			continue
+		}
+		if unit != "" && metric.Unit != unit {
 			continue
 		}
 		if metricDimensionsMatch(metric, dimensions) {
 			return
 		}
 	}
-	t.Fatalf("metric %q with dimensions %#v not recorded; got %#v", name, dimensions, recorder.metrics)
+	t.Fatalf("metric %q with unit %q and dimensions %#v not recorded; got %#v", name, unit, dimensions, recorder.metrics)
+}
+
+func recordedMetricCount(recorder *testMetricRecorder, name string) int {
+	count := 0
+	for _, metric := range recorder.metrics {
+		if metric.Name == name {
+			count++
+		}
+	}
+	return count
 }
 
 func metricDimensionsMatch(metric observability.Metric, dimensions map[string]string) bool {

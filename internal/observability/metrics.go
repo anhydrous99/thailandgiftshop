@@ -3,6 +3,7 @@ package observability
 import (
 	"encoding/json"
 	"io"
+	"maps"
 	"time"
 )
 
@@ -11,11 +12,16 @@ const Namespace = "ThailandGiftshop/App"
 const (
 	MetricAdminLoginAttempt   = "AdminLoginAttempt"
 	MetricAdminOriginRejected = "AdminOriginRejected"
+	MetricCatalogOperation    = "CatalogOperation"
+	MetricCatalogOperationMs  = "CatalogOperationMs"
 	MetricCatalogWrite        = "CatalogWrite"
 	MetricProductImageUpload  = "ProductImageUpload"
+	MetricRouteColdStart      = "RouteColdStart"
+	MetricRouteDurationMs     = "RouteDurationMs"
 )
 
 const UnitCount = "Count"
+const UnitMilliseconds = "Milliseconds"
 
 type Dimension struct {
 	Name  string
@@ -55,6 +61,15 @@ func Count(name string, dimensions ...Dimension) Metric {
 		Name:       name,
 		Unit:       UnitCount,
 		Value:      1,
+		Dimensions: dimensions,
+	}
+}
+
+func Duration(name string, duration time.Duration, dimensions ...Dimension) Metric {
+	return Metric{
+		Name:       name,
+		Unit:       UnitMilliseconds,
+		Value:      float64(duration.Milliseconds()),
 		Dimensions: dimensions,
 	}
 }
@@ -113,9 +128,7 @@ func (r *EMFRecorder) Record(metric Metric) {
 		},
 		metric.Name: metric.Value,
 	}
-	for name, value := range dimensionValues {
-		event[name] = value
-	}
+	maps.Copy(event, dimensionValues)
 
 	_ = json.NewEncoder(r.writer).Encode(event)
 }

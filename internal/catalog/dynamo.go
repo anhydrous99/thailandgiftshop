@@ -8,6 +8,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/anhydrous99/thailandgiftshop/internal/observability"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
@@ -27,6 +28,8 @@ const (
 	activeProductsIndexPK   = "PRODUCTS#ACTIVE"
 	recentProductsIndexPK   = "PRODUCTS#ACTIVE#RECENT"
 	activeCategoriesIndexPK = "CATEGORIES#ACTIVE"
+	adminProductsIndexPK    = "PRODUCTS"
+	adminCategoriesIndexPK  = "CATEGORIES"
 )
 
 var (
@@ -39,6 +42,7 @@ type DynamoConfig struct {
 	SlugIndexName   string
 	PublicIndexName string
 	RecentIndexName string
+	EntityIndexName string
 }
 
 func DynamoConfigFromEnv() (DynamoConfig, bool) {
@@ -52,6 +56,7 @@ func DynamoConfigFromEnv() (DynamoConfig, bool) {
 		SlugIndexName:   os.Getenv(EnvSlugIndexName),
 		PublicIndexName: os.Getenv(EnvPublicIndexName),
 		RecentIndexName: os.Getenv(EnvRecentIndexName),
+		EntityIndexName: os.Getenv(EnvEntityIndexName),
 	}
 	if config.SlugIndexName == "" {
 		config.SlugIndexName = DefaultSlugIndexName
@@ -62,11 +67,18 @@ func DynamoConfigFromEnv() (DynamoConfig, bool) {
 	if config.RecentIndexName == "" {
 		config.RecentIndexName = DefaultRecentIndexName
 	}
+	if config.EntityIndexName == "" {
+		config.EntityIndexName = DefaultEntityIndexName
+	}
 
 	return config, true
 }
 
 func NewStoreFromEnv(ctx context.Context) (Store, bool, error) {
+	return NewStoreFromEnvWithRecorder(ctx, nil)
+}
+
+func NewStoreFromEnvWithRecorder(ctx context.Context, metrics observability.Recorder) (Store, bool, error) {
 	dynamoConfig, ok := DynamoConfigFromEnv()
 	if !ok {
 		return EmptyStore{}, false, nil
@@ -77,7 +89,7 @@ func NewStoreFromEnv(ctx context.Context) (Store, bool, error) {
 		return nil, false, fmt.Errorf("load AWS config for catalog store: %w", err)
 	}
 
-	return NewDynamoStore(dynamodb.NewFromConfig(awsConfig), dynamoConfig), true, nil
+	return NewDynamoStoreWithRecorder(dynamodb.NewFromConfig(awsConfig), dynamoConfig, metrics), true, nil
 }
 
 type queryClient interface {
@@ -92,23 +104,24 @@ type getItemClient interface {
 	GetItem(ctx context.Context, params *dynamodb.GetItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error)
 }
 
-type scanClient interface {
-	Scan(ctx context.Context, params *dynamodb.ScanInput, optFns ...func(*dynamodb.Options)) (*dynamodb.ScanOutput, error)
-}
-
 type DynamoStore struct {
 	client          queryClient
 	getClient       getItemClient
-	scanClient      scanClient
 	writeClient     transactWriteClient
 	tableName       string
 	slugIndexName   string
 	publicIndexName string
 	recentIndexName string
+	entityIndexName string
+	metrics         observability.Recorder
 }
 
 func NewDynamoAdminStore(client transactWriteClient, config DynamoConfig) *DynamoStore {
-	store := NewDynamoStore(nil, config)
+	return NewDynamoAdminStoreWithRecorder(client, config, nil)
+}
+
+func NewDynamoAdminStoreWithRecorder(client transactWriteClient, config DynamoConfig, metrics observability.Recorder) *DynamoStore {
+	store := NewDynamoStoreWithRecorder(nil, config, metrics)
 	store.writeClient = client
 	return store
 }
@@ -117,16 +130,26 @@ func NewDynamoReadWriteStore(client interface {
 	queryClient
 	transactWriteClient
 	getItemClient
-	scanClient
 }, config DynamoConfig) *DynamoStore {
-	store := NewDynamoStore(client, config)
+	return NewDynamoReadWriteStoreWithRecorder(client, config, nil)
+}
+
+func NewDynamoReadWriteStoreWithRecorder(client interface {
+	queryClient
+	transactWriteClient
+	getItemClient
+}, config DynamoConfig, metrics observability.Recorder) *DynamoStore {
+	store := NewDynamoStoreWithRecorder(client, config, metrics)
 	store.getClient = client
-	store.scanClient = client
 	store.writeClient = client
 	return store
 }
 
 func NewAdminStoreFromEnv(ctx context.Context) (AdminStore, bool, error) {
+	return NewAdminStoreFromEnvWithRecorder(ctx, nil)
+}
+
+func NewAdminStoreFromEnvWithRecorder(ctx context.Context, metrics observability.Recorder) (AdminStore, bool, error) {
 	dynamoConfig, ok := DynamoConfigFromEnv()
 	if !ok {
 		return NewMemoryStore(nil, nil), false, nil
@@ -135,11 +158,22 @@ func NewAdminStoreFromEnv(ctx context.Context) (AdminStore, bool, error) {
 	if err != nil {
 		return nil, false, fmt.Errorf("load AWS config for catalog admin store: %w", err)
 	}
-	return NewDynamoReadWriteStore(dynamodb.NewFromConfig(awsConfig), dynamoConfig), true, nil
+	return NewDynamoReadWriteStoreWithRecorder(dynamodb.NewFromConfig(awsConfig), dynamoConfig, metrics), true, nil
 }
 
 func (s *DynamoStore) ListProducts(ctx context.Context) ([]Product, error) {
-	items, err := s.scanByEntity(ctx, entityProduct)
+	items, err := s.query(ctx, dynamodb.QueryInput{
+		TableName:              aws.String(s.tableName),
+		IndexName:              aws.String(s.entityIndexName),
+		KeyConditionExpression: aws.String("#gsi4pk = :pk"),
+		ExpressionAttributeNames: map[string]string{
+			"#gsi4pk": "gsi4pk",
+		},
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pk": &types.AttributeValueMemberS{Value: adminProductsIndexPK},
+		},
+		ScanIndexForward: aws.Bool(true),
+	}, 0, "ListProducts")
 	if err != nil {
 		return nil, err
 	}
@@ -155,6 +189,7 @@ func (s *DynamoStore) GetProductByID(ctx context.Context, productID string) (Pro
 	if s.getClient == nil {
 		return Product{}, false, fmt.Errorf("catalog admin store is missing a get client")
 	}
+	started := time.Now()
 	output, err := s.getClient.GetItem(ctx, &dynamodb.GetItemInput{
 		TableName: aws.String(s.tableName),
 		Key: map[string]types.AttributeValue{
@@ -162,6 +197,7 @@ func (s *DynamoStore) GetProductByID(ctx context.Context, productID string) (Pro
 			"sk": &types.AttributeValueMemberS{Value: productSK},
 		},
 	})
+	s.recordCatalogOperation("GetItem", "GetProductByID", time.Since(started))
 	if err != nil {
 		return Product{}, false, err
 	}
@@ -176,7 +212,18 @@ func (s *DynamoStore) GetProductByID(ctx context.Context, productID string) (Pro
 }
 
 func (s *DynamoStore) ListCategories(ctx context.Context) ([]Category, error) {
-	items, err := s.scanByEntity(ctx, entityCategory)
+	items, err := s.query(ctx, dynamodb.QueryInput{
+		TableName:              aws.String(s.tableName),
+		IndexName:              aws.String(s.entityIndexName),
+		KeyConditionExpression: aws.String("#gsi4pk = :pk"),
+		ExpressionAttributeNames: map[string]string{
+			"#gsi4pk": "gsi4pk",
+		},
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pk": &types.AttributeValueMemberS{Value: adminCategoriesIndexPK},
+		},
+		ScanIndexForward: aws.Bool(true),
+	}, 0, "ListCategories")
 	if err != nil {
 		return nil, err
 	}
@@ -206,7 +253,7 @@ func (s *DynamoStore) CreateProduct(ctx context.Context, product Product) (Produ
 	if err != nil {
 		return Product{}, err
 	}
-	if err := s.transactWrite(ctx, items); err != nil {
+	if err := s.transactWrite(ctx, items, "CreateProduct"); err != nil {
 		return Product{}, err
 	}
 
@@ -214,6 +261,10 @@ func (s *DynamoStore) CreateProduct(ctx context.Context, product Product) (Produ
 }
 
 func (s *DynamoStore) UpdateProduct(ctx context.Context, previous Product, product Product) (Product, error) {
+	return s.updateProduct(ctx, previous, product, "UpdateProduct")
+}
+
+func (s *DynamoStore) updateProduct(ctx context.Context, previous Product, product Product, method string) (Product, error) {
 	if err := product.Validate(); err != nil {
 		return Product{}, err
 	}
@@ -225,7 +276,7 @@ func (s *DynamoStore) UpdateProduct(ctx context.Context, previous Product, produ
 	if err != nil {
 		return Product{}, err
 	}
-	if err := s.transactWrite(ctx, items); err != nil {
+	if err := s.transactWrite(ctx, items, method); err != nil {
 		return Product{}, err
 	}
 
@@ -235,7 +286,7 @@ func (s *DynamoStore) UpdateProduct(ctx context.Context, previous Product, produ
 func (s *DynamoStore) ArchiveProduct(ctx context.Context, product Product) (Product, error) {
 	archived := product
 	archived.Status = StatusArchived
-	return s.UpdateProduct(ctx, product, archived)
+	return s.updateProduct(ctx, product, archived, "ArchiveProduct")
 }
 
 func (s *DynamoStore) CreateCategory(ctx context.Context, category Category) (Category, error) {
@@ -252,7 +303,7 @@ func (s *DynamoStore) CreateCategory(ctx context.Context, category Category) (Ca
 			"#pk": "pk",
 		},
 	}}}
-	if err := s.transactWrite(ctx, items); err != nil {
+	if err := s.transactWrite(ctx, items, "CreateCategory"); err != nil {
 		if errors.Is(err, ErrVersionConflict) {
 			return Category{}, fmt.Errorf("%w", ErrSlugConflict)
 		}
@@ -263,6 +314,10 @@ func (s *DynamoStore) CreateCategory(ctx context.Context, category Category) (Ca
 }
 
 func (s *DynamoStore) UpdateCategory(ctx context.Context, category Category, expectedVersion int) (Category, error) {
+	return s.updateCategory(ctx, category, expectedVersion, "UpdateCategory")
+}
+
+func (s *DynamoStore) updateCategory(ctx context.Context, category Category, expectedVersion int, method string) (Category, error) {
 	category.Version = expectedVersion + 1
 	item, err := categoryItem(category)
 	if err != nil {
@@ -279,7 +334,7 @@ func (s *DynamoStore) UpdateCategory(ctx context.Context, category Category, exp
 			":expected_version": &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", expectedVersion)},
 		},
 	}}}
-	if err := s.transactWrite(ctx, items); err != nil {
+	if err := s.transactWrite(ctx, items, method); err != nil {
 		return Category{}, err
 	}
 
@@ -289,16 +344,22 @@ func (s *DynamoStore) UpdateCategory(ctx context.Context, category Category, exp
 func (s *DynamoStore) ArchiveCategory(ctx context.Context, category Category) (Category, error) {
 	archived := category
 	archived.Status = StatusArchived
-	return s.UpdateCategory(ctx, archived, category.Version)
+	return s.updateCategory(ctx, archived, category.Version, "ArchiveCategory")
 }
 
 func NewDynamoStore(client queryClient, config DynamoConfig) *DynamoStore {
+	return NewDynamoStoreWithRecorder(client, config, nil)
+}
+
+func NewDynamoStoreWithRecorder(client queryClient, config DynamoConfig, metrics observability.Recorder) *DynamoStore {
 	return &DynamoStore{
 		client:          client,
 		tableName:       config.TableName,
 		slugIndexName:   config.SlugIndexName,
 		publicIndexName: config.PublicIndexName,
 		recentIndexName: config.RecentIndexName,
+		entityIndexName: config.EntityIndexName,
+		metrics:         metrics,
 	}
 }
 
@@ -314,7 +375,7 @@ func (s *DynamoStore) ListActiveProducts(ctx context.Context, limit int) ([]Prod
 			":pk": &types.AttributeValueMemberS{Value: activeProductsIndexPK},
 		},
 		ScanIndexForward: aws.Bool(true),
-	}, limit)
+	}, limit, "ListActiveProducts")
 	if err != nil {
 		return nil, err
 	}
@@ -334,7 +395,7 @@ func (s *DynamoStore) ListRecentlyAddedProducts(ctx context.Context, limit int) 
 			":pk": &types.AttributeValueMemberS{Value: recentProductsIndexPK},
 		},
 		ScanIndexForward: aws.Bool(false),
-	}, limit)
+	}, limit, "ListRecentlyAddedProducts")
 	if err != nil {
 		return nil, err
 	}
@@ -355,7 +416,7 @@ func (s *DynamoStore) GetProductBySlug(ctx context.Context, slug string) (Produc
 		},
 		Limit:            aws.Int32(1),
 		ScanIndexForward: aws.Bool(true),
-	}, 1)
+	}, 1, "GetProductBySlug")
 	if err != nil {
 		return Product{}, false, err
 	}
@@ -383,7 +444,7 @@ func (s *DynamoStore) ListActiveCategories(ctx context.Context) ([]Category, err
 			":pk": &types.AttributeValueMemberS{Value: activeCategoriesIndexPK},
 		},
 		ScanIndexForward: aws.Bool(true),
-	}, 0)
+	}, 0, "ListActiveCategories")
 	if err != nil {
 		return nil, err
 	}
@@ -416,7 +477,7 @@ func (s *DynamoStore) ListActiveProductsByCategory(ctx context.Context, category
 			":active":         &types.AttributeValueMemberS{Value: string(StatusActive)},
 		},
 		ScanIndexForward: aws.Bool(true),
-	}, limit)
+	}, limit, "ListActiveProductsByCategory")
 	if err != nil {
 		return nil, err
 	}
@@ -424,14 +485,16 @@ func (s *DynamoStore) ListActiveProductsByCategory(ctx context.Context, category
 	return productsFromItems(items)
 }
 
-func (s *DynamoStore) query(ctx context.Context, input dynamodb.QueryInput, limit int) ([]map[string]types.AttributeValue, error) {
+func (s *DynamoStore) query(ctx context.Context, input dynamodb.QueryInput, limit int, method string) ([]map[string]types.AttributeValue, error) {
 	if limit > 0 && input.Limit == nil {
 		input.Limit = aws.Int32(int32(limit))
 	}
 
 	var items []map[string]types.AttributeValue
 	for {
+		started := time.Now()
 		output, err := s.client.Query(ctx, &input)
+		s.recordCatalogOperation("Query", method, time.Since(started))
 		if err != nil {
 			return nil, err
 		}
@@ -447,34 +510,6 @@ func (s *DynamoStore) query(ctx context.Context, input dynamodb.QueryInput, limi
 		if limit > 0 {
 			input.Limit = aws.Int32(int32(limit - len(items)))
 		}
-	}
-}
-
-func (s *DynamoStore) scanByEntity(ctx context.Context, entityType string) ([]map[string]types.AttributeValue, error) {
-	if s.scanClient == nil {
-		return nil, fmt.Errorf("catalog admin store is missing a scan client")
-	}
-	input := dynamodb.ScanInput{
-		TableName:        aws.String(s.tableName),
-		FilterExpression: aws.String("#entity_type = :entity_type"),
-		ExpressionAttributeNames: map[string]string{
-			"#entity_type": "entity_type",
-		},
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":entity_type": &types.AttributeValueMemberS{Value: entityType},
-		},
-	}
-	var items []map[string]types.AttributeValue
-	for {
-		output, err := s.scanClient.Scan(ctx, &input)
-		if err != nil {
-			return nil, err
-		}
-		items = append(items, output.Items...)
-		if len(output.LastEvaluatedKey) == 0 {
-			return items, nil
-		}
-		input.ExclusiveStartKey = output.LastEvaluatedKey
 	}
 }
 
@@ -551,18 +586,33 @@ func (s *DynamoStore) productWriteItems(previous Product, product Product, creat
 	return items, nil
 }
 
-func (s *DynamoStore) transactWrite(ctx context.Context, items []types.TransactWriteItem) error {
+func (s *DynamoStore) transactWrite(ctx context.Context, items []types.TransactWriteItem, method string) error {
 	if s.writeClient == nil {
 		return fmt.Errorf("catalog admin store is missing a transaction client")
 	}
+	started := time.Now()
 	_, err := s.writeClient.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{
 		TransactItems: items,
 	})
+	s.recordCatalogOperation("TransactWriteItems", method, time.Since(started))
 	if err != nil {
 		return classifyTransactionError(err)
 	}
 
 	return nil
+}
+
+func (s *DynamoStore) recordCatalogOperation(operation string, method string, duration time.Duration) {
+	if s.metrics == nil {
+		return
+	}
+	dimensions := []observability.Dimension{
+		observability.Dim("Service", "catalog"),
+		observability.Dim("Operation", operation),
+		observability.Dim("Method", method),
+	}
+	s.metrics.Record(observability.Duration(observability.MetricCatalogOperationMs, duration, dimensions...))
+	s.metrics.Record(observability.Count(observability.MetricCatalogOperation, dimensions...))
 }
 
 func classifyTransactionError(err error) error {
@@ -632,6 +682,8 @@ type catalogItem struct {
 	GSI2SK        string           `dynamodbav:"gsi2sk,omitempty"`
 	GSI3PK        string           `dynamodbav:"gsi3pk,omitempty"`
 	GSI3SK        string           `dynamodbav:"gsi3sk,omitempty"`
+	GSI4PK        string           `dynamodbav:"gsi4pk,omitempty"`
+	GSI4SK        string           `dynamodbav:"gsi4sk,omitempty"`
 }
 
 func productItem(product Product) (map[string]types.AttributeValue, error) {
@@ -655,6 +707,8 @@ func productItem(product Product) (map[string]types.AttributeValue, error) {
 		Variants:      product.Variants,
 		GSI1PK:        productSlugIndexPK(product.Slug),
 		GSI1SK:        productSK,
+		GSI4PK:        adminProductsIndexPK,
+		GSI4SK:        productAdminIndexSK(product),
 	}
 	if product.Status == StatusActive {
 		item.GSI2PK = activeProductsIndexPK
@@ -678,6 +732,8 @@ func categoryItem(category Category) (map[string]types.AttributeValue, error) {
 		SortOrder:   category.SortOrder,
 		Version:     intPtr(category.Version),
 		UpdatedAt:   formatUpdatedAt(category.UpdatedAt),
+		GSI4PK:      adminCategoriesIndexPK,
+		GSI4SK:      categoryAdminIndexSK(category),
 	}
 	if category.Status == StatusActive {
 		item.GSI2PK = activeCategoriesIndexPK
@@ -813,6 +869,10 @@ func productRecentIndexSK(product Product) string {
 	return fmt.Sprintf("PRODUCT#%s#%s", formatCatalogTime(productRecentTime(product)), product.ID)
 }
 
+func productAdminIndexSK(product Product) string {
+	return "PRODUCT#" + product.ID
+}
+
 func productRecentTime(product Product) time.Time {
 	if !product.CreatedAt.IsZero() {
 		return product.CreatedAt
@@ -826,6 +886,10 @@ func productRecentTime(product Product) time.Time {
 
 func categoryPublicIndexSK(category Category) string {
 	return fmt.Sprintf("CATEGORY#%010d#%s", category.SortOrder, category.Slug)
+}
+
+func categoryAdminIndexSK(category Category) string {
+	return "CATEGORY#" + category.Slug
 }
 
 func categoryProductSK(product Product) string {

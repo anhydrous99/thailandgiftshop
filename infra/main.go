@@ -42,6 +42,8 @@ const (
 	catalogPublicIndexSKName = "gsi2sk"
 	catalogRecentIndexPKName = "gsi3pk"
 	catalogRecentIndexSKName = "gsi3sk"
+	catalogEntityIndexPKName = "gsi4pk"
+	catalogEntityIndexSKName = "gsi4sk"
 
 	staticAssetsKeyPrefix      = "static"
 	productImagesKeyPrefix     = "images"
@@ -53,6 +55,9 @@ const (
 	ssrOriginRequestPolicyName = "thailandgiftshop-ssr-origin"
 
 	operationsDashboardName = "ThailandGiftshop-Operations"
+
+	ssrLambdaBuildCommand   = "mkdir -p cdk.out/ssr-lambda && GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -tags lambda.norpc -ldflags \"-s -w\" -o cdk.out/ssr-lambda/bootstrap ../cmd/ssr"
+	adminLambdaBuildCommand = "mkdir -p cdk.out/admin-lambda && GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -tags lambda.norpc -ldflags \"-s -w\" -o cdk.out/admin-lambda/bootstrap ../cmd/admin"
 )
 
 type ThailandGiftshopStackProps struct {
@@ -178,6 +183,18 @@ func addCatalog(stack awscdk.Stack) awsdynamodb.Table {
 			Type: awsdynamodb.AttributeType_STRING,
 		},
 	})
+	catalogTable.AddGlobalSecondaryIndex(&awsdynamodb.GlobalSecondaryIndexProps{
+		IndexName: jsii.String(catalog.DefaultEntityIndexName),
+		PartitionKey: &awsdynamodb.Attribute{
+			Name: jsii.String(catalogEntityIndexPKName),
+			Type: awsdynamodb.AttributeType_STRING,
+		},
+		ProjectionType: awsdynamodb.ProjectionType_ALL,
+		SortKey: &awsdynamodb.Attribute{
+			Name: jsii.String(catalogEntityIndexSKName),
+			Type: awsdynamodb.AttributeType_STRING,
+		},
+	})
 
 	awscdk.NewCfnOutput(stack, jsii.String("CatalogTableName"), &awscdk.CfnOutputProps{
 		Description: jsii.String("DynamoDB table name for products and categories"),
@@ -241,7 +258,7 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, productImagesBu
 		Code: awslambda.Code_FromCustomCommand(jsii.String("cdk.out/ssr-lambda"), &[]*string{
 			jsii.String("sh"),
 			jsii.String("-c"),
-			jsii.String("mkdir -p cdk.out/ssr-lambda && GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -tags lambda.norpc -o cdk.out/ssr-lambda/bootstrap ../cmd/ssr"),
+			jsii.String(ssrLambdaBuildCommand),
 		}, &awslambda.CustomCommandOptions{
 			DeployTime:  jsii.Bool(true),
 			DisplayName: jsii.String("ssr-lambda"),
@@ -252,13 +269,14 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, productImagesBu
 			catalog.EnvSlugIndexName:              jsii.String(catalog.DefaultSlugIndexName),
 			catalog.EnvPublicIndexName:            jsii.String(catalog.DefaultPublicIndexName),
 			catalog.EnvRecentIndexName:            jsii.String(catalog.DefaultRecentIndexName),
+			catalog.EnvEntityIndexName:            jsii.String(catalog.DefaultEntityIndexName),
 			catalog.EnvProductImagePlaceholderURL: jsii.String(catalog.DefaultProductImagePlaceholderURL),
 			cartsession.EnvCookieSecret:           cartCookieSecretReference(cartCookieSecret),
 		},
 		FunctionName: jsii.String("thailandgiftshop-ssr"),
 		Handler:      jsii.String("bootstrap"),
 		LogGroup:     lambdaLogGroup,
-		MemorySize:   jsii.Number(128),
+		MemorySize:   jsii.Number(512),
 		Runtime:      awslambda.Runtime_PROVIDED_AL2023(),
 		Timeout:      awscdk.Duration_Seconds(jsii.Number(10)),
 		Tracing:      awslambda.Tracing_ACTIVE,
@@ -325,7 +343,7 @@ func addAdmin(stack awscdk.Stack, catalogTable awsdynamodb.ITable, productImages
 		Code: awslambda.Code_FromCustomCommand(jsii.String("cdk.out/admin-lambda"), &[]*string{
 			jsii.String("sh"),
 			jsii.String("-c"),
-			jsii.String("mkdir -p cdk.out/admin-lambda && GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -tags lambda.norpc -o cdk.out/admin-lambda/bootstrap ../cmd/admin"),
+			jsii.String(adminLambdaBuildCommand),
 		}, &awslambda.CustomCommandOptions{
 			DeployTime:  jsii.Bool(true),
 			DisplayName: jsii.String("admin-lambda"),
@@ -336,6 +354,7 @@ func addAdmin(stack awscdk.Stack, catalogTable awsdynamodb.ITable, productImages
 			catalog.EnvSlugIndexName:                 jsii.String(catalog.DefaultSlugIndexName),
 			catalog.EnvPublicIndexName:               jsii.String(catalog.DefaultPublicIndexName),
 			catalog.EnvRecentIndexName:               jsii.String(catalog.DefaultRecentIndexName),
+			catalog.EnvEntityIndexName:               jsii.String(catalog.DefaultEntityIndexName),
 			adminauth.EnvProductImagesBucketName:     productImagesBucket.BucketName(),
 			adminauth.EnvProductImagesKeyPrefix:      jsii.String(productImagesKeyPrefix),
 			catalog.EnvProductImagePlaceholderURL:    jsii.String(catalog.DefaultProductImagePlaceholderURL),
@@ -346,7 +365,7 @@ func addAdmin(stack awscdk.Stack, catalogTable awsdynamodb.ITable, productImages
 		FunctionName: jsii.String("thailandgiftshop-admin"),
 		Handler:      jsii.String("bootstrap"),
 		LogGroup:     lambdaLogGroup,
-		MemorySize:   jsii.Number(128),
+		MemorySize:   jsii.Number(512),
 		Runtime:      awslambda.Runtime_PROVIDED_AL2023(),
 		Timeout:      awscdk.Duration_Seconds(jsii.Number(10)),
 		Tracing:      awslambda.Tracing_ACTIVE,

@@ -81,7 +81,10 @@ func TestStackIncludesObservabilityResources(t *testing.T) {
 	}
 
 	template.HasResourceProperties(jsii.String("AWS::Lambda::Function"), map[string]any{
-		"FunctionName": "thailandgiftshop-ssr",
+		"FunctionName":  "thailandgiftshop-ssr",
+		"MemorySize":    512,
+		"Architectures": []any{"arm64"},
+		"Runtime":       "provided.al2023",
 		"LoggingConfig": map[string]any{
 			"LogGroup": map[string]any{
 				"Ref": "SsrLambdaLogGroup5806F2F2",
@@ -174,6 +177,17 @@ func TestStackIncludesObservabilityResources(t *testing.T) {
 	}
 }
 
+func TestStackUsesOptimizedLambdaBuildCommands(t *testing.T) {
+	defer jsii.Close()
+
+	if got, want := ssrLambdaBuildCommand, "mkdir -p cdk.out/ssr-lambda && GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -tags lambda.norpc -ldflags \"-s -w\" -o cdk.out/ssr-lambda/bootstrap ../cmd/ssr"; got != want {
+		t.Fatalf("ssr build command = %q, want %q", got, want)
+	}
+	if got, want := adminLambdaBuildCommand, "mkdir -p cdk.out/admin-lambda && GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -tags lambda.norpc -ldflags \"-s -w\" -o cdk.out/admin-lambda/bootstrap ../cmd/admin"; got != want {
+		t.Fatalf("admin build command = %q, want %q", got, want)
+	}
+}
+
 func TestStackIncludesSsrCartCookieSecret(t *testing.T) {
 	defer jsii.Close()
 
@@ -189,7 +203,10 @@ func TestStackIncludesSsrCartCookieSecret(t *testing.T) {
 		},
 	})
 	template.HasResourceProperties(jsii.String("AWS::Lambda::Function"), map[string]any{
-		"FunctionName": "thailandgiftshop-ssr",
+		"FunctionName":  "thailandgiftshop-ssr",
+		"MemorySize":    512,
+		"Architectures": []any{"arm64"},
+		"Runtime":       "provided.al2023",
 		"Environment": map[string]any{
 			"Variables": assertions.Match_ObjectLike(&map[string]any{
 				cartsession.EnvCookieSecret: assertions.Match_AnyValue(),
@@ -209,13 +226,16 @@ func TestStackIncludesAdminLambdaRoutesAndScopedPermissions(t *testing.T) {
 	template.ResourceCountIs(jsii.String("AWS::ApiGatewayV2::Integration"), jsii.Number(2))
 
 	template.HasResourceProperties(jsii.String("AWS::Lambda::Function"), map[string]any{
-		"FunctionName": "thailandgiftshop-admin",
+		"FunctionName":  "thailandgiftshop-admin",
+		"MemorySize":    512,
+		"Architectures": []any{"arm64"},
 		"Environment": map[string]any{
 			"Variables": map[string]any{
 				"CATALOG_TABLE_NAME":                     assertions.Match_AnyValue(),
 				"CATALOG_SLUG_INDEX_NAME":                catalog.DefaultSlugIndexName,
 				"CATALOG_PUBLIC_INDEX_NAME":              catalog.DefaultPublicIndexName,
 				"CATALOG_RECENT_INDEX_NAME":              catalog.DefaultRecentIndexName,
+				"CATALOG_ENTITY_INDEX_NAME":              catalog.DefaultEntityIndexName,
 				adminauth.EnvProductImagesBucketName:     assertions.Match_AnyValue(),
 				adminauth.EnvProductImagesKeyPrefix:      productImagesKeyPrefix,
 				adminauth.EnvAdminCredentialsSecretJSON:  assertions.Match_AnyValue(),
@@ -486,6 +506,14 @@ func TestStackIncludesCatalogResources(t *testing.T) {
 					"AttributeName": catalogRecentIndexSKName,
 					"AttributeType": "S",
 				},
+				map[string]any{
+					"AttributeName": catalogEntityIndexPKName,
+					"AttributeType": "S",
+				},
+				map[string]any{
+					"AttributeName": catalogEntityIndexSKName,
+					"AttributeType": "S",
+				},
 			}),
 			"BillingMode": "PAY_PER_REQUEST",
 			"GlobalSecondaryIndexes": assertions.Match_ArrayWith(&[]any{
@@ -537,6 +565,22 @@ func TestStackIncludesCatalogResources(t *testing.T) {
 						"ProjectionType": "ALL",
 					},
 				}),
+				assertions.Match_ObjectLike(&map[string]any{
+					"IndexName": "entity-index",
+					"KeySchema": assertions.Match_ArrayWith(&[]any{
+						map[string]any{
+							"AttributeName": catalogEntityIndexPKName,
+							"KeyType":       "HASH",
+						},
+						map[string]any{
+							"AttributeName": catalogEntityIndexSKName,
+							"KeyType":       "RANGE",
+						},
+					}),
+					"Projection": map[string]any{
+						"ProjectionType": "ALL",
+					},
+				}),
 			}),
 			"KeySchema": assertions.Match_ArrayWith(&[]any{
 				map[string]any{
@@ -566,6 +610,7 @@ func TestStackIncludesCatalogResources(t *testing.T) {
 				"CATALOG_SLUG_INDEX_NAME":       "slug-index",
 				"CATALOG_PUBLIC_INDEX_NAME":     "public-index",
 				"CATALOG_RECENT_INDEX_NAME":     "recent-index",
+				"CATALOG_ENTITY_INDEX_NAME":     "entity-index",
 				"PRODUCT_IMAGE_PLACEHOLDER_URL": catalog.DefaultProductImagePlaceholderURL,
 				cartsession.EnvCookieSecret:     assertions.Match_AnyValue(),
 			},

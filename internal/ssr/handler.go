@@ -11,9 +11,12 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/anhydrous99/thailandgiftshop/internal/cart"
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
+	"github.com/anhydrous99/thailandgiftshop/internal/observability"
 	"github.com/aws/aws-lambda-go/events"
 )
 
@@ -50,8 +53,11 @@ type pageRoute struct {
 
 type Handler struct {
 	catalogStore               catalog.Store
+	metrics                    observability.Recorder
 	productImagePlaceholderURL string
 }
+
+var ssrColdStartRecorded atomic.Bool
 
 func NewHandler(catalogStore catalog.Store) *Handler {
 	return NewHandlerWithProductImagePlaceholderURL(catalogStore, os.Getenv(catalog.EnvProductImagePlaceholderURL))
@@ -72,12 +78,15 @@ func NewHandlerWithProductImagePlaceholderURL(catalogStore catalog.Store, placeh
 }
 
 func NewHandlerFromEnvironment(ctx context.Context) (*Handler, error) {
-	catalogStore, _, err := catalog.NewStoreFromEnv(ctx)
+	metrics := observability.NewEMFRecorder(os.Stdout)
+	catalogStore, _, err := catalog.NewStoreFromEnvWithRecorder(ctx, metrics)
 	if err != nil {
 		return nil, err
 	}
 
-	return NewHandler(catalogStore), nil
+	handler := NewHandler(catalogStore)
+	handler.metrics = metrics
+	return handler, nil
 }
 
 func (h *Handler) Catalog() catalog.Store {
@@ -93,6 +102,15 @@ func Handle(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events
 
 // Handle renders HTML responses for API Gateway HTTP API requests.
 func (h *Handler) Handle(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	started := time.Now()
+	method := requestMethod(request)
+	route := ssrMetricRoute(requestPath(request))
+	response, err := h.handle(ctx, request)
+	h.recordRouteMetrics(started, route, method, response.StatusCode)
+	return response, err
+}
+
+func (h *Handler) handle(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	path := requestPath(request)
 	if path == "/hello-fragment" {
 		return handleHelloFragment(request), nil
@@ -115,8 +133,21 @@ func (h *Handler) Handle(ctx context.Context, request events.APIGatewayV2HTTPReq
 	statusCode := http.StatusOK
 	cookies := []string(nil)
 	var err error
-	headerCartLabel, headerCookies := h.cartNavigation(ctx, request)
-	cookies = append(cookies, headerCookies...)
+	headerCartLabel := cartNavigationLabel(0)
+	var pageCartState *requestCart
+	if route.kind == pageCart || route.kind == pageCheckout {
+		currentCart, cartErr := h.cartStateFromRequest(ctx, request)
+		if cartErr != nil {
+			return htmlResponse(http.StatusInternalServerError, "Internal server error", nil), nil
+		}
+		pageCartState = &currentCart
+		headerCartLabel = cartNavigationLabel(currentCart.cart.TotalItemCount())
+		cookies = currentCart.cookies
+	} else {
+		headerCookies := []string(nil)
+		headerCartLabel, headerCookies = h.cartNavigation(ctx, request)
+		cookies = append(cookies, headerCookies...)
+	}
 
 	switch route.kind {
 	case pageHome:
@@ -142,36 +173,24 @@ func (h *Handler) Handle(ctx context.Context, request events.APIGatewayV2HTTPReq
 	case pageStory:
 		body, err = h.renderStory(ctx, headerCartLabel)
 	case pageCart:
-		var currentCart cart.Cart
-		var lines []cartLineView
-		currentCart, lines, cookies, err = h.cartFromRequest(ctx, request)
-		headerCartLabel = cartNavigationLabel(currentCart.TotalItemCount())
-		if err == nil {
-			body, err = renderCartPage(ctx, cartPageViewModel{
-				Lines:                      lines,
-				ProductImagePlaceholderURL: h.productImagePlaceholderURL,
-				HeaderCartLabel:            headerCartLabel,
-			})
-		}
+		body, err = renderCartPage(ctx, cartPageViewModel{
+			Lines:                      pageCartState.lines,
+			ProductImagePlaceholderURL: h.productImagePlaceholderURL,
+			HeaderCartLabel:            headerCartLabel,
+		})
 	case pageCheckout:
-		var currentCart cart.Cart
-		var lines []cartLineView
-		currentCart, lines, cookies, err = h.cartFromRequest(ctx, request)
-		headerCartLabel = cartNavigationLabel(currentCart.TotalItemCount())
-		if err == nil && (currentCart.LineCount() == 0 || hasUnavailableCartLines(lines)) {
+		if pageCartState.cart.LineCount() == 0 || hasUnavailableCartLines(pageCartState.lines) {
 			response := seeOtherResponse("/cart", cookies)
 			if method == http.MethodHead {
 				response.Body = ""
 			}
 			return response, nil
 		}
-		if err == nil {
-			body, err = renderCheckoutPage(ctx, checkoutPageViewModel{
-				Lines:                      lines,
-				ProductImagePlaceholderURL: h.productImagePlaceholderURL,
-				HeaderCartLabel:            headerCartLabel,
-			})
-		}
+		body, err = renderCheckoutPage(ctx, checkoutPageViewModel{
+			Lines:                      pageCartState.lines,
+			ProductImagePlaceholderURL: h.productImagePlaceholderURL,
+			HeaderCartLabel:            headerCartLabel,
+		})
 	default:
 		statusCode = http.StatusNotFound
 		body = "Not found"
@@ -185,6 +204,33 @@ func (h *Handler) Handle(ctx context.Context, request events.APIGatewayV2HTTPReq
 	}
 
 	return htmlResponseWithCookies(statusCode, body, nil, cookies), nil
+}
+
+func ssrMetricRoute(path string) string {
+	if path == "/hello-fragment" {
+		return "hello_fragment"
+	}
+	return string(routeForPath(path).kind)
+}
+
+func (h *Handler) recordRouteMetrics(started time.Time, route string, method string, statusCode int) {
+	if h.metrics == nil {
+		return
+	}
+	if ssrColdStartRecorded.CompareAndSwap(false, true) {
+		h.metrics.Record(observability.Count(
+			observability.MetricRouteColdStart,
+			observability.Dim("Service", "ssr"),
+		))
+	}
+	h.metrics.Record(observability.Duration(
+		observability.MetricRouteDurationMs,
+		time.Since(started),
+		observability.Dim("Service", "ssr"),
+		observability.Dim("Route", route),
+		observability.Dim("Method", method),
+		observability.Dim("Status", strconv.Itoa(statusCode)),
+	))
 }
 
 func routeForPath(path string) pageRoute {
@@ -343,13 +389,19 @@ func hasHeaderValue(headers map[string]string, name string, value string) bool {
 }
 
 func (h *Handler) renderHome(ctx context.Context, headerCartLabel string) (string, error) {
-	products, err := h.catalogStore.ListRecentlyAddedProducts(ctx, latestProductLimit)
-	if err != nil {
-		return "", err
+	products, categories, productsErr, categoriesErr := parallelCatalogReads(ctx,
+		func(ctx context.Context) ([]catalog.Product, error) {
+			return h.catalogStore.ListRecentlyAddedProducts(ctx, latestProductLimit)
+		},
+		func(ctx context.Context) ([]catalog.Category, error) {
+			return h.loadActiveCategories(ctx)
+		},
+	)
+	if productsErr != nil {
+		return "", productsErr
 	}
-	categories, err := h.loadActiveCategories(ctx)
-	if err != nil {
-		return "", err
+	if categoriesErr != nil {
+		return "", categoriesErr
 	}
 
 	var body bytes.Buffer
@@ -367,13 +419,19 @@ func (h *Handler) renderHome(ctx context.Context, headerCartLabel string) (strin
 }
 
 func (h *Handler) renderProductListing(ctx context.Context, headerCartLabel string) (string, error) {
-	products, err := h.catalogStore.ListActiveProducts(ctx, 0)
-	if err != nil {
-		return "", err
+	products, categories, productsErr, categoriesErr := parallelCatalogReads(ctx,
+		func(ctx context.Context) ([]catalog.Product, error) {
+			return h.catalogStore.ListActiveProducts(ctx, 0)
+		},
+		func(ctx context.Context) ([]catalog.Category, error) {
+			return h.loadActiveCategories(ctx)
+		},
+	)
+	if productsErr != nil {
+		return "", productsErr
 	}
-	categories, err := h.loadActiveCategories(ctx)
-	if err != nil {
-		return "", err
+	if categoriesErr != nil {
+		return "", categoriesErr
 	}
 
 	var body bytes.Buffer
@@ -390,22 +448,29 @@ func (h *Handler) renderProductListing(ctx context.Context, headerCartLabel stri
 }
 
 func (h *Handler) renderProductDetail(ctx context.Context, slug string, headerCartLabel string) (string, bool, error) {
-	product, found, err := h.catalogStore.GetProductBySlug(ctx, slug)
-	if err != nil {
-		return "", false, err
+	productResult, categories, productErr, categoriesErr := parallelCatalogReads(ctx,
+		func(ctx context.Context) (productLookupResult, error) {
+			product, found, err := h.catalogStore.GetProductBySlug(ctx, slug)
+			return productLookupResult{product: product, found: found}, err
+		},
+		func(ctx context.Context) ([]catalog.Category, error) {
+			return h.loadActiveCategories(ctx)
+		},
+	)
+	if productErr != nil {
+		return "", false, productErr
 	}
-	if !found || product.Status != catalog.StatusActive {
+	if !productResult.found || productResult.product.Status != catalog.StatusActive {
 		return "", false, nil
 	}
-	categories, err := h.loadActiveCategories(ctx)
-	if err != nil {
-		return "", false, err
+	if categoriesErr != nil {
+		return "", false, categoriesErr
 	}
 
 	var body bytes.Buffer
 	if err := productDetailPage(productDetailPageViewModel{
-		Product:                    product,
-		Categories:                 activeProductCategories(product, categories),
+		Product:                    productResult.product,
+		Categories:                 activeProductCategories(productResult.product, categories),
 		ProductImagePlaceholderURL: h.productImagePlaceholderURL,
 		HeaderCartLabel:            headerCartLabel,
 	}).Render(ctx, &body); err != nil {
@@ -512,6 +577,43 @@ func (h *Handler) renderStory(ctx context.Context, headerCartLabel string) (stri
 	}
 
 	return body.String(), nil
+}
+
+type catalogReadResult[T any] struct {
+	value T
+	err   error
+}
+
+type productLookupResult struct {
+	product catalog.Product
+	found   bool
+}
+
+func parallelCatalogReads[A any, B any](ctx context.Context, first func(context.Context) (A, error), second func(context.Context) (B, error)) (A, B, error, error) {
+	readCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	firstResult := make(chan catalogReadResult[A], 1)
+	secondResult := make(chan catalogReadResult[B], 1)
+	go func() {
+		value, err := first(readCtx)
+		firstResult <- catalogReadResult[A]{value: value, err: err}
+	}()
+	go func() {
+		value, err := second(readCtx)
+		secondResult <- catalogReadResult[B]{value: value, err: err}
+	}()
+
+	gotFirst := <-firstResult
+	if gotFirst.err != nil {
+		cancel()
+	}
+	gotSecond := <-secondResult
+	if gotSecond.err != nil {
+		cancel()
+	}
+
+	return gotFirst.value, gotSecond.value, gotFirst.err, gotSecond.err
 }
 
 type cartLineView struct {
@@ -653,7 +755,21 @@ func availableStockForProduct(product catalog.Product, variantID string, require
 	return product.StockQuantity, true
 }
 
+type requestCart struct {
+	cart    cart.Cart
+	lines   []cartLineView
+	cookies []string
+}
+
 func (h *Handler) cartFromRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) (cart.Cart, []cartLineView, []string, error) {
+	currentCart, err := h.cartStateFromRequest(ctx, request)
+	if err != nil {
+		return cart.Empty(), nil, nil, err
+	}
+	return currentCart.cart, currentCart.lines, currentCart.cookies, nil
+}
+
+func (h *Handler) cartStateFromRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) (requestCart, error) {
 	decodedCart := cart.Empty()
 	needsClear := false
 	if cookieValue, found := cartCookieValue(request); found {
@@ -664,20 +780,20 @@ func (h *Handler) cartFromRequest(ctx context.Context, request events.APIGateway
 
 	normalizedCart, lines, changed, err := h.normalizeCart(ctx, decodedCart)
 	if err != nil {
-		return cart.Empty(), nil, nil, err
+		return requestCart{}, err
 	}
 	if needsClear || (changed && normalizedCart.LineCount() == 0) {
-		return normalizedCart, lines, []string{clearCartCookie(request)}, nil
+		return requestCart{cart: normalizedCart, lines: lines, cookies: []string{clearCartCookie(request)}}, nil
 	}
 	if changed {
 		cookieValue, err := cartResponseCookie(normalizedCart, request)
 		if err != nil {
-			return cart.Empty(), nil, nil, err
+			return requestCart{}, err
 		}
-		return normalizedCart, lines, []string{cookieValue}, nil
+		return requestCart{cart: normalizedCart, lines: lines, cookies: []string{cookieValue}}, nil
 	}
 
-	return normalizedCart, lines, nil, nil
+	return requestCart{cart: normalizedCart, lines: lines}, nil
 }
 
 func (h *Handler) normalizeCart(ctx context.Context, currentCart cart.Cart) (cart.Cart, []cartLineView, bool, error) {

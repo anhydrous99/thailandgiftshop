@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anhydrous99/thailandgiftshop/internal/observability"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
@@ -58,6 +59,12 @@ func TestProductItemRoundTripIncludesInventoryAndNoCurrency(t *testing.T) {
 	}
 	if got := stringAttribute(t, item, "gsi3sk"); got != "PRODUCT#2026-06-01T10:00:00Z#prod_001" {
 		t.Fatalf("gsi3sk = %q", got)
+	}
+	if got := stringAttribute(t, item, "gsi4pk"); got != adminProductsIndexPK {
+		t.Fatalf("gsi4pk = %q", got)
+	}
+	if got := stringAttribute(t, item, "gsi4sk"); got != "PRODUCT#prod_001" {
+		t.Fatalf("gsi4sk = %q", got)
 	}
 	if got := stringAttribute(t, item, "created_at"); got != "2026-06-01T10:00:00Z" {
 		t.Fatalf("created_at = %q", got)
@@ -125,6 +132,12 @@ func TestCategoryAndMembershipItemsRoundTrip(t *testing.T) {
 	if got := stringAttribute(t, categoryMap, "gsi2pk"); got != activeCategoriesIndexPK {
 		t.Fatalf("category gsi2pk = %q", got)
 	}
+	if got := stringAttribute(t, categoryMap, "gsi4pk"); got != adminCategoriesIndexPK {
+		t.Fatalf("category gsi4pk = %q", got)
+	}
+	if got := stringAttribute(t, categoryMap, "gsi4sk"); got != "CATEGORY#home-decor" {
+		t.Fatalf("category gsi4sk = %q", got)
+	}
 
 	gotCategory, err := categoryFromItem(categoryMap)
 	if err != nil {
@@ -153,6 +166,12 @@ func TestCategoryAndMembershipItemsRoundTrip(t *testing.T) {
 	}
 	if got := stringAttribute(t, membershipMap, "sk"); got != "PRODUCT#0000000005#prod_002" {
 		t.Fatalf("membership sk = %q", got)
+	}
+	if _, ok := membershipMap["gsi4pk"]; ok {
+		t.Fatal("membership unexpectedly includes gsi4pk")
+	}
+	if _, ok := membershipMap["gsi4sk"]; ok {
+		t.Fatal("membership unexpectedly includes gsi4sk")
 	}
 
 	gotProduct, err := productFromItem(membershipMap)
@@ -186,8 +205,14 @@ func TestDemoCatalogSeedItemsIncludesExpectedRows(t *testing.T) {
 		switch got := stringAttribute(t, item, "entity_type"); got {
 		case entityCategory:
 			categories++
+			if got := stringAttribute(t, item, "gsi4pk"); got != adminCategoriesIndexPK {
+				t.Fatalf("seed category gsi4pk = %q", got)
+			}
 		case entityProduct:
 			products++
+			if got := stringAttribute(t, item, "gsi4pk"); got != adminProductsIndexPK {
+				t.Fatalf("seed product gsi4pk = %q", got)
+			}
 			if got := stringAttribute(t, item, "image_url"); !strings.HasPrefix(got, "/images/products/") {
 				t.Fatalf("product image_url = %q, want /images/products/ prefix", got)
 			}
@@ -196,6 +221,9 @@ func TestDemoCatalogSeedItemsIncludesExpectedRows(t *testing.T) {
 			}
 		case entityCategoryProduct:
 			categoryProducts++
+			if _, ok := item["gsi4pk"]; ok {
+				t.Fatal("seed category-product row unexpectedly includes gsi4pk")
+			}
 		default:
 			t.Fatalf("unexpected entity_type %q", got)
 		}
@@ -224,6 +252,136 @@ func TestProductDisplayImageURLFallsBackWhenEmpty(t *testing.T) {
 	}
 	if got := (Product{}).DisplayImageURL(""); got != DefaultProductImagePlaceholderURL {
 		t.Fatalf("DisplayImageURL default fallback = %q", got)
+	}
+}
+
+func TestDynamoStoreRecordsCatalogOperationMetrics(t *testing.T) {
+	config := dynamoTestConfig()
+	recorder := &catalogMetricRecorder{}
+	queryStore := NewDynamoStoreWithRecorder(&fakeQueryClient{}, config, recorder)
+	if _, err := queryStore.ListActiveProducts(context.Background(), 0); err != nil {
+		t.Fatalf("ListActiveProducts returned error: %v", err)
+	}
+
+	getStore := NewDynamoStoreWithRecorder(nil, config, recorder)
+	getStore.getClient = &fakeGetItemClient{}
+	if _, _, err := getStore.GetProductByID(context.Background(), "prod_001"); err != nil {
+		t.Fatalf("GetProductByID returned error: %v", err)
+	}
+
+	adminListStore := NewDynamoStoreWithRecorder(&fakeQueryClient{}, config, recorder)
+	if _, err := adminListStore.ListProducts(context.Background()); err != nil {
+		t.Fatalf("ListProducts returned error: %v", err)
+	}
+
+	writeStore := NewDynamoAdminStoreWithRecorder(&fakeTransactWriteClient{}, config, recorder)
+	if _, err := writeStore.CreateCategory(context.Background(), Category{Slug: "metric-category", Name: "Metric Category"}); err != nil {
+		t.Fatalf("CreateCategory returned error: %v", err)
+	}
+
+	assertCatalogMetric(t, recorder, observability.MetricCatalogOperationMs, observability.UnitMilliseconds, map[string]string{
+		"Service":   "catalog",
+		"Operation": "Query",
+		"Method":    "ListActiveProducts",
+	})
+	assertCatalogMetric(t, recorder, observability.MetricCatalogOperation, observability.UnitCount, map[string]string{
+		"Service":   "catalog",
+		"Operation": "Query",
+		"Method":    "ListActiveProducts",
+	})
+	assertCatalogMetric(t, recorder, observability.MetricCatalogOperationMs, observability.UnitMilliseconds, map[string]string{
+		"Service":   "catalog",
+		"Operation": "GetItem",
+		"Method":    "GetProductByID",
+	})
+	assertCatalogMetric(t, recorder, observability.MetricCatalogOperationMs, observability.UnitMilliseconds, map[string]string{
+		"Service":   "catalog",
+		"Operation": "Query",
+		"Method":    "ListProducts",
+	})
+	assertCatalogMetric(t, recorder, observability.MetricCatalogOperationMs, observability.UnitMilliseconds, map[string]string{
+		"Service":   "catalog",
+		"Operation": "TransactWriteItems",
+		"Method":    "CreateCategory",
+	})
+}
+
+func TestDynamoConfigFromEnvDefaultsEntityIndexName(t *testing.T) {
+	t.Setenv(EnvTableName, "catalog-table")
+	t.Setenv(EnvSlugIndexName, "")
+	t.Setenv(EnvPublicIndexName, "")
+	t.Setenv(EnvRecentIndexName, "")
+	t.Setenv(EnvEntityIndexName, "")
+
+	config, ok := DynamoConfigFromEnv()
+	if !ok {
+		t.Fatal("DynamoConfigFromEnv ok = false, want true")
+	}
+	if config.EntityIndexName != DefaultEntityIndexName {
+		t.Fatalf("EntityIndexName = %q, want %q", config.EntityIndexName, DefaultEntityIndexName)
+	}
+}
+
+func TestDynamoAdminStoreListProductsUsesEntityIndexAndSortsResults(t *testing.T) {
+	second := Product{ID: "prod_002", Slug: "second", Name: "Second", Status: StatusDraft, SortOrder: 20, StockQuantity: 1}
+	first := Product{ID: "prod_001", Slug: "first", Name: "First", Status: StatusArchived, SortOrder: 10, StockQuantity: 1}
+	secondItem, err := productItem(second)
+	if err != nil {
+		t.Fatalf("productItem second returned error: %v", err)
+	}
+	firstItem, err := productItem(first)
+	if err != nil {
+		t.Fatalf("productItem first returned error: %v", err)
+	}
+	client := &fakeQueryClient{outputs: []*dynamodb.QueryOutput{{Items: []map[string]types.AttributeValue{secondItem, firstItem}}}}
+	store := NewDynamoStore(client, dynamoTestConfig())
+
+	products, err := store.ListProducts(context.Background())
+	if err != nil {
+		t.Fatalf("ListProducts returned error: %v", err)
+	}
+	if got := []string{products[0].ID, products[1].ID}; !reflect.DeepEqual(got, []string{"prod_001", "prod_002"}) {
+		t.Fatalf("product order = %v", got)
+	}
+	input := client.inputs[0]
+	if got := aws.ToString(input.IndexName); got != "entity-index" {
+		t.Fatalf("IndexName = %q", got)
+	}
+	if got := aws.ToString(input.KeyConditionExpression); got != "#gsi4pk = :pk" {
+		t.Fatalf("KeyConditionExpression = %q", got)
+	}
+	if got := stringAttribute(t, input.ExpressionAttributeValues, ":pk"); got != adminProductsIndexPK {
+		t.Fatalf(":pk = %q", got)
+	}
+}
+
+func TestDynamoAdminStoreListCategoriesUsesEntityIndexAndSortsResults(t *testing.T) {
+	second := Category{Slug: "second", Name: "Second", Status: StatusDraft, SortOrder: 20}
+	first := Category{Slug: "first", Name: "First", Status: StatusArchived, SortOrder: 10}
+	secondItem, err := categoryItem(second)
+	if err != nil {
+		t.Fatalf("categoryItem second returned error: %v", err)
+	}
+	firstItem, err := categoryItem(first)
+	if err != nil {
+		t.Fatalf("categoryItem first returned error: %v", err)
+	}
+	client := &fakeQueryClient{outputs: []*dynamodb.QueryOutput{{Items: []map[string]types.AttributeValue{secondItem, firstItem}}}}
+	store := NewDynamoStore(client, dynamoTestConfig())
+
+	categories, err := store.ListCategories(context.Background())
+	if err != nil {
+		t.Fatalf("ListCategories returned error: %v", err)
+	}
+	if got := []string{categories[0].Slug, categories[1].Slug}; !reflect.DeepEqual(got, []string{"first", "second"}) {
+		t.Fatalf("category order = %v", got)
+	}
+	input := client.inputs[0]
+	if got := aws.ToString(input.IndexName); got != "entity-index" {
+		t.Fatalf("IndexName = %q", got)
+	}
+	if got := stringAttribute(t, input.ExpressionAttributeValues, ":pk"); got != adminCategoriesIndexPK {
+		t.Fatalf(":pk = %q", got)
 	}
 }
 
@@ -465,6 +623,9 @@ func TestDynamoAdminStoreCreateProductTransactionWritesProductSlugLockMembership
 	if got := stringAttribute(t, productPut.Item, "gsi3pk"); got != recentProductsIndexPK {
 		t.Fatalf("active product recent index pk = %q", got)
 	}
+	if got := stringAttribute(t, productPut.Item, "gsi4pk"); got != adminProductsIndexPK {
+		t.Fatalf("product admin index pk = %q", got)
+	}
 	productRoundTrip, err := productFromItem(productPut.Item)
 	if err != nil {
 		t.Fatalf("created product item did not round trip: %v", err)
@@ -480,6 +641,9 @@ func TestDynamoAdminStoreCreateProductTransactionWritesProductSlugLockMembership
 	if _, ok := slugPut.Item["gsi1pk"]; ok {
 		t.Fatal("slug lock unexpectedly includes gsi1pk")
 	}
+	if _, ok := slugPut.Item["gsi4pk"]; ok {
+		t.Fatal("slug lock unexpectedly includes gsi4pk")
+	}
 	if got := stringAttribute(t, slugPut.Item, "pk"); got != "PRODUCT_SLUG#admin-mango-kit" {
 		t.Fatalf("slug lock pk = %q", got)
 	}
@@ -493,6 +657,9 @@ func TestDynamoAdminStoreCreateProductTransactionWritesProductSlugLockMembership
 		}
 		if got := stringAttribute(t, put.Item, "pk"); got != "CATEGORY#"+wantCategory {
 			t.Fatalf("membership pk = %q", got)
+		}
+		if _, ok := put.Item["gsi4pk"]; ok {
+			t.Fatal("membership unexpectedly includes gsi4pk")
 		}
 		membership, err := productFromItem(put.Item)
 		if err != nil {
@@ -611,6 +778,9 @@ func TestDynamoAdminStoreArchiveProductRemovesPublicIndexesAndKeepsAdminRows(t *
 	if _, ok := productPut["gsi3pk"]; ok {
 		t.Fatal("archived product retained recent index pk")
 	}
+	if got := stringAttribute(t, productPut, "gsi4pk"); got != adminProductsIndexPK {
+		t.Fatalf("archived product admin index pk = %q", got)
+	}
 	if got := stringAttribute(t, productPut, "pk"); got != "PRODUCT#prod_admin_004" {
 		t.Fatalf("archived product pk = %q", got)
 	}
@@ -638,6 +808,9 @@ func TestDynamoAdminStoreCategoryCreateUpdateArchiveUsesVersionAndPublicIndex(t 
 	if got := stringAttribute(t, client.inputs[0].TransactItems[0].Put.Item, "gsi2pk"); got != activeCategoriesIndexPK {
 		t.Fatalf("active category public index pk = %q", got)
 	}
+	if got := stringAttribute(t, client.inputs[0].TransactItems[0].Put.Item, "gsi4pk"); got != adminCategoriesIndexPK {
+		t.Fatalf("category admin index pk = %q", got)
+	}
 
 	updated := created
 	updated.Name = "Updated Category"
@@ -661,6 +834,9 @@ func TestDynamoAdminStoreCategoryCreateUpdateArchiveUsesVersionAndPublicIndex(t 
 	}
 	if _, ok := client.inputs[2].TransactItems[0].Put.Item["gsi2pk"]; ok {
 		t.Fatal("archived category retained public index pk")
+	}
+	if got := stringAttribute(t, client.inputs[2].TransactItems[0].Put.Item, "gsi4pk"); got != adminCategoriesIndexPK {
+		t.Fatalf("archived category admin index pk = %q", got)
 	}
 }
 
@@ -710,6 +886,7 @@ func dynamoTestConfig() DynamoConfig {
 		SlugIndexName:   "slug-index",
 		PublicIndexName: "public-index",
 		RecentIndexName: "recent-index",
+		EntityIndexName: "entity-index",
 	}
 }
 
@@ -719,9 +896,23 @@ type fakeQueryClient struct {
 	err     error
 }
 
+type fakeGetItemClient struct {
+	inputs []dynamodb.GetItemInput
+	output *dynamodb.GetItemOutput
+	err    error
+}
+
 type fakeTransactWriteClient struct {
 	inputs []dynamodb.TransactWriteItemsInput
 	err    error
+}
+
+type catalogMetricRecorder struct {
+	metrics []observability.Metric
+}
+
+func (r *catalogMetricRecorder) Record(metric observability.Metric) {
+	r.metrics = append(r.metrics, metric)
 }
 
 func (f *fakeTransactWriteClient) TransactWriteItems(ctx context.Context, input *dynamodb.TransactWriteItemsInput, optFns ...func(*dynamodb.Options)) (*dynamodb.TransactWriteItemsOutput, error) {
@@ -751,4 +942,40 @@ func (f *fakeQueryClient) Query(ctx context.Context, input *dynamodb.QueryInput,
 	output := f.outputs[0]
 	f.outputs = f.outputs[1:]
 	return output, nil
+}
+
+func (f *fakeGetItemClient) GetItem(ctx context.Context, input *dynamodb.GetItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error) {
+	f.inputs = append(f.inputs, *input)
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.output == nil {
+		return &dynamodb.GetItemOutput{}, nil
+	}
+	return f.output, nil
+}
+
+func assertCatalogMetric(t *testing.T, recorder *catalogMetricRecorder, name string, unit string, dimensions map[string]string) {
+	t.Helper()
+	for _, metric := range recorder.metrics {
+		if metric.Name != name || metric.Unit != unit {
+			continue
+		}
+		if catalogMetricDimensionsMatch(metric, dimensions) {
+			return
+		}
+	}
+	t.Fatalf("metric %q with unit %q and dimensions %#v not recorded; got %#v", name, unit, dimensions, recorder.metrics)
+}
+
+func catalogMetricDimensionsMatch(metric observability.Metric, dimensions map[string]string) bool {
+	if len(metric.Dimensions) != len(dimensions) {
+		return false
+	}
+	for _, dimension := range metric.Dimensions {
+		if dimensions[dimension.Name] != dimension.Value {
+			return false
+		}
+	}
+	return true
 }

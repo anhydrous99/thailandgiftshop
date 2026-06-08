@@ -13,6 +13,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
@@ -46,6 +47,8 @@ type Handler struct {
 	metrics       observability.Recorder
 }
 
+var adminColdStartRecorded atomic.Bool
+
 func NewHandler() *Handler {
 	return &Handler{now: time.Now, loginThrottle: noopAdminLoginThrottle{}}
 }
@@ -72,7 +75,8 @@ func NewHandlerFromEnvironment(ctx context.Context) (*Handler, error) {
 		return nil, err
 	}
 
-	adminStore, _, err := catalog.NewAdminStoreFromEnv(ctx)
+	metrics := observability.NewEMFRecorder(os.Stdout)
+	adminStore, _, err := catalog.NewAdminStoreFromEnvWithRecorder(ctx, metrics)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +87,7 @@ func NewHandlerFromEnvironment(ctx context.Context) (*Handler, error) {
 	}
 	handler := NewHandlerWithCredentialsAndCatalog(credentials, adminStore)
 	handler.loginThrottle = loginThrottle
-	handler.metrics = observability.NewEMFRecorder(os.Stdout)
+	handler.metrics = metrics
 	return handler, nil
 }
 
@@ -94,6 +98,15 @@ func Handle(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events
 }
 
 func (h *Handler) Handle(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	started := time.Now()
+	method := requestMethod(request)
+	route := h.adminMetricRoute(request)
+	response, err := h.handle(ctx, request)
+	h.recordRouteMetrics(started, route, method, response.StatusCode)
+	return response, err
+}
+
+func (h *Handler) handle(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	path := requestPath(request)
 	if path != "/admin" && !strings.HasPrefix(path, "/admin/") {
 		return htmlResponse(http.StatusNotFound, "Not found", nil), nil
@@ -114,6 +127,52 @@ func (h *Handler) Handle(ctx context.Context, request events.APIGatewayV2HTTPReq
 	default:
 		return h.handleProtectedAdmin(ctx, request), nil
 	}
+}
+
+func (h *Handler) adminMetricRoute(request events.APIGatewayV2HTTPRequest) string {
+	path := requestPath(request)
+	if path != "/admin" && !strings.HasPrefix(path, "/admin/") {
+		return "not_found"
+	}
+	if !validAdminOrigin(request) {
+		return "origin_rejected"
+	}
+	if path == "/admin/login" {
+		return "login"
+	}
+	if path == "/admin/logout" {
+		return "logout"
+	}
+	if isAdminProductPath(path) {
+		return "products"
+	}
+	if isAdminCategoryPath(path) {
+		return "categories"
+	}
+	if isProductImageUploadPath(path) {
+		return "uploads"
+	}
+	return "dashboard"
+}
+
+func (h *Handler) recordRouteMetrics(started time.Time, route string, method string, statusCode int) {
+	if h.metrics == nil {
+		return
+	}
+	if adminColdStartRecorded.CompareAndSwap(false, true) {
+		h.metrics.Record(observability.Count(
+			observability.MetricRouteColdStart,
+			observability.Dim("Service", metricServiceAdmin),
+		))
+	}
+	h.metrics.Record(observability.Duration(
+		observability.MetricRouteDurationMs,
+		time.Since(started),
+		observability.Dim("Service", metricServiceAdmin),
+		observability.Dim("Route", route),
+		observability.Dim("Method", method),
+		observability.Dim("Status", strconv.Itoa(statusCode)),
+	))
 }
 
 func (h *Handler) handleLogin(ctx context.Context, request events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {

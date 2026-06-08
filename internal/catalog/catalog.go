@@ -13,11 +13,13 @@ const (
 	EnvSlugIndexName              = "CATALOG_SLUG_INDEX_NAME"
 	EnvPublicIndexName            = "CATALOG_PUBLIC_INDEX_NAME"
 	EnvRecentIndexName            = "CATALOG_RECENT_INDEX_NAME"
+	EnvEntityIndexName            = "CATALOG_ENTITY_INDEX_NAME"
 	EnvProductImagePlaceholderURL = "PRODUCT_IMAGE_PLACEHOLDER_URL"
 
 	DefaultSlugIndexName   = "slug-index"
 	DefaultPublicIndexName = "public-index"
 	DefaultRecentIndexName = "recent-index"
+	DefaultEntityIndexName = "entity-index"
 
 	DefaultProductImagePlaceholderURL = "/images/placeholder-product.jpg"
 )

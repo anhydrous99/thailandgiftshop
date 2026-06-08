@@ -8,9 +8,11 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/anhydrous99/thailandgiftshop/internal/cart"
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
+	"github.com/anhydrous99/thailandgiftshop/internal/observability"
 	"github.com/aws/aws-lambda-go/events"
 )
 
@@ -191,6 +193,49 @@ func TestRouteForPathRejectsExtraSegments(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSSRMetricsRecordRouteDurationAndColdStartWithoutChangingResponse(t *testing.T) {
+	ssrColdStartRecorded.Store(false)
+	plainResponse, err := NewHandler(catalog.EmptyStore{}).Handle(context.Background(), pageRequest(http.MethodGet, "/"))
+	if err != nil {
+		t.Fatalf("plain Handle returned error: %v", err)
+	}
+
+	handler := NewHandler(catalog.EmptyStore{})
+	recorder := &testMetricRecorder{}
+	handler.metrics = recorder
+	instrumentedResponse, err := handler.Handle(context.Background(), pageRequest(http.MethodGet, "/"))
+	if err != nil {
+		t.Fatalf("instrumented Handle returned error: %v", err)
+	}
+	if instrumentedResponse.StatusCode != plainResponse.StatusCode || instrumentedResponse.Body != plainResponse.Body {
+		t.Fatalf("instrumented response changed: got status %d body length %d, want status %d body length %d", instrumentedResponse.StatusCode, len(instrumentedResponse.Body), plainResponse.StatusCode, len(plainResponse.Body))
+	}
+
+	assertRecordedMetric(t, recorder, observability.MetricRouteColdStart, observability.UnitCount, map[string]string{
+		"Service": "ssr",
+	})
+	assertRecordedMetric(t, recorder, observability.MetricRouteDurationMs, observability.UnitMilliseconds, map[string]string{
+		"Service": "ssr",
+		"Route":   string(pageHome),
+		"Method":  http.MethodGet,
+		"Status":  strconv.Itoa(http.StatusOK),
+	})
+
+	_, err = handler.Handle(context.Background(), pageRequest(http.MethodGet, "/missing"))
+	if err != nil {
+		t.Fatalf("second Handle returned error: %v", err)
+	}
+	if got := recordedMetricCount(recorder, observability.MetricRouteColdStart); got != 1 {
+		t.Fatalf("cold-start metric count = %d, want 1", got)
+	}
+	assertRecordedMetric(t, recorder, observability.MetricRouteDurationMs, observability.UnitMilliseconds, map[string]string{
+		"Service": "ssr",
+		"Route":   string(pageUnknown),
+		"Method":  http.MethodGet,
+		"Status":  strconv.Itoa(http.StatusNotFound),
+	})
 }
 
 func TestRedirects(t *testing.T) {
@@ -1176,6 +1221,69 @@ func TestHeaderRendersCartLinkLabelFromNormalizedCookie(t *testing.T) {
 		`Categories</a>`,
 		`Story</a>`,
 	})
+}
+
+func TestCartBearingPagesReuseNormalizedRequestCart(t *testing.T) {
+	t.Setenv(cart.EnvCookieSecret, ssrTestCartSecret)
+
+	for _, path := range []string{"/cart", "/checkout"} {
+		t.Run(path, func(t *testing.T) {
+			store := cartRouteStore()
+			request := pageRequest(http.MethodGet, path)
+			request.Cookies = []string{cart.CookieName + "=" + encodedTestCart(t, []cart.Line{{Slug: "mango-sticky-rice-kit", Quantity: 2}})}
+
+			response, err := NewHandler(store).Handle(context.Background(), request)
+			if err != nil {
+				t.Fatalf("Handle returned error: %v", err)
+			}
+			if response.StatusCode != http.StatusOK {
+				t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
+			}
+			if len(store.productSlugLookups) != 1 || store.productSlugLookups[0] != "mango-sticky-rice-kit" {
+				t.Fatalf("GetProductBySlug lookups = %v, want one normalized cart lookup", store.productSlugLookups)
+			}
+			assertBodyContains(t, response.Body, []string{`Cart (2)`, `Mango Sticky Rice Treats`})
+		})
+	}
+}
+
+func TestCatalogPageReadsStartConcurrently(t *testing.T) {
+	tests := []struct {
+		name   string
+		path   string
+		starts []string
+	}{
+		{name: "home", path: "/", starts: []string{"ListRecentlyAddedProducts", "ListActiveCategories"}},
+		{name: "product listing", path: "/products", starts: []string{"ListActiveProducts", "ListActiveCategories"}},
+		{name: "product detail", path: "/products/mango-sticky-rice-kit", starts: []string{"GetProductBySlug:mango-sticky-rice-kit", "ListActiveCategories"}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			store := newBlockingCatalogStore()
+			handler := NewHandler(store)
+			result := make(chan handleResult, 1)
+			go func() {
+				response, err := handler.Handle(context.Background(), pageRequest(http.MethodGet, test.path))
+				result <- handleResult{response: response, err: err}
+			}()
+
+			if missing := missingCatalogStarts(store.started, test.starts, 200*time.Millisecond); len(missing) > 0 {
+				close(store.release)
+				drainHandleResult(t, result)
+				t.Fatalf("catalog calls did not start concurrently; missing %s", strings.Join(missing, ", "))
+			}
+			close(store.release)
+
+			got := drainHandleResult(t, result)
+			if got.err != nil {
+				t.Fatalf("Handle returned error: %v", got.err)
+			}
+			if got.response.StatusCode != http.StatusOK {
+				t.Fatalf("status code = %d, want %d", got.response.StatusCode, http.StatusOK)
+			}
+		})
+	}
 }
 
 func TestHeaderRendersMobileNoJSNavigation(t *testing.T) {
@@ -2199,6 +2307,130 @@ type fakeCatalogStore struct {
 	categoryProductLimits  []int
 }
 
+type handleResult struct {
+	response events.APIGatewayV2HTTPResponse
+	err      error
+}
+
+type blockingCatalogStore struct {
+	started  chan string
+	release  chan struct{}
+	product  catalog.Product
+	category catalog.Category
+}
+
+func newBlockingCatalogStore() *blockingCatalogStore {
+	return &blockingCatalogStore{
+		started: make(chan string, 4),
+		release: make(chan struct{}),
+		product: catalog.Product{
+			Slug:          "mango-sticky-rice-kit",
+			Name:          "Mango Sticky Rice Treats",
+			Description:   "Shelf-stable Thai dessert snacks.",
+			PriceCents:    2899,
+			Status:        catalog.StatusActive,
+			StockQuantity: 5,
+			CategorySlugs: []string{"thai-snacks"},
+		},
+		category: catalog.Category{
+			Slug:        "thai-snacks",
+			Name:        "Thai Snacks",
+			Description: "Crunchy, sweet, and pantry-friendly finds.",
+			Status:      catalog.StatusActive,
+		},
+	}
+}
+
+func (s *blockingCatalogStore) ListActiveProducts(ctx context.Context, limit int) ([]catalog.Product, error) {
+	if err := s.wait(ctx, "ListActiveProducts"); err != nil {
+		return nil, err
+	}
+	return []catalog.Product{s.product}, nil
+}
+
+func (s *blockingCatalogStore) ListRecentlyAddedProducts(ctx context.Context, limit int) ([]catalog.Product, error) {
+	if err := s.wait(ctx, "ListRecentlyAddedProducts"); err != nil {
+		return nil, err
+	}
+	return []catalog.Product{s.product}, nil
+}
+
+func (s *blockingCatalogStore) GetProductBySlug(ctx context.Context, slug string) (catalog.Product, bool, error) {
+	if err := s.wait(ctx, "GetProductBySlug:"+slug); err != nil {
+		return catalog.Product{}, false, err
+	}
+	if slug != s.product.Slug {
+		return catalog.Product{}, false, nil
+	}
+	return s.product, true, nil
+}
+
+func (s *blockingCatalogStore) ListActiveCategories(ctx context.Context) ([]catalog.Category, error) {
+	if err := s.wait(ctx, "ListActiveCategories"); err != nil {
+		return nil, err
+	}
+	return []catalog.Category{s.category}, nil
+}
+
+func (s *blockingCatalogStore) ListActiveProductsByCategory(ctx context.Context, categorySlug string, limit int) ([]catalog.Product, error) {
+	if err := s.wait(ctx, "ListActiveProductsByCategory:"+categorySlug); err != nil {
+		return nil, err
+	}
+	if categorySlug != s.category.Slug {
+		return []catalog.Product{}, nil
+	}
+	return []catalog.Product{s.product}, nil
+}
+
+func (s *blockingCatalogStore) wait(ctx context.Context, name string) error {
+	select {
+	case s.started <- name:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	select {
+	case <-s.release:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func missingCatalogStarts(started <-chan string, wants []string, timeout time.Duration) []string {
+	wantSet := make(map[string]bool, len(wants))
+	for _, want := range wants {
+		wantSet[want] = true
+	}
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	for len(wantSet) > 0 {
+		select {
+		case got := <-started:
+			delete(wantSet, got)
+		case <-timer.C:
+			missing := make([]string, 0, len(wantSet))
+			for want := range wantSet {
+				missing = append(missing, want)
+			}
+			return missing
+		}
+	}
+
+	return nil
+}
+
+func drainHandleResult(t *testing.T, result <-chan handleResult) handleResult {
+	t.Helper()
+	select {
+	case got := <-result:
+		return got
+	case <-time.After(time.Second):
+		t.Fatal("Handle did not finish")
+	}
+	return handleResult{}
+}
+
 func (f *fakeCatalogStore) ListActiveProducts(ctx context.Context, limit int) ([]catalog.Product, error) {
 	if f.err != nil {
 		return nil, f.err
@@ -2306,6 +2538,49 @@ func assertBodyOmits(t *testing.T, body string, unwanteds []string) {
 			t.Fatalf("body unexpectedly contains %q: %q", unwanted, body)
 		}
 	}
+}
+
+type testMetricRecorder struct {
+	metrics []observability.Metric
+}
+
+func (r *testMetricRecorder) Record(metric observability.Metric) {
+	r.metrics = append(r.metrics, metric)
+}
+
+func assertRecordedMetric(t *testing.T, recorder *testMetricRecorder, name string, unit string, dimensions map[string]string) {
+	t.Helper()
+	for _, metric := range recorder.metrics {
+		if metric.Name != name || metric.Unit != unit {
+			continue
+		}
+		if metricDimensionsMatch(metric, dimensions) {
+			return
+		}
+	}
+	t.Fatalf("metric %q with unit %q and dimensions %#v not recorded; got %#v", name, unit, dimensions, recorder.metrics)
+}
+
+func recordedMetricCount(recorder *testMetricRecorder, name string) int {
+	count := 0
+	for _, metric := range recorder.metrics {
+		if metric.Name == name {
+			count++
+		}
+	}
+	return count
+}
+
+func metricDimensionsMatch(metric observability.Metric, dimensions map[string]string) bool {
+	if len(metric.Dimensions) != len(dimensions) {
+		return false
+	}
+	for _, dimension := range metric.Dimensions {
+		if dimensions[dimension.Name] != dimension.Value {
+			return false
+		}
+	}
+	return true
 }
 
 func TestHelloFragmentHTMX(t *testing.T) {
