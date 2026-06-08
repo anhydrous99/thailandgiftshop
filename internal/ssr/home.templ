@@ -5,7 +5,7 @@ import "github.com/anhydrous99/thailandgiftshop/internal/catalog"
 templ home(vm homePageViewModel) {
 		<!DOCTYPE html>
 		<html lang="en" class="scroll-smooth">
-			@siteHead("Thailand Gift Shop")
+			@siteHead(vm.Metadata)
 			<body class="min-h-screen bg-[#F8F4EE] text-[#17172A] antialiased">
 			@siteHeader("home", vm.HeaderCartLabel)
 			<main>

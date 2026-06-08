@@ -235,14 +235,14 @@ func adminProductListPage(vm adminProductListViewModel) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "</a><p class=\"mt-1 text-sm font-bold text-[#4C4A62]\">/")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "</a><p class=\"mt-1 text-sm font-bold text-[#4C4A62]\">/products/")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var11 string
 				templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(product.Slug)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 65, Col: 75}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 65, Col: 84}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 				if templ_7745c5c3_Err != nil {
@@ -255,7 +255,7 @@ func adminProductListPage(vm adminProductListViewModel) templ.Component {
 				var templ_7745c5c3_Var12 string
 				templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(formatAdminPrice(product.PriceCents))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 65, Col: 119}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 65, Col: 128}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 				if templ_7745c5c3_Err != nil {
@@ -268,7 +268,7 @@ func adminProductListPage(vm adminProductListViewModel) templ.Component {
 				var templ_7745c5c3_Var13 string
 				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(product.TotalAvailableStock()))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 65, Col: 176}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 65, Col: 185}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 				if templ_7745c5c3_Err != nil {
@@ -547,7 +547,17 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "\" class=\"h-12 rounded-lg border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-base font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none\"></label></div><label class=\"grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]\">Description <textarea data-testid=\"product-description-input\" required name=\"description\" class=\"min-h-28 rounded-lg border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 py-3 text-base font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if vm.Mode == "edit" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, " readonly")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, " class=\"h-12 rounded-lg border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-base font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none read-only:text-[#4C4A62]\"></label></div><label class=\"grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]\">Description <textarea data-testid=\"product-description-input\" required name=\"description\" class=\"min-h-28 rounded-lg border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 py-3 text-base font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -560,7 +570,7 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "</textarea></label><div class=\"grid gap-4 md:grid-cols-4\"><label class=\"grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]\">Price <input data-testid=\"product-price-input\" required name=\"price\" inputmode=\"decimal\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "</textarea></label><div class=\"grid gap-4 md:grid-cols-4\"><label class=\"grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]\">Price <input data-testid=\"product-price-input\" required name=\"price\" inputmode=\"decimal\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -573,7 +583,7 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "\" class=\"h-12 rounded-lg border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-base font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none\"></label> <label class=\"grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]\">Sort <input name=\"sort_order\" type=\"number\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "\" class=\"h-12 rounded-lg border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-base font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none\"></label> <label class=\"grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]\">Sort <input name=\"sort_order\" type=\"number\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -586,7 +596,7 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "\" class=\"h-12 rounded-lg border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-base font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none\"></label> <label class=\"grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]\">Fallback stock <input name=\"stock_quantity\" type=\"number\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "\" class=\"h-12 rounded-lg border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-base font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none\"></label> <label class=\"grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]\">Fallback stock <input name=\"stock_quantity\" type=\"number\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -599,42 +609,42 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "\" class=\"h-12 rounded-lg border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-base font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none\"></label> <label class=\"grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]\">Status <select data-testid=\"product-status-select\" name=\"status\" class=\"h-12 rounded-lg border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-base font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none\"><option value=\"draft\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "\" class=\"h-12 rounded-lg border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-base font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none\"></label> <label class=\"grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]\">Status <select data-testid=\"product-status-select\" name=\"status\" class=\"h-12 rounded-lg border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-base font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none\"><option value=\"draft\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if statusSelected(vm.Product.Status, "draft") {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, " selected")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, ">Draft</option><option value=\"active\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if statusSelected(vm.Product.Status, "active") {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 59, " selected")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, ">Active</option><option value=\"archived\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, ">Draft</option><option value=\"active\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if statusSelected(vm.Product.Status, "archived") {
+		if statusSelected(vm.Product.Status, "active") {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, " selected")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, ">Archived</option></select></label></div><section class=\"rounded-lg border border-[#2D2A4A]/10 bg-[#F8F4EE] p-4\"><div class=\"flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between\"><div><p class=\"text-sm font-black uppercase tracking-wide text-[#A51931]\">Confirmed image</p><p data-testid=\"product-image-status\" role=\"status\" aria-live=\"polite\" class=\"mt-1 text-sm font-bold text-[#4C4A62]\">Upload a JPEG, PNG, or WebP. The saved URL must be site-relative.</p></div><input data-testid=\"product-image-input\" type=\"file\" accept=\"image/jpeg,image/png,image/webp\" class=\"text-sm font-bold text-[#2D2A4A]\"></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, ">Active</option><option value=\"archived\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if statusSelected(vm.Product.Status, "archived") {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, " selected")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, ">Archived</option></select></label></div><section class=\"rounded-lg border border-[#2D2A4A]/10 bg-[#F8F4EE] p-4\"><div class=\"flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between\"><div><p class=\"text-sm font-black uppercase tracking-wide text-[#A51931]\">Confirmed image</p><p data-testid=\"product-image-status\" role=\"status\" aria-live=\"polite\" class=\"mt-1 text-sm font-bold text-[#4C4A62]\">Upload a JPEG, PNG, or WebP. The saved URL must be site-relative.</p></div><input data-testid=\"product-image-input\" type=\"file\" accept=\"image/jpeg,image/png,image/webp\" class=\"text-sm font-bold text-[#2D2A4A]\"></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if vm.Product.ImageURL != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "<img data-testid=\"product-image-preview\" class=\"mt-4 aspect-[4/3] w-full max-w-xs rounded-md bg-white object-cover shadow-sm\" src=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "<img data-testid=\"product-image-preview\" class=\"mt-4 aspect-[4/3] w-full max-w-xs rounded-md bg-white object-cover shadow-sm\" src=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -647,17 +657,17 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "\" alt=\"Product image preview\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "\" alt=\"Product image preview\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "</section><section class=\"rounded-lg border border-[#2D2A4A]/10 bg-white p-4\"><p class=\"text-sm font-black uppercase tracking-wide text-[#A51931]\">Categories</p><div class=\"mt-3 grid gap-2 sm:grid-cols-2\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "</section><section class=\"rounded-lg border border-[#2D2A4A]/10 bg-white p-4\"><p class=\"text-sm font-black uppercase tracking-wide text-[#A51931]\">Categories</p><div class=\"mt-3 grid gap-2 sm:grid-cols-2\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		for _, category := range vm.Categories {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "<label class=\"flex items-center gap-2 rounded-md border border-[#2D2A4A]/10 bg-[#F8F4EE] px-3 py-2 text-sm font-bold text-[#2D2A4A]\"><input data-testid=\"product-category-checkbox\" type=\"checkbox\" name=\"category_slugs\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "<label class=\"flex items-center gap-2 rounded-md border border-[#2D2A4A]/10 bg-[#F8F4EE] px-3 py-2 text-sm font-bold text-[#2D2A4A]\"><input data-testid=\"product-category-checkbox\" type=\"checkbox\" name=\"category_slugs\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -670,17 +680,17 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if categoryChecked(vm.Product, category.Slug) {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, " checked")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, " checked")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -693,12 +703,12 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "</label>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, "</label>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "</div></section><section class=\"rounded-lg border border-[#2D2A4A]/10 bg-white p-4\"><div class=\"flex items-end justify-between gap-4\"><div><p class=\"text-sm font-black uppercase tracking-wide text-[#A51931]\">Variants</p><p class=\"mt-1 text-sm font-bold text-[#4C4A62]\">Active labels must be unique. Total active stock: ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, "</div></section><section class=\"rounded-lg border border-[#2D2A4A]/10 bg-white p-4\"><div class=\"flex items-end justify-between gap-4\"><div><p class=\"text-sm font-black uppercase tracking-wide text-[#A51931]\">Variants</p><p class=\"mt-1 text-sm font-bold text-[#4C4A62]\">Active labels must be unique. Total active stock: ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -711,12 +721,12 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, "</p></div></div><div data-testid=\"variant-editor\" class=\"mt-4 grid gap-3\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "</p></div></div><div data-testid=\"variant-editor\" class=\"mt-4 grid gap-3\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		for _, variant := range vm.Product.Variants {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, "<div data-testid=\"variant-row\" class=\"grid gap-3 rounded-md border border-[#2D2A4A]/10 bg-[#F8F4EE] p-3 md:grid-cols-[1fr_8rem_10rem]\"><input type=\"hidden\" name=\"variant_id\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "<div data-testid=\"variant-row\" class=\"grid gap-3 rounded-md border border-[#2D2A4A]/10 bg-[#F8F4EE] p-3 md:grid-cols-[1fr_8rem_10rem]\"><input type=\"hidden\" name=\"variant_id\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -729,7 +739,7 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "\"><label class=\"grid gap-1 text-xs font-black uppercase tracking-wide text-[#4C4A62]\">Size label <input data-testid=\"variant-label-input\" name=\"variant_label\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "\"><label class=\"grid gap-1 text-xs font-black uppercase tracking-wide text-[#4C4A62]\">Size label <input data-testid=\"variant-label-input\" name=\"variant_label\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -742,7 +752,7 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "\" class=\"h-11 rounded-lg border border-[#2D2A4A]/20 bg-white px-3 text-sm font-bold normal-case tracking-normal text-[#17172A]\"></label><label class=\"grid gap-1 text-xs font-black uppercase tracking-wide text-[#4C4A62]\">Stock <input data-testid=\"variant-stock-input\" name=\"variant_stock\" type=\"number\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 77, "\" class=\"h-11 rounded-lg border border-[#2D2A4A]/20 bg-white px-3 text-sm font-bold normal-case tracking-normal text-[#17172A]\"></label><label class=\"grid gap-1 text-xs font-black uppercase tracking-wide text-[#4C4A62]\">Stock <input data-testid=\"variant-stock-input\" name=\"variant_stock\" type=\"number\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -755,42 +765,42 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "\" class=\"h-11 rounded-lg border border-[#2D2A4A]/20 bg-white px-3 text-sm font-bold normal-case tracking-normal text-[#17172A]\"></label><label class=\"grid gap-1 text-xs font-black uppercase tracking-wide text-[#4C4A62]\">Status <select name=\"variant_status\" class=\"h-11 rounded-lg border border-[#2D2A4A]/20 bg-white px-3 text-sm font-bold normal-case tracking-normal text-[#17172A]\"><option value=\"active\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, "\" class=\"h-11 rounded-lg border border-[#2D2A4A]/20 bg-white px-3 text-sm font-bold normal-case tracking-normal text-[#17172A]\"></label><label class=\"grid gap-1 text-xs font-black uppercase tracking-wide text-[#4C4A62]\">Status <select name=\"variant_status\" class=\"h-11 rounded-lg border border-[#2D2A4A]/20 bg-white px-3 text-sm font-bold normal-case tracking-normal text-[#17172A]\"><option value=\"active\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if statusSelected(variant.Status, "active") {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 77, " selected")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, ">Active</option><option value=\"draft\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			if statusSelected(variant.Status, "draft") {
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, ">Draft</option><option value=\"archived\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, ">Active</option><option value=\"draft\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			if statusSelected(variant.Status, "archived") {
+			if statusSelected(variant.Status, "draft") {
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, ">Archived</option></select></label></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, ">Draft</option><option value=\"archived\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if statusSelected(variant.Status, "archived") {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 83, " selected")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 84, ">Archived</option></select></label></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 83, "</div></section><div class=\"flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between\"><button data-testid=\"product-save-button\" type=\"submit\" class=\"inline-flex h-12 items-center justify-center rounded-full bg-[#A51931] px-6 text-sm font-black text-white shadow-sm transition hover:bg-[#831426] disabled:cursor-not-allowed disabled:bg-[#4C4A62] disabled:opacity-70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2D2A4A]\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 85, "</div></section><div class=\"flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between\"><button data-testid=\"product-save-button\" type=\"submit\" class=\"inline-flex h-12 items-center justify-center rounded-full bg-[#A51931] px-6 text-sm font-black text-white shadow-sm transition hover:bg-[#831426] disabled:cursor-not-allowed disabled:bg-[#4C4A62] disabled:opacity-70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2D2A4A]\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -803,22 +813,22 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 84, "</button> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 86, "</button> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if vm.Mode == "edit" && string(vm.Product.Status) != "archived" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 85, "<button data-testid=\"product-archive-button\" form=\"archive-product-form\" type=\"submit\" class=\"inline-flex h-12 items-center justify-center rounded-full border border-[#A51931]/30 bg-white px-6 text-sm font-black text-[#A51931] transition hover:bg-[#A51931]/10\">Archive product</button>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 87, "<button data-testid=\"product-archive-button\" form=\"archive-product-form\" type=\"submit\" class=\"inline-flex h-12 items-center justify-center rounded-full border border-[#A51931]/30 bg-white px-6 text-sm font-black text-[#A51931] transition hover:bg-[#A51931]/10\">Archive product</button>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 86, "</div></form>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 88, "</div></form>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if vm.Mode == "edit" && string(vm.Product.Status) != "archived" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 87, "<form id=\"archive-product-form\" method=\"post\" action=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 89, "<form id=\"archive-product-form\" method=\"post\" action=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -831,7 +841,7 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 88, "\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 90, "\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -844,12 +854,12 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 89, "\"></form>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 91, "\"></form>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 90, "</section></div></main></div><script>\n\t\t\t\t(() => {\n\t\t\t\t\tconst fileInput = document.querySelector('[data-testid=\"product-image-input\"]');\n\t\t\t\t\tconst urlInput = document.querySelector('[data-testid=\"product-image-url\"]');\n\t\t\t\t\tconst tokenInput = document.querySelector('[data-testid=\"product-image-token\"]');\n\t\t\t\t\tconst status = document.querySelector('[data-testid=\"product-image-status\"]');\n\t\t\t\t\tconst saveButton = document.querySelector('[data-testid=\"product-save-button\"]');\n\t\t\t\t\tconst csrfInput = document.querySelector('input[name=\"csrf_token\"]');\n\t\t\t\t\tif (!fileInput || !urlInput || !tokenInput || !status || !csrfInput) return;\n\t\t\t\t\tfileInput.addEventListener('change', async () => {\n\t\t\t\t\t\tconst file = fileInput.files && fileInput.files[0];\n\t\t\t\t\t\tif (!file) return;\n\t\t\t\t\t\tstatus.textContent = 'Preparing upload...';\n\t\t\t\t\t\tif (saveButton) saveButton.disabled = true;\n\t\t\t\t\t\ttry {\n\t\t\t\t\t\t\tconst headers = { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfInput.value };\n\t\t\t\t\t\t\tconst presign = await fetch('/admin/uploads/product-image/presign', { method: 'POST', headers, body: JSON.stringify({ content_type: file.type, size_bytes: file.size }) }).then((response) => response.json());\n\t\t\t\t\t\t\tif (!presign.key) throw new Error('presign failed');\n\t\t\t\t\t\t\tif (presign.url !== '/admin/uploads/product-image/local') {\n\t\t\t\t\t\t\t\tconst form = new FormData();\n\t\t\t\t\t\t\t\tObject.entries(presign.fields || {}).forEach(([key, value]) => form.append(key, value));\n\t\t\t\t\t\t\t\tform.append('file', file);\n\t\t\t\t\t\t\t\tconst uploaded = await fetch(presign.url, { method: 'POST', body: form });\n\t\t\t\t\t\t\t\tif (!uploaded.ok) throw new Error('upload failed');\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tconst confirmed = await fetch('/admin/uploads/product-image/confirm', { method: 'POST', headers, body: JSON.stringify({ key: presign.key, content_type: file.type, size_bytes: file.size }) }).then((response) => response.json());\n\t\t\t\t\t\t\tif (!confirmed.url || !confirmed.token) throw new Error('confirm failed');\n\t\t\t\t\t\t\turlInput.value = confirmed.url;\n\t\t\t\t\t\t\ttokenInput.value = confirmed.token;\n\t\t\t\t\t\t\tstatus.textContent = 'Image confirmed: ' + confirmed.url;\n\t\t\t\t\t\t\tif (saveButton) saveButton.disabled = false;\n\t\t\t\t\t\t} catch (error) {\n\t\t\t\t\t\t\turlInput.value = '';\n\t\t\t\t\t\t\ttokenInput.value = '';\n\t\t\t\t\t\t\twindow.sessionStorage.setItem('adminProductImageUploadFailures', String(Number(window.sessionStorage.getItem('adminProductImageUploadFailures') || '0') + 1));\n\t\t\t\t\t\t\tstatus.textContent = 'Image upload failed. Choose a JPEG, PNG, or WebP under 5 MiB.';\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t})();\n\t\t\t</script></body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 92, "</section></div></main></div><script>\n\t\t\t\t(() => {\n\t\t\t\t\tconst fileInput = document.querySelector('[data-testid=\"product-image-input\"]');\n\t\t\t\t\tconst urlInput = document.querySelector('[data-testid=\"product-image-url\"]');\n\t\t\t\t\tconst tokenInput = document.querySelector('[data-testid=\"product-image-token\"]');\n\t\t\t\t\tconst status = document.querySelector('[data-testid=\"product-image-status\"]');\n\t\t\t\t\tconst saveButton = document.querySelector('[data-testid=\"product-save-button\"]');\n\t\t\t\t\tconst csrfInput = document.querySelector('input[name=\"csrf_token\"]');\n\t\t\t\t\tif (!fileInput || !urlInput || !tokenInput || !status || !csrfInput) return;\n\t\t\t\t\tfileInput.addEventListener('change', async () => {\n\t\t\t\t\t\tconst file = fileInput.files && fileInput.files[0];\n\t\t\t\t\t\tif (!file) return;\n\t\t\t\t\t\tstatus.textContent = 'Preparing upload...';\n\t\t\t\t\t\tif (saveButton) saveButton.disabled = true;\n\t\t\t\t\t\ttry {\n\t\t\t\t\t\t\tconst headers = { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfInput.value };\n\t\t\t\t\t\t\tconst presign = await fetch('/admin/uploads/product-image/presign', { method: 'POST', headers, body: JSON.stringify({ content_type: file.type, size_bytes: file.size }) }).then((response) => response.json());\n\t\t\t\t\t\t\tif (!presign.key) throw new Error('presign failed');\n\t\t\t\t\t\t\tif (presign.url !== '/admin/uploads/product-image/local') {\n\t\t\t\t\t\t\t\tconst form = new FormData();\n\t\t\t\t\t\t\t\tObject.entries(presign.fields || {}).forEach(([key, value]) => form.append(key, value));\n\t\t\t\t\t\t\t\tform.append('file', file);\n\t\t\t\t\t\t\t\tconst uploaded = await fetch(presign.url, { method: 'POST', body: form });\n\t\t\t\t\t\t\t\tif (!uploaded.ok) throw new Error('upload failed');\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tconst confirmed = await fetch('/admin/uploads/product-image/confirm', { method: 'POST', headers, body: JSON.stringify({ key: presign.key, content_type: file.type, size_bytes: file.size }) }).then((response) => response.json());\n\t\t\t\t\t\t\tif (!confirmed.url || !confirmed.token) throw new Error('confirm failed');\n\t\t\t\t\t\t\turlInput.value = confirmed.url;\n\t\t\t\t\t\t\ttokenInput.value = confirmed.token;\n\t\t\t\t\t\t\tstatus.textContent = 'Image confirmed: ' + confirmed.url;\n\t\t\t\t\t\t\tif (saveButton) saveButton.disabled = false;\n\t\t\t\t\t\t} catch (error) {\n\t\t\t\t\t\t\turlInput.value = '';\n\t\t\t\t\t\t\ttokenInput.value = '';\n\t\t\t\t\t\t\twindow.sessionStorage.setItem('adminProductImageUploadFailures', String(Number(window.sessionStorage.getItem('adminProductImageUploadFailures') || '0') + 1));\n\t\t\t\t\t\t\tstatus.textContent = 'Image upload failed. Choose a JPEG, PNG, or WebP under 5 MiB.';\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t})();\n\t\t\t</script></body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

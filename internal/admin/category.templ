@@ -60,7 +60,7 @@ templ adminCategoryListPage(vm adminCategoryListViewModel) {
 									<article data-testid="admin-category-row" class="grid gap-4 p-5 md:grid-cols-[1fr_auto] md:items-center">
 										<div>
 											<a href={ "/admin/categories/" + category.Slug + "/edit" } class="text-xl font-black text-[#2D2A4A] transition hover:text-[#A51931]">{ category.Name }</a>
-											<p class="mt-1 text-sm font-bold text-[#4C4A62]">/{ category.Slug } · Sort { strconv.Itoa(category.SortOrder) } · version { strconv.Itoa(category.Version) }</p>
+											<p class="mt-1 text-sm font-bold text-[#4C4A62]">/categories/{ category.Slug } · Sort { strconv.Itoa(category.SortOrder) } · version { strconv.Itoa(category.Version) }</p>
 											<p class="mt-2 inline-flex rounded-full bg-[#F4F5F8] px-3 py-1 text-xs font-black uppercase tracking-wide text-[#2D2A4A]">{ string(category.Status) }</p>
 										</div>
 										<a href={ "/admin/categories/" + category.Slug + "/edit" } class="inline-flex h-11 items-center justify-center rounded-full bg-[#2D2A4A] px-5 text-sm font-black text-white shadow-sm transition hover:bg-[#17172A]">Edit</a>

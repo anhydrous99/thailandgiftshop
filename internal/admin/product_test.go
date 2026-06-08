@@ -21,10 +21,13 @@ func TestProductListRendersAdminProductsAndNewProductLink(t *testing.T) {
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusOK)
 	}
-	for _, want := range []string{"Products", "Test Draft", "/admin/products/prod_test_draft/edit", "New product", "data-testid=\"admin-product-row\""} {
+	for _, want := range []string{"Products", "Test Draft", "/products/test-draft", "/admin/products/prod_test_draft/edit", "New product", "data-testid=\"admin-product-row\""} {
 		if !strings.Contains(response.Body, want) {
 			t.Fatalf("product list missing %q: %q", want, response.Body)
 		}
+	}
+	if strings.Contains(response.Body, ">/test-draft") {
+		t.Fatalf("product list used bare public slug path: %q", response.Body)
 	}
 	assertNoStore(t, response)
 }
@@ -91,11 +94,53 @@ func TestProductUpdateRejectsUnsafeRouteSlugBeforeWrite(t *testing.T) {
 	if response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d; body %q", response.StatusCode, http.StatusBadRequest, response.Body)
 	}
-	if !strings.Contains(response.Body, "Slug must use only lowercase letters, numbers, and hyphens") {
-		t.Fatalf("unsafe update slug response missing validation copy: %q", response.Body)
+	for _, want := range []string{"Slug must use only lowercase letters, numbers, and hyphens", "Product slug cannot be changed"} {
+		if !strings.Contains(response.Body, want) {
+			t.Fatalf("unsafe update slug response missing %q: %q", want, response.Body)
+		}
 	}
 	if _, found, err := store.GetProductBySlug(context.Background(), "bad slug"); err != nil || found {
 		t.Fatalf("unsafe update slug product write found=%v err=%v, want no write", found, err)
+	}
+}
+
+func TestProductUpdateRejectsSlugChangeBeforeWrite(t *testing.T) {
+	handler, store := newProductTestHandler(t)
+	created := authenticatedProductPost(t, handler, "/admin/products", validProductForm(t, handler))
+	productID := productIDFromRedirect(t, created.Headers["Location"])
+	values := validProductForm(t, handler)
+	values.Set("version", "1")
+	values.Set("slug", "renamed-test-shirt")
+
+	response := authenticatedProductPost(t, handler, "/admin/products/"+productID+"/edit", values)
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body %q", response.StatusCode, http.StatusBadRequest, response.Body)
+	}
+	if !strings.Contains(response.Body, "Product slug cannot be changed") {
+		t.Fatalf("slug mutation response missing validation copy: %q", response.Body)
+	}
+	if _, found, err := store.GetProductBySlug(context.Background(), "renamed-test-shirt"); err != nil || found {
+		t.Fatalf("renamed slug product write found=%v err=%v, want no write", found, err)
+	}
+	product, found, err := store.GetProductBySlug(context.Background(), "test-shirt")
+	if err != nil || !found || product.Version != 1 {
+		t.Fatalf("original product found=%v err=%v product=%#v", found, err, product)
+	}
+}
+
+func TestProductEditFormLocksSlugInput(t *testing.T) {
+	handler, _ := newProductTestHandler(t)
+	created := authenticatedProductPost(t, handler, "/admin/products", validProductForm(t, handler))
+	productID := productIDFromRedirect(t, created.Headers["Location"])
+
+	response := authenticatedProductGet(t, handler, "/admin/products/"+productID+"/edit")
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	for _, want := range []string{`data-testid="product-slug-input"`, `name="slug"`, `value="test-shirt"`, `readonly`} {
+		if !strings.Contains(response.Body, want) {
+			t.Fatalf("edit form missing %q: %q", want, response.Body)
+		}
 	}
 }
 

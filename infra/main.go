@@ -559,6 +559,65 @@ func cartCookieSecretReference(secret awssecretsmanager.ISecret) *string {
 	).ToString()
 }
 
+func addCanonicalHostRedirectFunction(stack awscdk.Stack) awscloudfront.Function {
+	return awscloudfront.NewFunction(stack, jsii.String("CanonicalHostRedirectFunction"), &awscloudfront.FunctionProps{
+		Code: awscloudfront.FunctionCode_FromInline(jsii.String(`function handler(event) {
+    var request = event.request;
+    var host = request.headers.host.value.toLowerCase();
+
+    if (host !== "www.thailandgiftshop.com") {
+        return request;
+    }
+
+    var location = "https://thailandgiftshop.com" + request.uri;
+    var querystring = request.querystring;
+    var queryParts = [];
+
+    for (var name in querystring) {
+        if (!Object.prototype.hasOwnProperty.call(querystring, name)) {
+            continue;
+        }
+
+        var parameter = querystring[name];
+        if (parameter.multiValue) {
+            for (var index = 0; index < parameter.multiValue.length; index++) {
+                queryParts.push(name + "=" + parameter.multiValue[index].value);
+            }
+            continue;
+        }
+
+        queryParts.push(name + "=" + parameter.value);
+    }
+
+    if (queryParts.length > 0) {
+        location += "?" + queryParts.join("&");
+    }
+
+    return {
+        statusCode: 308,
+        statusDescription: "Permanent Redirect",
+        headers: {
+            location: {
+                value: location
+            }
+        }
+    };
+}`)),
+		Comment:      jsii.String("Redirect www.thailandgiftshop.com requests to the apex host"),
+		FunctionName: jsii.String("thailandgiftshop-www-to-apex"),
+		Runtime:      awscloudfront.FunctionRuntime_JS_2_0(),
+	})
+}
+
+func canonicalHostRedirectAssociations(function awscloudfront.Function) *[]*awscloudfront.FunctionAssociation {
+	return &[]*awscloudfront.FunctionAssociation{
+		{
+			EventType: awscloudfront.FunctionEventType_VIEWER_REQUEST,
+			Function:  function,
+		},
+	}
+}
+
 func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi, productImagesBucket awss3.IBucket, adminOriginHeaderSecret awssecretsmanager.ISecret) siteResources {
 	hostedZone := siteHostedZone(stack)
 	certificate := awscertificatemanager.NewCertificate(stack, jsii.String("SiteCertificate"), &awscertificatemanager.CertificateProps{
@@ -571,6 +630,8 @@ func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi, productImagesB
 	securityHeadersPolicy := siteSecurityHeaders(stack)
 	adminWebACL := addAdminCloudFrontWebACL(stack)
 	originRequestPolicy := ssrOriginRequestPolicy(stack)
+	canonicalHostRedirectFunction := addCanonicalHostRedirectFunction(stack)
+	canonicalHostRedirectFunctionAssociations := canonicalHostRedirectAssociations(canonicalHostRedirectFunction)
 
 	staticBucket := awss3.NewBucket(stack, jsii.String("StaticAssetsBucket"), &awss3.BucketProps{
 		BlockPublicAccess: awss3.BlockPublicAccess_BLOCK_ALL(),
@@ -599,6 +660,7 @@ func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi, productImagesB
 			OriginRequestPolicy:   originRequestPolicy,
 			ResponseHeadersPolicy: securityHeadersPolicy,
 			ViewerProtocolPolicy:  awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
+			FunctionAssociations:  canonicalHostRedirectFunctionAssociations,
 		},
 		AdditionalBehaviors: &map[string]*awscloudfront.BehaviorOptions{
 			"static/*": {
@@ -608,6 +670,7 @@ func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi, productImagesB
 				Origin:                awscloudfrontorigins.S3BucketOrigin_WithOriginAccessControl(staticBucket, nil),
 				ResponseHeadersPolicy: securityHeadersPolicy,
 				ViewerProtocolPolicy:  awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
+				FunctionAssociations:  canonicalHostRedirectFunctionAssociations,
 			},
 			"images/*": {
 				AllowedMethods:        awscloudfront.AllowedMethods_ALLOW_GET_HEAD(),
@@ -616,6 +679,7 @@ func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi, productImagesB
 				Origin:                awscloudfrontorigins.S3BucketOrigin_WithOriginAccessControl(productImagesBucket, nil),
 				ResponseHeadersPolicy: securityHeadersPolicy,
 				ViewerProtocolPolicy:  awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
+				FunctionAssociations:  canonicalHostRedirectFunctionAssociations,
 			},
 		},
 		WebAclId: adminWebACL.AttrArn(),

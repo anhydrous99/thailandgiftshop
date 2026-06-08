@@ -3,6 +3,7 @@ package ssr
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -89,6 +90,16 @@ func TestRouteForPath(t *testing.T) {
 			name: "checkout",
 			path: "/checkout",
 			want: pageRoute{kind: pageCheckout, knownPageShape: true},
+		},
+		{
+			name: "robots txt",
+			path: "/robots.txt",
+			want: pageRoute{kind: pageRobotsTxt, knownPageShape: true},
+		},
+		{
+			name: "sitemap xml",
+			path: "/sitemap.xml",
+			want: pageRoute{kind: pageSitemapXML, knownPageShape: true},
 		},
 		{
 			name: "cart items mutation",
@@ -279,6 +290,95 @@ func TestRedirects(t *testing.T) {
 	}
 }
 
+func TestRobotsTxtAllowsCrawlingAndAdvertisesSitemap(t *testing.T) {
+	handler := NewHandler(routeMatrixStore())
+	response, err := handler.Handle(context.Background(), pageRequest(http.MethodGet, "/robots.txt"))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	if got := response.Headers["Content-Type"]; got != textContentType {
+		t.Fatalf("Content-Type = %q, want %q", got, textContentType)
+	}
+	if got := response.Headers["Cache-Control"]; got != seoDiscoveryCacheControl {
+		t.Fatalf("Cache-Control = %q, want %q", got, seoDiscoveryCacheControl)
+	}
+	assertBodyContains(t, response.Body, []string{
+		"User-agent: *\n",
+		"Allow: /\n",
+		"Sitemap: " + canonicalHost + "/sitemap.xml\n",
+	})
+	assertBodyOmits(t, response.Body, []string{"Disallow: /cart", "Disallow: /checkout", "admin"})
+
+	headResponse, err := handler.Handle(context.Background(), pageRequest(http.MethodHead, "/robots.txt"))
+	if err != nil {
+		t.Fatalf("HEAD Handle returned error: %v", err)
+	}
+	if headResponse.StatusCode != http.StatusOK || headResponse.Body != "" {
+		t.Fatalf("HEAD response = status %d body %q, want 200 empty", headResponse.StatusCode, headResponse.Body)
+	}
+	if got := headResponse.Headers["Cache-Control"]; got != seoDiscoveryCacheControl {
+		t.Fatalf("HEAD Cache-Control = %q, want %q", got, seoDiscoveryCacheControl)
+	}
+}
+
+func TestSitemapIncludesOnlyPublicIndexActiveDetailAndStoryURLs(t *testing.T) {
+	activeProduct := catalog.Product{Slug: "thai-tea-sampler", Name: "Thai Tea Selection", Status: catalog.StatusActive, UpdatedAt: time.Date(2026, 6, 2, 9, 0, 0, 0, time.UTC)}
+	draftProduct := catalog.Product{Slug: "draft-product", Name: "Draft Product", Status: catalog.StatusDraft, UpdatedAt: time.Date(2026, 6, 3, 9, 0, 0, 0, time.UTC)}
+	activeCategory := catalog.Category{Slug: "thai-snacks", Name: "Thai Snacks", Status: catalog.StatusActive, UpdatedAt: time.Date(2026, 6, 4, 9, 0, 0, 0, time.UTC)}
+	draftCategory := catalog.Category{Slug: "hidden-category", Name: "Hidden Category", Status: catalog.StatusDraft, UpdatedAt: time.Date(2026, 6, 5, 9, 0, 0, 0, time.UTC)}
+	handler := NewHandler(&fakeCatalogStore{
+		products:   []catalog.Product{activeProduct, draftProduct},
+		categories: []catalog.Category{activeCategory, draftCategory},
+	})
+
+	response, err := handler.Handle(context.Background(), pageRequest(http.MethodGet, "/sitemap.xml"))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	if got := response.Headers["Content-Type"]; got != xmlContentType {
+		t.Fatalf("Content-Type = %q, want %q", got, xmlContentType)
+	}
+	if got := response.Headers["Cache-Control"]; got != seoDiscoveryCacheControl {
+		t.Fatalf("Cache-Control = %q, want %q", got, seoDiscoveryCacheControl)
+	}
+	assertBodyContains(t, response.Body, []string{
+		`<loc>` + canonicalHost + `/</loc>`,
+		`<loc>` + canonicalHost + `/products</loc>`,
+		`<loc>` + canonicalHost + `/products/thai-tea-sampler</loc>`,
+		`<lastmod>2026-06-02</lastmod>`,
+		`<loc>` + canonicalHost + `/categories</loc>`,
+		`<loc>` + canonicalHost + `/categories/thai-snacks</loc>`,
+		`<lastmod>2026-06-04</lastmod>`,
+		`<loc>` + canonicalHost + `/story</loc>`,
+	})
+	assertBodyOmits(t, response.Body, []string{
+		"draft-product",
+		"hidden-category",
+		"/cart",
+		"/checkout",
+		"/admin",
+		"/shop",
+		"/about",
+	})
+
+	headResponse, err := handler.Handle(context.Background(), pageRequest(http.MethodHead, "/sitemap.xml"))
+	if err != nil {
+		t.Fatalf("HEAD Handle returned error: %v", err)
+	}
+	if headResponse.StatusCode != http.StatusOK || headResponse.Body != "" {
+		t.Fatalf("HEAD response = status %d body %q, want 200 empty", headResponse.StatusCode, headResponse.Body)
+	}
+	if got := headResponse.Headers["Cache-Control"]; got != seoDiscoveryCacheControl {
+		t.Fatalf("HEAD Cache-Control = %q, want %q", got, seoDiscoveryCacheControl)
+	}
+}
+
 func TestKnownPageMethods(t *testing.T) {
 	for _, path := range []string{
 		"/",
@@ -289,6 +389,8 @@ func TestKnownPageMethods(t *testing.T) {
 		"/story",
 		"/cart",
 		"/checkout",
+		"/robots.txt",
+		"/sitemap.xml",
 		"/shop",
 		"/about",
 		"/products/",
@@ -359,6 +461,50 @@ func TestCartRoutes(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCartAndCheckoutRenderNoindexRobots(t *testing.T) {
+	t.Setenv(cart.EnvCookieSecret, ssrTestCartSecret)
+
+	request := pageRequest(http.MethodGet, "/cart")
+	request.Cookies = []string{cart.CookieName + "=" + encodedTestCart(t, []cart.Line{{Slug: "mango-sticky-rice-kit", Quantity: 1}})}
+	response, err := NewHandler(cartRouteStore()).Handle(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Handle cart returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("cart status code = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	if got := response.Headers["X-Robots-Tag"]; got != "noindex, follow" {
+		t.Fatalf("cart X-Robots-Tag = %q, want noindex, follow", got)
+	}
+	if got := response.Headers["Cache-Control"]; got != privatePageCacheControl {
+		t.Fatalf("cart Cache-Control = %q, want %q", got, privatePageCacheControl)
+	}
+	assertBodyContains(t, response.Body, []string{
+		`<meta name="robots" content="noindex, follow">`,
+		`<link rel="canonical" href="` + canonicalHost + `/cart">`,
+	})
+
+	checkoutRequest := pageRequest(http.MethodGet, "/checkout")
+	checkoutRequest.Cookies = request.Cookies
+	checkoutResponse, err := NewHandler(cartRouteStore()).Handle(context.Background(), checkoutRequest)
+	if err != nil {
+		t.Fatalf("Handle checkout returned error: %v", err)
+	}
+	if checkoutResponse.StatusCode != http.StatusOK {
+		t.Fatalf("checkout status code = %d, want %d", checkoutResponse.StatusCode, http.StatusOK)
+	}
+	if got := checkoutResponse.Headers["X-Robots-Tag"]; got != "noindex, follow" {
+		t.Fatalf("checkout X-Robots-Tag = %q, want noindex, follow", got)
+	}
+	if got := checkoutResponse.Headers["Cache-Control"]; got != privatePageCacheControl {
+		t.Fatalf("checkout Cache-Control = %q, want %q", got, privatePageCacheControl)
+	}
+	assertBodyContains(t, checkoutResponse.Body, []string{
+		`<meta name="robots" content="noindex, follow">`,
+		`<link rel="canonical" href="` + canonicalHost + `/checkout">`,
+	})
 }
 
 func TestCartMutationsPostCartItemsSetsCookieAndRedirectsToCart(t *testing.T) {
@@ -510,6 +656,9 @@ func TestCheckoutReviewEmptyCartRedirectsToCart(t *testing.T) {
 	if got := response.Headers["Location"]; got != "/cart" {
 		t.Fatalf("Location = %q, want /cart", got)
 	}
+	if got := response.Headers["Cache-Control"]; got != privatePageCacheControl {
+		t.Fatalf("Cache-Control = %q, want %q", got, privatePageCacheControl)
+	}
 }
 
 func TestCartPageRenders(t *testing.T) {
@@ -612,6 +761,9 @@ func TestCheckoutRedirectsWhenCartHasUnavailableVariant(t *testing.T) {
 	}
 	if got := response.Headers["Location"]; got != "/cart" {
 		t.Fatalf("Location = %q, want /cart", got)
+	}
+	if got := response.Headers["Cache-Control"]; got != privatePageCacheControl {
+		t.Fatalf("Cache-Control = %q, want %q", got, privatePageCacheControl)
 	}
 }
 
@@ -772,6 +924,9 @@ func TestCheckoutNever500sWithStaleCartCookie(t *testing.T) {
 	if got := response.Headers["Location"]; got != "/cart" {
 		t.Fatalf("Location = %q, want /cart", got)
 	}
+	if got := response.Headers["Cache-Control"]; got != privatePageCacheControl {
+		t.Fatalf("Cache-Control = %q, want %q", got, privatePageCacheControl)
+	}
 	if len(response.Cookies) != 1 || !strings.Contains(response.Cookies[0], "Max-Age=0") {
 		t.Fatalf("cookies = %#v, want clearing cookie", response.Cookies)
 	}
@@ -884,6 +1039,24 @@ func TestHandle(t *testing.T) {
 				if got := response.Headers[key]; got != want {
 					t.Fatalf("header %s = %q, want %q", key, got, want)
 				}
+			}
+		})
+	}
+}
+
+func TestPublicHTMLPagesDoNotSetCacheControl(t *testing.T) {
+	handler := NewHandler(routeMatrixStore())
+	for _, path := range []string{"/", "/products", "/products/thai-tea-sampler", "/categories", "/categories/thai-snacks", "/story"} {
+		t.Run(path, func(t *testing.T) {
+			response, err := handler.Handle(context.Background(), pageRequest(http.MethodGet, path))
+			if err != nil {
+				t.Fatalf("Handle returned error: %v", err)
+			}
+			if response.StatusCode != http.StatusOK {
+				t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
+			}
+			if got := response.Headers["Cache-Control"]; got != "" {
+				t.Fatalf("Cache-Control = %q, want empty", got)
 			}
 		})
 	}
@@ -1040,6 +1213,112 @@ func TestHomeIncludesFrontendAssets(t *testing.T) {
 			t.Fatalf("body does not contain %q: %q", want, response.Body)
 		}
 	}
+}
+
+func TestPublicPagesRenderSEOHeadMetadata(t *testing.T) {
+	handler := NewHandler(routeMatrixStore())
+	tests := []struct {
+		path        string
+		title       string
+		description string
+		canonical   string
+	}{
+		{path: "/", title: "Thailand Gift Shop", description: "Browse a Thai gift-shop catalog of snacks, souvenirs, pantry favorites, textiles, decor, wellness, and small keepsakes.", canonical: canonicalHost + "/"},
+		{path: "/products", title: "Products | Thailand Gift Shop", description: "Browse Thai snacks, souvenirs, textiles, pantry items, decor, wellness, and small keepsakes.", canonical: canonicalHost + "/products"},
+		{path: "/products/thai-tea-sampler", title: "Thai Tea Selection | Thailand Gift Shop", description: "Loose leaf Thai tea and sweet snacks.", canonical: canonicalHost + "/products/thai-tea-sampler"},
+		{path: "/categories", title: "Categories | Thailand Gift Shop", description: "Shop Thai gift-shop finds by aisle, including snacks, souvenirs, textiles, decor, wellness, and pantry favorites.", canonical: canonicalHost + "/categories"},
+		{path: "/categories/thai-snacks", title: "Thai Snacks | Thailand Gift Shop", description: "Crunchy, sweet, and pantry-friendly finds.", canonical: canonicalHost + "/categories/thai-snacks"},
+		{path: "/story", title: "Our Story | Thailand Gift Shop", description: "Learn how Thailand Gift Shop organizes Thai snacks, souvenirs, textiles, pantry items, decor, wellness, and small keepsakes for calm browsing.", canonical: canonicalHost + "/story"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.path, func(t *testing.T) {
+			response, err := handler.Handle(context.Background(), pageRequest(http.MethodGet, test.path))
+			if err != nil {
+				t.Fatalf("Handle returned error: %v", err)
+			}
+			if response.StatusCode != http.StatusOK {
+				t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
+			}
+			assertBodyContains(t, response.Body, []string{
+				`<title>` + test.title + `</title>`,
+				`<meta name="description" content="` + test.description + `">`,
+				`<link rel="canonical" href="` + test.canonical + `">`,
+				`<meta property="og:site_name" content="Thailand Gift Shop">`,
+				`<meta property="og:title" content="` + test.title + `">`,
+				`<meta property="og:description" content="` + test.description + `">`,
+				`<meta property="og:url" content="` + test.canonical + `">`,
+				`<meta name="twitter:card" content="summary_large_image">`,
+				`<meta name="twitter:title" content="` + test.title + `">`,
+				`<meta name="twitter:description" content="` + test.description + `">`,
+			})
+		})
+	}
+}
+
+func TestHomeRendersOrganizationAndWebSiteJSONLD(t *testing.T) {
+	response, err := NewHandler(routeMatrixStore()).Handle(context.Background(), pageRequest(http.MethodGet, "/"))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+
+	organization := structuredDataByID(t, response.Body, "structured-data-0")
+	if organization["@type"] != "Organization" || organization["name"] != "Thailand Gift Shop" || organization["url"] != canonicalHost {
+		t.Fatalf("organization JSON-LD = %#v", organization)
+	}
+	if organization["logo"] != canonicalHost+"/static/logo.svg" {
+		t.Fatalf("organization logo = %#v, want canonical logo", organization["logo"])
+	}
+	website := structuredDataByID(t, response.Body, "structured-data-1")
+	if website["@type"] != "WebSite" || website["name"] != "Thailand Gift Shop" || website["url"] != canonicalHost {
+		t.Fatalf("website JSON-LD = %#v", website)
+	}
+}
+
+func TestPublicPagesRenderVisibleBreadcrumbsAndBreadcrumbListJSONLD(t *testing.T) {
+	handler := NewHandler(routeMatrixStore())
+	tests := []struct {
+		path             string
+		structuredDataID string
+		breadcrumbs      []breadcrumbItem
+	}{
+		{path: "/products", structuredDataID: "structured-data-0", breadcrumbs: productListingBreadcrumbs()},
+		{path: "/products/thai-tea-sampler", structuredDataID: "structured-data-1", breadcrumbs: productDetailBreadcrumbs(catalog.Product{Slug: "thai-tea-sampler", Name: "Thai Tea Selection"})},
+		{path: "/categories", structuredDataID: "structured-data-0", breadcrumbs: categoryIndexBreadcrumbs()},
+		{path: "/categories/thai-snacks", structuredDataID: "structured-data-0", breadcrumbs: categoryDetailBreadcrumbs(catalog.Category{Slug: "thai-snacks", Name: "Thai Snacks"})},
+		{path: "/story", structuredDataID: "structured-data-0", breadcrumbs: storyBreadcrumbs()},
+	}
+
+	for _, test := range tests {
+		t.Run(test.path, func(t *testing.T) {
+			response, err := handler.Handle(context.Background(), pageRequest(http.MethodGet, test.path))
+			if err != nil {
+				t.Fatalf("Handle returned error: %v", err)
+			}
+			if response.StatusCode != http.StatusOK {
+				t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
+			}
+			assertBodyContains(t, response.Body, []string{`aria-label="Breadcrumb"`})
+			for _, breadcrumb := range test.breadcrumbs {
+				assertBodyContains(t, response.Body, []string{`href="` + breadcrumb.Path + `"`, breadcrumb.Name})
+			}
+			assertBreadcrumbJSONLD(t, response.Body, test.structuredDataID, test.breadcrumbs)
+		})
+	}
+}
+
+func TestHomeDoesNotRenderBreadcrumbListWithoutVisibleBreadcrumbs(t *testing.T) {
+	response, err := NewHandler(routeMatrixStore()).Handle(context.Background(), pageRequest(http.MethodGet, "/"))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	assertBodyOmits(t, response.Body, []string{`aria-label="Breadcrumb"`, `"@type":"BreadcrumbList"`})
 }
 
 func TestHomeRendersProductImageURLsFromCatalog(t *testing.T) {
@@ -1465,6 +1744,53 @@ func TestProductDetailRendersExactActiveProduct(t *testing.T) {
 	})
 }
 
+func TestProductDetailRendersProductOfferJSONLDOnlyOnDetailPage(t *testing.T) {
+	product := catalog.Product{
+		Slug:          "mango-sticky-rice-kit",
+		Name:          "Mango Sticky Rice Treats",
+		Description:   "Shelf-stable Thai dessert snacks.",
+		PriceCents:    2899,
+		ImageURL:      "/images/products/mango-sticky-rice-kit.jpg",
+		Status:        catalog.StatusActive,
+		StockQuantity: 4,
+	}
+	handler := NewHandlerWithProductImagePlaceholderURL(&fakeCatalogStore{
+		products:       []catalog.Product{product},
+		productsBySlug: map[string]catalog.Product{product.Slug: product},
+	}, "/images/placeholder-product.jpg")
+
+	detailResponse, err := handler.Handle(context.Background(), pageRequest(http.MethodGet, "/products/mango-sticky-rice-kit"))
+	if err != nil {
+		t.Fatalf("Handle detail returned error: %v", err)
+	}
+	if detailResponse.StatusCode != http.StatusOK {
+		t.Fatalf("detail status code = %d, want %d", detailResponse.StatusCode, http.StatusOK)
+	}
+	productData := structuredDataByID(t, detailResponse.Body, "structured-data-0")
+	if productData["@type"] != "Product" || productData["name"] != product.Name || productData["description"] != product.Description {
+		t.Fatalf("product JSON-LD = %#v", productData)
+	}
+	if productData["url"] != canonicalHost+"/products/mango-sticky-rice-kit" {
+		t.Fatalf("product url = %#v", productData["url"])
+	}
+	if productData["image"] != canonicalHost+"/images/products/mango-sticky-rice-kit.jpg" {
+		t.Fatalf("product image = %#v", productData["image"])
+	}
+	offer, ok := productData["offers"].(map[string]any)
+	if !ok {
+		t.Fatalf("offers missing or wrong type: %#v", productData["offers"])
+	}
+	if offer["@type"] != "Offer" || offer["priceCurrency"] != "USD" || offer["price"] != "28.99" || offer["availability"] != "https://schema.org/InStock" {
+		t.Fatalf("offer JSON-LD = %#v", offer)
+	}
+
+	listingResponse, err := handler.Handle(context.Background(), pageRequest(http.MethodGet, "/products"))
+	if err != nil {
+		t.Fatalf("Handle listing returned error: %v", err)
+	}
+	assertBodyOmits(t, listingResponse.Body, []string{`"@type":"Product"`, `"@type":"Offer"`})
+}
+
 func TestProductDetailRendersCartFormForInStockProduct(t *testing.T) {
 	product := catalog.Product{
 		ID:            "prod_active_cart",
@@ -1500,6 +1826,8 @@ func TestProductDetailRendersCartFormForInStockProduct(t *testing.T) {
 	assertBodyOmits(t, response.Body, []string{
 		`prod_active_cart`,
 		`/products/prod_`,
+		`href="/categories/hidden-category"`,
+		`Hidden Category`,
 	})
 }
 
@@ -1873,6 +2201,18 @@ func TestCategoryDetailRendersCategoryAndActiveProducts(t *testing.T) {
 				Description: "Crunchy, sweet, and pantry-friendly finds.",
 				Status:      catalog.StatusActive,
 			},
+			{
+				Slug:        "temple-bells",
+				Name:        "Temple Bells",
+				Description: "Small brass bells and shrine-side keepsakes.",
+				Status:      catalog.StatusActive,
+			},
+			{
+				Slug:        "hidden-category",
+				Name:        "Hidden Category",
+				Description: "Should not be visible.",
+				Status:      catalog.StatusDraft,
+			},
 		},
 		categoryProducts: map[string][]catalog.Product{
 			"thai-snacks": {
@@ -1922,12 +2262,21 @@ func TestCategoryDetailRendersCategoryAndActiveProducts(t *testing.T) {
 		`Loose leaf Thai tea and sweet snacks.`,
 		`$21.99`,
 		`In stock`,
+		`aria-label="More categories"`,
+		`Browse more Thai gift-shop categories`,
+		`href="/categories/temple-bells"`,
+		`Temple Bells`,
 	})
+	if got := strings.Count(response.Body, `href="/categories/thai-snacks"`); got != 1 {
+		t.Fatalf("current category links = %d, want only the breadcrumb link: %q", got, response.Body)
+	}
 	assertBodyOmits(t, response.Body, []string{
 		`href="/products/draft-snack"`,
 		`Draft Snack`,
 		`prod_active_101`,
 		`/products/prod_`,
+		`href="/categories/hidden-category"`,
+		`Hidden Category`,
 	})
 }
 
@@ -2538,6 +2887,49 @@ func assertBodyOmits(t *testing.T, body string, unwanteds []string) {
 			t.Fatalf("body unexpectedly contains %q: %q", unwanted, body)
 		}
 	}
+}
+
+func assertBreadcrumbJSONLD(t *testing.T, body string, id string, want []breadcrumbItem) {
+	t.Helper()
+	data := structuredDataByID(t, body, id)
+	if data["@type"] != "BreadcrumbList" {
+		t.Fatalf("structured data %s type = %#v, want BreadcrumbList", id, data["@type"])
+	}
+	items, ok := data["itemListElement"].([]any)
+	if !ok {
+		t.Fatalf("breadcrumb itemListElement missing or wrong type: %#v", data["itemListElement"])
+	}
+	if len(items) != len(want) {
+		t.Fatalf("breadcrumb item count = %d, want %d: %#v", len(items), len(want), items)
+	}
+	for index, itemValue := range items {
+		item, ok := itemValue.(map[string]any)
+		if !ok {
+			t.Fatalf("breadcrumb item %d wrong type: %#v", index, itemValue)
+		}
+		if item["@type"] != "ListItem" || item["position"] != float64(index+1) || item["name"] != want[index].Name || item["item"] != canonicalURL(want[index].Path) {
+			t.Fatalf("breadcrumb item %d = %#v, want %#v", index, item, want[index])
+		}
+	}
+}
+
+func structuredDataByID(t *testing.T, body string, id string) map[string]any {
+	t.Helper()
+	startMarker := `<script id="` + id + `" type="application/ld+json">`
+	start := strings.Index(body, startMarker)
+	if start < 0 {
+		t.Fatalf("structured data script %q not found in body: %q", id, body)
+	}
+	jsonStart := start + len(startMarker)
+	end := strings.Index(body[jsonStart:], `</script>`)
+	if end < 0 {
+		t.Fatalf("structured data script %q is missing closing tag", id)
+	}
+	var data map[string]any
+	if err := json.Unmarshal([]byte(body[jsonStart:jsonStart+end]), &data); err != nil {
+		t.Fatalf("structured data script %q is not valid JSON: %v", id, err)
+	}
+	return data
 }
 
 type testMetricRecorder struct {

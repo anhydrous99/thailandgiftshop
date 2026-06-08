@@ -3,7 +3,7 @@ package ssr
 templ checkoutPage(vm checkoutPageViewModel) {
 	<!DOCTYPE html>
 	<html lang="en" class="scroll-smooth">
-		@siteHead("Checkout Review | Thailand Gift Shop")
+		@siteHead(vm.Metadata)
 		<body class="min-h-screen bg-[#F8F4EE] text-[#17172A] antialiased">
 			@siteHeader("page", vm.HeaderCartLabel)
 			<main>

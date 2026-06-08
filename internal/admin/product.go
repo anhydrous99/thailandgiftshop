@@ -265,7 +265,12 @@ func productFromForm(values url.Values, previous catalog.Product, session adminS
 		product = catalog.Product{ID: "prod_" + strings.ReplaceAll(id, "-", ""), CreatedAt: now.UTC(), Version: 0}
 	}
 	product.Name = strings.TrimSpace(values.Get("name"))
-	product.Slug = strings.TrimSpace(values.Get("slug"))
+	submittedSlug := strings.TrimSpace(values.Get("slug"))
+	if create {
+		product.Slug = submittedSlug
+	} else if submittedSlug == previous.Slug {
+		product.Slug = previous.Slug
+	}
 	product.Description = strings.TrimSpace(values.Get("description"))
 	product.ImageURL = strings.TrimSpace(values.Get("image_url"))
 	product.Status = catalog.Status(strings.TrimSpace(values.Get("status")))
@@ -276,12 +281,11 @@ func productFromForm(values url.Values, previous catalog.Product, session adminS
 	product.StockQuantity = intFromForm(values.Get("stock_quantity"))
 	product.Variants = variantsFromForm(values)
 
-	errorsList := validateProductForm(product, previous, imageToken, session, secret, now, create)
+	errorsList := validateProductForm(product, previous, submittedSlug, imageToken, session, secret, now, create)
 	return product, imageToken, errorsList
 }
 
-func validateProductForm(product catalog.Product, previous catalog.Product, imageToken string, session adminSession, secret string, now time.Time, create bool) []string {
-	_ = create
+func validateProductForm(product catalog.Product, previous catalog.Product, submittedSlug string, imageToken string, session adminSession, secret string, now time.Time, create bool) []string {
 	var errorsList []string
 	if product.Name == "" {
 		errorsList = append(errorsList, "Name is required.")
@@ -299,6 +303,16 @@ func validateProductForm(product catalog.Product, previous catalog.Product, imag
 	}
 	if product.ImageURL != "" && product.ImageURL != previous.ImageURL && !validConfirmedProductImageToken(imageToken, product.ImageURL, session, secret, now) {
 		errorsList = append(errorsList, "Upload and confirm a product image before saving.")
+	}
+	if !create {
+		if submittedSlug == "" {
+			errorsList = append(errorsList, "Slug is required.")
+		} else if submittedSlug != previous.Slug {
+			if !catalog.ValidRouteSlug(submittedSlug) {
+				errorsList = append(errorsList, "Slug must use only lowercase letters, numbers, and hyphens.")
+			}
+			errorsList = append(errorsList, "Product slug cannot be changed.")
+		}
 	}
 	if err := product.Validate(); err != nil {
 		errorsList = append(errorsList, err.Error())

@@ -21,6 +21,8 @@ import (
 )
 
 const htmlContentType = "text/html; charset=utf-8"
+const textContentType = "text/plain; charset=utf-8"
+const xmlContentType = "application/xml; charset=utf-8"
 const allowedMethods = http.MethodGet + ", " + http.MethodHead
 const cartMutationAllowedMethods = http.MethodPost
 const helloFragmentBody = "HTMX refreshed this greeting from the server"
@@ -37,6 +39,8 @@ const (
 	pageStory          pageKind = "story"
 	pageCart           pageKind = "cart"
 	pageCheckout       pageKind = "checkout"
+	pageRobotsTxt      pageKind = "robots-txt"
+	pageSitemapXML     pageKind = "sitemap-xml"
 	pageCartItems      pageKind = "cart-items"
 	pageCartQuantity   pageKind = "cart-quantity"
 	pageCartRemove     pageKind = "cart-remove"
@@ -124,7 +128,16 @@ func (h *Handler) handle(ctx context.Context, request events.APIGatewayV2HTTPReq
 		}), nil
 	}
 	if route.redirectTo != "" {
+		if extraHeaders := seoHeadersForRoute(route.kind); extraHeaders != nil {
+			return redirectResponseWithHeaders(route.redirectTo, extraHeaders), nil
+		}
 		return redirectResponse(route.redirectTo), nil
+	}
+	if route.kind == pageRobotsTxt {
+		return plainTextResponse(http.StatusOK, maybeEmptyBody(method, robotsTxt()), seoHeadersForRoute(route.kind)), nil
+	}
+	if route.kind == pageSitemapXML {
+		return h.handleSitemap(ctx, method), nil
 	}
 	if isCartMutationRoute(route.kind) {
 		return h.handleCartMutation(ctx, request, route), nil
@@ -174,19 +187,21 @@ func (h *Handler) handle(ctx context.Context, request events.APIGatewayV2HTTPReq
 		body, err = h.renderStory(ctx, headerCartLabel)
 	case pageCart:
 		body, err = renderCartPage(ctx, cartPageViewModel{
+			Metadata:                   cartMetadata(),
 			Lines:                      pageCartState.lines,
 			ProductImagePlaceholderURL: h.productImagePlaceholderURL,
 			HeaderCartLabel:            headerCartLabel,
 		})
 	case pageCheckout:
 		if pageCartState.cart.LineCount() == 0 || hasUnavailableCartLines(pageCartState.lines) {
-			response := seeOtherResponse("/cart", cookies)
+			response := seeOtherResponseWithHeaders("/cart", cookies, seoHeadersForRoute(route.kind))
 			if method == http.MethodHead {
 				response.Body = ""
 			}
 			return response, nil
 		}
 		body, err = renderCheckoutPage(ctx, checkoutPageViewModel{
+			Metadata:                   checkoutMetadata(),
 			Lines:                      pageCartState.lines,
 			ProductImagePlaceholderURL: h.productImagePlaceholderURL,
 			HeaderCartLabel:            headerCartLabel,
@@ -203,7 +218,7 @@ func (h *Handler) handle(ctx context.Context, request events.APIGatewayV2HTTPReq
 		body = ""
 	}
 
-	return htmlResponseWithCookies(statusCode, body, nil, cookies), nil
+	return htmlResponseWithCookies(statusCode, body, seoHeadersForRoute(route.kind), cookies), nil
 }
 
 func ssrMetricRoute(path string) string {
@@ -261,6 +276,10 @@ func routeForPath(path string) pageRoute {
 		return pageRoute{kind: pageCheckout, knownPageShape: true}
 	case "/checkout/":
 		return pageRoute{kind: pageCheckout, redirectTo: "/checkout", knownPageShape: true}
+	case "/robots.txt":
+		return pageRoute{kind: pageRobotsTxt, knownPageShape: true}
+	case "/sitemap.xml":
+		return pageRoute{kind: pageSitemapXML, knownPageShape: true}
 	case "/cart/items":
 		return pageRoute{kind: pageCartItems, knownPageShape: true}
 	case "/cart/clear":
@@ -323,23 +342,37 @@ func cartMutationRouteForPath(path string, prefix string, suffix string, kind pa
 }
 
 func redirectResponse(location string) events.APIGatewayV2HTTPResponse {
+	return redirectResponseWithHeaders(location, nil)
+}
+
+func redirectResponseWithHeaders(location string, extraHeaders map[string]string) events.APIGatewayV2HTTPResponse {
+	headers := map[string]string{
+		"Content-Type": htmlContentType,
+		"Location":     location,
+	}
+	maps.Copy(headers, extraHeaders)
+
 	return events.APIGatewayV2HTTPResponse{
 		StatusCode: http.StatusPermanentRedirect,
-		Headers: map[string]string{
-			"Content-Type": htmlContentType,
-			"Location":     location,
-		},
+		Headers:    headers,
 	}
 }
 
 func seeOtherResponse(location string, cookies []string) events.APIGatewayV2HTTPResponse {
+	return seeOtherResponseWithHeaders(location, cookies, nil)
+}
+
+func seeOtherResponseWithHeaders(location string, cookies []string, extraHeaders map[string]string) events.APIGatewayV2HTTPResponse {
+	headers := map[string]string{
+		"Content-Type": htmlContentType,
+		"Location":     location,
+	}
+	maps.Copy(headers, extraHeaders)
+
 	return events.APIGatewayV2HTTPResponse{
 		StatusCode: http.StatusSeeOther,
-		Headers: map[string]string{
-			"Content-Type": htmlContentType,
-			"Location":     location,
-		},
-		Cookies: cookies,
+		Headers:    headers,
+		Cookies:    cookies,
 	}
 }
 
@@ -406,6 +439,7 @@ func (h *Handler) renderHome(ctx context.Context, headerCartLabel string) (strin
 
 	var body bytes.Buffer
 	if err := home(homePageViewModel{
+		Metadata:                   homeMetadata(),
 		Products:                   products,
 		Categories:                 categories,
 		FeaturedCategories:         featuredHomeCategories(categories),
@@ -436,6 +470,8 @@ func (h *Handler) renderProductListing(ctx context.Context, headerCartLabel stri
 
 	var body bytes.Buffer
 	if err := productListingPage(productListingPageViewModel{
+		Metadata:                   productListingMetadata(),
+		Breadcrumbs:                productListingBreadcrumbs(),
 		Products:                   products,
 		Categories:                 categories,
 		ProductImagePlaceholderURL: h.productImagePlaceholderURL,
@@ -469,6 +505,8 @@ func (h *Handler) renderProductDetail(ctx context.Context, slug string, headerCa
 
 	var body bytes.Buffer
 	if err := productDetailPage(productDetailPageViewModel{
+		Metadata:                   productDetailMetadata(productResult.product, h.productImagePlaceholderURL),
+		Breadcrumbs:                productDetailBreadcrumbs(productResult.product),
 		Product:                    productResult.product,
 		Categories:                 activeProductCategories(productResult.product, categories),
 		ProductImagePlaceholderURL: h.productImagePlaceholderURL,
@@ -488,6 +526,8 @@ func (h *Handler) renderCategoryIndex(ctx context.Context, headerCartLabel strin
 
 	var body bytes.Buffer
 	if err := categoryIndexPage(categoryIndexPageViewModel{
+		Metadata:        categoryIndexMetadata(),
+		Breadcrumbs:     categoryIndexBreadcrumbs(),
 		Categories:      categories,
 		HeaderCartLabel: headerCartLabel,
 	}).Render(ctx, &body); err != nil {
@@ -533,6 +573,17 @@ func activeProductCategories(product catalog.Product, categories []catalog.Categ
 	return productCategories
 }
 
+func relatedCategories(categories []catalog.Category, currentSlug string) []catalog.Category {
+	related := make([]catalog.Category, 0, len(categories))
+	for _, category := range categories {
+		if category.Status != catalog.StatusActive || category.Slug == currentSlug {
+			continue
+		}
+		related = append(related, category)
+	}
+	return related
+}
+
 func featuredHomeCategories(categories []catalog.Category) []catalog.Category {
 	if len(categories) <= 3 {
 		return categories
@@ -558,9 +609,12 @@ func (h *Handler) renderCategoryDetail(ctx context.Context, slug string, headerC
 
 	var body bytes.Buffer
 	if err := categoryDetailPage(categoryDetailPageViewModel{
+		Metadata:                   categoryDetailMetadata(category),
+		Breadcrumbs:                categoryDetailBreadcrumbs(category),
 		Category:                   category,
 		Categories:                 categories,
 		Products:                   products,
+		RelatedCategories:          relatedCategories(categories, category.Slug),
 		ProductImagePlaceholderURL: h.productImagePlaceholderURL,
 		HeaderCartLabel:            headerCartLabel,
 	}).Render(ctx, &body); err != nil {
@@ -572,11 +626,31 @@ func (h *Handler) renderCategoryDetail(ctx context.Context, slug string, headerC
 
 func (h *Handler) renderStory(ctx context.Context, headerCartLabel string) (string, error) {
 	var body bytes.Buffer
-	if err := storyPage(storyPageViewModel{HeaderCartLabel: headerCartLabel}).Render(ctx, &body); err != nil {
+	if err := storyPage(storyPageViewModel{Metadata: storyMetadata(), Breadcrumbs: storyBreadcrumbs(), HeaderCartLabel: headerCartLabel}).Render(ctx, &body); err != nil {
 		return "", err
 	}
 
 	return body.String(), nil
+}
+
+func (h *Handler) handleSitemap(ctx context.Context, method string) events.APIGatewayV2HTTPResponse {
+	products, categories, productsErr, categoriesErr := parallelCatalogReads(ctx,
+		func(ctx context.Context) ([]catalog.Product, error) {
+			return h.catalogStore.ListActiveProducts(ctx, 0)
+		},
+		func(ctx context.Context) ([]catalog.Category, error) {
+			return h.loadActiveCategories(ctx)
+		},
+	)
+	if productsErr != nil || categoriesErr != nil {
+		return htmlResponse(http.StatusInternalServerError, "Internal server error", nil)
+	}
+	body, err := sitemapXML(products, categories)
+	if err != nil {
+		return htmlResponse(http.StatusInternalServerError, "Internal server error", nil)
+	}
+
+	return xmlResponse(http.StatusOK, maybeEmptyBody(method, body), seoHeadersForRoute(pageSitemapXML))
 }
 
 type catalogReadResult[T any] struct {
@@ -1080,6 +1154,34 @@ func requestPath(request events.APIGatewayV2HTTPRequest) string {
 
 func htmlResponse(statusCode int, body string, extraHeaders map[string]string) events.APIGatewayV2HTTPResponse {
 	return htmlResponseWithCookies(statusCode, body, extraHeaders, nil)
+}
+
+func plainTextResponse(statusCode int, body string, extraHeaders map[string]string) events.APIGatewayV2HTTPResponse {
+	return typedResponse(statusCode, body, textContentType, extraHeaders)
+}
+
+func xmlResponse(statusCode int, body string, extraHeaders map[string]string) events.APIGatewayV2HTTPResponse {
+	return typedResponse(statusCode, body, xmlContentType, extraHeaders)
+}
+
+func typedResponse(statusCode int, body string, contentType string, extraHeaders map[string]string) events.APIGatewayV2HTTPResponse {
+	headers := map[string]string{
+		"Content-Type": contentType,
+	}
+	maps.Copy(headers, extraHeaders)
+
+	return events.APIGatewayV2HTTPResponse{
+		StatusCode: statusCode,
+		Headers:    headers,
+		Body:       body,
+	}
+}
+
+func maybeEmptyBody(method string, body string) string {
+	if method == http.MethodHead {
+		return ""
+	}
+	return body
 }
 
 func htmlResponseWithCookies(statusCode int, body string, extraHeaders map[string]string, cookies []string) events.APIGatewayV2HTTPResponse {

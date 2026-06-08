@@ -771,6 +771,17 @@ func TestStackIncludesStaticAssetsDistribution(t *testing.T) {
 		},
 	})
 
+	template.ResourceCountIs(jsii.String("AWS::CloudFront::Function"), jsii.Number(1))
+	template.HasResourceProperties(jsii.String("AWS::CloudFront::Function"), map[string]any{
+		"AutoPublish":  true,
+		"FunctionCode": assertions.Match_StringLikeRegexp(jsii.String("host !== \"www\\.thailandgiftshop\\.com\"[\\s\\S]*https://thailandgiftshop\\.com\" \\+ request\\.uri[\\s\\S]*queryParts\\.join[\\s\\S]*statusCode: 308")),
+		"FunctionConfig": map[string]any{
+			"Comment": "Redirect www.thailandgiftshop.com requests to the apex host",
+			"Runtime": "cloudfront-js-2.0",
+		},
+		"Name": "thailandgiftshop-www-to-apex",
+	})
+
 	template.HasResourceProperties(jsii.String("AWS::CloudFront::Distribution"), map[string]any{
 		"DistributionConfig": map[string]any{
 			"Aliases": assertions.Match_ArrayWith(&[]any{
@@ -786,11 +797,13 @@ func TestStackIncludesStaticAssetsDistribution(t *testing.T) {
 					"CachePolicyId":           "658327ea-f89d-4fab-a63d-7e88639e58f6",
 					"Compress":                true,
 					"PathPattern":             "static/*",
+					"FunctionAssociations":    viewerRequestFunctionAssociationAssertion(),
 					"ResponseHeadersPolicyId": assertions.Match_AnyValue(),
 					"ViewerProtocolPolicy":    "redirect-to-https",
 				}),
 			}),
 			"DefaultCacheBehavior": map[string]any{
+				"FunctionAssociations": viewerRequestFunctionAssociationAssertion(),
 				"AllowedMethods": assertions.Match_ArrayEquals(&[]any{
 					"GET",
 					"HEAD",
@@ -916,6 +929,7 @@ func TestStackIncludesProductImagesBucketAndDeployment(t *testing.T) {
 					"CachePolicyId":           "658327ea-f89d-4fab-a63d-7e88639e58f6",
 					"Compress":                true,
 					"PathPattern":             "images/*",
+					"FunctionAssociations":    viewerRequestFunctionAssociationAssertion(),
 					"ResponseHeadersPolicyId": assertions.Match_AnyValue(),
 					"ViewerProtocolPolicy":    "redirect-to-https",
 				}),
@@ -1013,6 +1027,15 @@ func TestStackIncludesProductImagesBucketAndDeployment(t *testing.T) {
 	template.HasOutput(jsii.String("ProductImagesBaseUrl"), map[string]any{
 		"Description": "CloudFront base URL path for product images",
 		"Value":       "https://" + siteDomainName + "/" + productImagesKeyPrefix + "/",
+	})
+}
+
+func viewerRequestFunctionAssociationAssertion() any {
+	return assertions.Match_ArrayWith(&[]any{
+		assertions.Match_ObjectLike(&map[string]any{
+			"EventType":   "viewer-request",
+			"FunctionARN": assertions.Match_AnyValue(),
+		}),
 	})
 }
 

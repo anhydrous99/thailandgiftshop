@@ -33,7 +33,7 @@ func categoryIndexPage(vm categoryIndexPageViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = siteHead("Categories | Thailand Gift Shop").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = siteHead(vm.Metadata).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -45,17 +45,25 @@ func categoryIndexPage(vm categoryIndexPageViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<main><section class=\"border-b border-[#2D2A4A]/10 bg-white px-5 py-14 sm:px-8 lg:py-18\"><div class=\"mx-auto w-full max-w-7xl\"><p class=\"text-sm font-black uppercase tracking-wide text-[#A51931]\">Shop aisles</p><h1 class=\"mt-3 text-5xl font-black leading-none text-[#2D2A4A] sm:text-6xl\">Categories</h1><p class=\"mt-5 max-w-3xl text-lg leading-8 text-[#4C4A62]\">Shop Thai gift-shop finds by aisle.</p></div></section><section class=\"mx-auto w-full max-w-7xl px-5 py-14 sm:px-8 lg:py-20\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<main><section class=\"border-b border-[#2D2A4A]/10 bg-white px-5 py-14 sm:px-8 lg:py-18\"><div class=\"mx-auto w-full max-w-7xl\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = breadcrumbNav(vm.Breadcrumbs).Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<p class=\"text-sm font-black uppercase tracking-wide text-[#A51931]\">Shop aisles</p><h1 class=\"mt-3 text-5xl font-black leading-none text-[#2D2A4A] sm:text-6xl\">Categories</h1><p class=\"mt-5 max-w-3xl text-lg leading-8 text-[#4C4A62]\">Shop Thai gift-shop finds by aisle.</p></div></section><section class=\"mx-auto w-full max-w-7xl px-5 py-14 sm:px-8 lg:py-20\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if len(vm.Categories) == 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<section class=\"rounded-lg border border-dashed border-[#2D2A4A]/25 bg-white p-8 text-center shadow-sm\"><h2 class=\"text-xl font-bold text-[#2D2A4A]\">No categories are available yet.</h2><p class=\"mt-2 text-sm leading-6 text-[#4C4A62]\">Check back soon for more Thai gift-shop aisles.</p></section>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<section class=\"rounded-lg border border-dashed border-[#2D2A4A]/25 bg-white p-8 text-center shadow-sm\"><h2 class=\"text-xl font-bold text-[#2D2A4A]\">No categories are available yet.</h2><p class=\"mt-2 text-sm leading-6 text-[#4C4A62]\">Check back soon for more Thai gift-shop aisles.</p></section>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<section aria-label=\"Categories\" class=\"grid gap-4 sm:grid-cols-2 lg:grid-cols-4\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<section aria-label=\"Categories\" class=\"grid gap-4 sm:grid-cols-2 lg:grid-cols-4\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -65,12 +73,12 @@ func categoryIndexPage(vm categoryIndexPageViewModel) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</section>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</section>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</section></main>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</section></main>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -78,7 +86,7 @@ func categoryIndexPage(vm categoryIndexPageViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

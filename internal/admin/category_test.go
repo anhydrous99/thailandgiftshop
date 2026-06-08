@@ -18,10 +18,13 @@ func TestCategoryListAndNewFormRenderAdminControls(t *testing.T) {
 	if listResponse.StatusCode != http.StatusOK {
 		t.Fatalf("list status = %d, want %d", listResponse.StatusCode, http.StatusOK)
 	}
-	for _, want := range []string{"Categories", "Summer Shirts", "data-testid=\"admin-category-row\"", "data-testid=\"new-category-link\""} {
+	for _, want := range []string{"Categories", "Summer Shirts", "/categories/summer-shirts", "data-testid=\"admin-category-row\"", "data-testid=\"new-category-link\""} {
 		if !strings.Contains(listResponse.Body, want) {
 			t.Fatalf("category list missing %q: %q", want, listResponse.Body)
 		}
+	}
+	if strings.Contains(listResponse.Body, ">/summer-shirts") {
+		t.Fatalf("category list used bare public slug path: %q", listResponse.Body)
 	}
 
 	newResponse := authenticatedProductGet(t, handler, "/admin/categories/new")

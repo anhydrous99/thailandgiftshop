@@ -24,6 +24,7 @@ import (
 
 const htmlContentType = "text/html; charset=utf-8"
 const jsonContentType = "application/json; charset=utf-8"
+const adminRobotsTag = "noindex, nofollow"
 
 const adminAllowedMethods = http.MethodGet + ", " + http.MethodHead
 const loginAllowedMethods = http.MethodGet + ", " + http.MethodHead + ", " + http.MethodPost
@@ -481,7 +482,7 @@ func loginPageBody(errorMessage string) string {
 	if errorMessage != "" {
 		errorHTML = `<p role="alert">` + errorMessage + `</p>`
 	}
-	return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Admin login</title></head><body><h1>Admin login</h1>` + errorHTML + `<form method="post" action="/admin/login"><label>Password <input type="password" name="password" autocomplete="current-password"></label><button type="submit">Sign in</button></form></body></html>`
+	return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="robots" content="noindex,nofollow"><title>Admin login</title></head><body><h1>Admin login</h1>` + errorHTML + `<form method="post" action="/admin/login"><label>Password <input type="password" name="password" autocomplete="current-password"></label><button type="submit">Sign in</button></form></body></html>`
 }
 
 func (h *Handler) adminPageBody(ctx context.Context, csrfValue string) (string, error) {
@@ -630,6 +631,7 @@ func adminRedirectResponse(statusCode int, location string, cookies []string) ev
 		Headers: map[string]string{
 			"Cache-Control": "no-store",
 			"Location":      location,
+			"X-Robots-Tag":  adminRobotsTag,
 		},
 		Cookies: cookies,
 	}
@@ -640,7 +642,7 @@ func htmlResponse(statusCode int, body string, headers map[string]string) events
 }
 
 func adminHTMLResponse(statusCode int, body string, headers map[string]string, cookies []string) events.APIGatewayV2HTTPResponse {
-	adminHeaders := map[string]string{"Cache-Control": "no-store"}
+	adminHeaders := map[string]string{"Cache-Control": "no-store", "X-Robots-Tag": adminRobotsTag}
 	maps.Copy(adminHeaders, headers)
 	return htmlResponseWithCookies(statusCode, body, adminHeaders, cookies)
 }
@@ -660,6 +662,7 @@ func adminJSONResponse(statusCode int, payload any) events.APIGatewayV2HTTPRespo
 		Headers: map[string]string{
 			"Cache-Control": "no-store",
 			"Content-Type":  jsonContentType,
+			"X-Robots-Tag":  adminRobotsTag,
 		},
 		Body: string(body),
 	}

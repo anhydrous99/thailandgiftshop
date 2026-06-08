@@ -143,6 +143,7 @@ func TestUploadPresignAllowsJPEGPNGAndWebPOnly(t *testing.T) {
 			if response.StatusCode != http.StatusOK {
 				t.Fatalf("status = %d, want %d; body %q", response.StatusCode, http.StatusOK, response.Body)
 			}
+			assertNoStore(t, response)
 			if uploads.presignCalls != 1 {
 				t.Fatalf("presign calls = %d, want 1", uploads.presignCalls)
 			}

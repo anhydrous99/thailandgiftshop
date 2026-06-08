@@ -33,7 +33,7 @@ func productListingPage(vm productListingPageViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = siteHead("Products | Thailand Gift Shop").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = siteHead(vm.Metadata).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -45,17 +45,25 @@ func productListingPage(vm productListingPageViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<main><section class=\"border-b border-[#2D2A4A]/10 bg-white px-5 py-14 sm:px-8 lg:py-18\"><div class=\"mx-auto w-full max-w-7xl\"><p class=\"text-sm font-black uppercase tracking-wide text-[#A51931]\">Shop all</p><h1 class=\"mt-3 text-5xl font-black leading-none text-[#2D2A4A] sm:text-6xl\">Products</h1><p class=\"mt-5 max-w-3xl text-lg leading-8 text-[#4C4A62]\">Browse Thai snacks, souvenirs, textiles, pantry items, decor, wellness, and small keepsakes.</p></div></section><section class=\"mx-auto w-full max-w-7xl px-5 py-14 sm:px-8 lg:py-20\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<main><section class=\"border-b border-[#2D2A4A]/10 bg-white px-5 py-14 sm:px-8 lg:py-18\"><div class=\"mx-auto w-full max-w-7xl\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = breadcrumbNav(vm.Breadcrumbs).Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<p class=\"text-sm font-black uppercase tracking-wide text-[#A51931]\">Shop all</p><h1 class=\"mt-3 text-5xl font-black leading-none text-[#2D2A4A] sm:text-6xl\">Products</h1><p class=\"mt-5 max-w-3xl text-lg leading-8 text-[#4C4A62]\">Browse Thai snacks, souvenirs, textiles, pantry items, decor, wellness, and small keepsakes.</p></div></section><section class=\"mx-auto w-full max-w-7xl px-5 py-14 sm:px-8 lg:py-20\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if len(vm.Products) == 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<section class=\"rounded-lg border border-dashed border-[#2D2A4A]/25 bg-white p-8 text-center shadow-sm\"><h2 class=\"text-xl font-bold text-[#2D2A4A]\">No products are available yet.</h2><p class=\"mt-2 text-sm leading-6 text-[#4C4A62]\">Check back soon for Thai gift-shop finds.</p></section>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<section class=\"rounded-lg border border-dashed border-[#2D2A4A]/25 bg-white p-8 text-center shadow-sm\"><h2 class=\"text-xl font-bold text-[#2D2A4A]\">No products are available yet.</h2><p class=\"mt-2 text-sm leading-6 text-[#4C4A62]\">Check back soon for Thai gift-shop finds.</p></section>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<section aria-label=\"Products\" class=\"grid gap-5 sm:grid-cols-2 lg:grid-cols-4\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<section aria-label=\"Products\" class=\"grid gap-5 sm:grid-cols-2 lg:grid-cols-4\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -65,17 +73,17 @@ func productListingPage(vm productListingPageViewModel) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</section>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</section>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if len(vm.Categories) > 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<section class=\"border-t border-[#2D2A4A]/10 bg-white px-5 py-14 sm:px-8 lg:py-20\"><div class=\"mx-auto w-full max-w-7xl\"><div class=\"mb-8 max-w-3xl\"><p class=\"text-sm font-black uppercase tracking-wide text-[#A51931]\">Browse categories</p><h2 class=\"mt-2 text-3xl font-black text-[#2D2A4A] sm:text-4xl\">Browse categories</h2></div><div class=\"grid gap-4 sm:grid-cols-2 lg:grid-cols-4\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<section class=\"border-t border-[#2D2A4A]/10 bg-white px-5 py-14 sm:px-8 lg:py-20\"><div class=\"mx-auto w-full max-w-7xl\"><div class=\"mb-8 max-w-3xl\"><p class=\"text-sm font-black uppercase tracking-wide text-[#A51931]\">Browse categories</p><h2 class=\"mt-2 text-3xl font-black text-[#2D2A4A] sm:text-4xl\">Browse categories</h2></div><div class=\"grid gap-4 sm:grid-cols-2 lg:grid-cols-4\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -85,12 +93,12 @@ func productListingPage(vm productListingPageViewModel) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</div></div></section>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</div></div></section>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</main>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</main>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -98,7 +106,7 @@ func productListingPage(vm productListingPageViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

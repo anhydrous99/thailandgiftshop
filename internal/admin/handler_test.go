@@ -387,6 +387,21 @@ func TestDashboardServesAuthenticatedShellFromRequestCookies(t *testing.T) {
 	assertNoStore(t, response)
 }
 
+func TestLoginPageSetsMetaRobots(t *testing.T) {
+	handler, _ := newAuthTestHandler(t)
+
+	response, err := handler.Handle(context.Background(), adminRequest(http.MethodGet, "/admin/login"))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	if !strings.Contains(response.Body, `<meta name="robots" content="noindex,nofollow">`) {
+		t.Fatalf("login page missing robots meta: %q", response.Body)
+	}
+}
+
 func TestDashboardRefreshesMissingCSRFTokenCookie(t *testing.T) {
 	handler, _ := newAuthTestHandler(t)
 	login := loginResponse(t, handler)
@@ -796,12 +811,16 @@ func assertNoStore(t *testing.T, response events.APIGatewayV2HTTPResponse) {
 	if response.Headers["Cache-Control"] != "no-store" {
 		t.Fatalf("Cache-Control = %q, want no-store", response.Headers["Cache-Control"])
 	}
+	if response.Headers["X-Robots-Tag"] != adminRobotsTag {
+		t.Fatalf("X-Robots-Tag = %q, want %q", response.Headers["X-Robots-Tag"], adminRobotsTag)
+	}
 }
 
 func assertAdminDashboardShell(t *testing.T, body string) {
 	t.Helper()
 	for _, want := range []string{
 		`<title>Admin dashboard | Thailand Gift Shop</title>`,
+		`<meta name="robots" content="noindex,nofollow">`,
 		`data-testid="admin-shell"`,
 		`data-testid="admin-nav"`,
 		`aria-label="Admin navigation"`,

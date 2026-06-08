@@ -1,17 +1,63 @@
 package ssr
 
-templ siteHead(title string) {
+
+import "strconv"
+
+templ siteHead(metadata seoMetadata) {
 	<head>
 		<meta charset="utf-8"/>
 		<meta name="viewport" content="width=device-width, initial-scale=1"/>
-		<title>{ title }</title>
+		<title>{ metadata.Title }</title>
+		<meta name="description" content={ metadata.Description }/>
+		if metadata.Robots != "" {
+			<meta name="robots" content={ metadata.Robots }/>
+		}
+		<link rel="canonical" href={ metadata.Canonical }/>
+		<meta property="og:type" content="website"/>
+		<meta property="og:site_name" content="Thailand Gift Shop"/>
+		<meta property="og:title" content={ metadata.Title }/>
+		<meta property="og:description" content={ metadata.Description }/>
+		<meta property="og:url" content={ metadata.Canonical }/>
+		if metadata.SocialImage != "" {
+			<meta property="og:image" content={ metadata.SocialImage }/>
+		}
+		<meta name="twitter:card" content="summary_large_image"/>
+		<meta name="twitter:title" content={ metadata.Title }/>
+		<meta name="twitter:description" content={ metadata.Description }/>
+		if metadata.SocialImage != "" {
+			<meta name="twitter:image" content={ metadata.SocialImage }/>
+		}
 		<link rel="icon" href="/static/favicon.ico" sizes="any"/>
 		<link rel="icon" href="/static/favicon.svg" type="image/svg+xml"/>
 		<link rel="apple-touch-icon" href="/static/apple-touch-icon.png" sizes="180x180"/>
 		<link rel="manifest" href="/static/site.webmanifest"/>
 		<link rel="stylesheet" href="/static/assets/app.css"/>
 		<script src="/static/vendor/htmx.min.js" defer></script>
+		for index, jsonLD := range metadata.JSONLD {
+			@templ.JSONScript("structured-data-" + strconv.Itoa(index), jsonLD).WithType("application/ld+json")
+		}
 	</head>
+}
+
+templ breadcrumbNav(items []breadcrumbItem) {
+	if len(items) > 0 {
+		<nav aria-label="Breadcrumb" class="mb-6 text-sm font-black text-[#4C4A62]">
+			<ol class="flex flex-wrap items-center gap-2">
+				for index, item := range items {
+					<li class="inline-flex items-center gap-2">
+						if index > 0 {
+							<span aria-hidden="true" class="text-[#2D2A4A]/35">/</span>
+						}
+						if index == len(items)-1 {
+							<a href={ item.Path } aria-current="page" class="rounded-full bg-[#F4F5F8] px-3 py-1 text-[#2D2A4A] shadow-sm transition hover:text-[#A51931]">{ item.Name }</a>
+						} else {
+							<a href={ item.Path } class="rounded-full bg-[#F4F5F8] px-3 py-1 text-[#A51931] shadow-sm transition hover:text-[#831426]">{ item.Name }</a>
+						}
+					</li>
+				}
+			</ol>
+		</nav>
+	}
 }
 
 templ siteHeader(mode string, cartLabel string) {

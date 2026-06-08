@@ -62,7 +62,7 @@ templ adminProductListPage(vm adminProductListViewModel) {
 										<img class="aspect-[4/3] w-full rounded-md bg-[#F4F5F8] object-cover" src={ product.DisplayImageURL("/images/placeholder-product.jpg") } alt={ product.Name }/>
 										<div>
 											<a href={ "/admin/products/" + product.ID + "/edit" } class="text-xl font-black text-[#2D2A4A] transition hover:text-[#A51931]">{ product.Name }</a>
-											<p class="mt-1 text-sm font-bold text-[#4C4A62]">/{ product.Slug } · { formatAdminPrice(product.PriceCents) } · Stock { strconv.Itoa(product.TotalAvailableStock()) }</p>
+											<p class="mt-1 text-sm font-bold text-[#4C4A62]">/products/{ product.Slug } · { formatAdminPrice(product.PriceCents) } · Stock { strconv.Itoa(product.TotalAvailableStock()) }</p>
 											<p class="mt-2 inline-flex rounded-full bg-[#F4F5F8] px-3 py-1 text-xs font-black uppercase tracking-wide text-[#2D2A4A]">{ string(product.Status) }</p>
 										</div>
 										<a href={ "/admin/products/" + product.ID + "/edit" } class="inline-flex h-11 items-center justify-center rounded-full bg-[#2D2A4A] px-5 text-sm font-black text-white shadow-sm transition hover:bg-[#17172A]">Edit</a>
@@ -118,7 +118,7 @@ templ adminProductFormPage(vm adminProductFormViewModel) {
 								<input data-testid="product-image-token" type="hidden" name="image_token" value={ vm.ImageToken }/>
 								<div class="grid gap-4 md:grid-cols-2">
 									<label class="grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]">Name <input data-testid="product-name-input" required name="name" value={ vm.Product.Name } class="h-12 rounded-lg border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-base font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none"/></label>
-									<label class="grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]">Slug <input data-testid="product-slug-input" required name="slug" value={ vm.Product.Slug } class="h-12 rounded-lg border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-base font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none"/></label>
+									<label class="grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]">Slug <input data-testid="product-slug-input" required name="slug" value={ vm.Product.Slug } readonly?={ vm.Mode == "edit" } class="h-12 rounded-lg border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-base font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none read-only:text-[#4C4A62]"/></label>
 								</div>
 								<label class="grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]">Description <textarea data-testid="product-description-input" required name="description" class="min-h-28 rounded-lg border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 py-3 text-base font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none">{ vm.Product.Description }</textarea></label>
 								<div class="grid gap-4 md:grid-cols-4">

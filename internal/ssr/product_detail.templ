@@ -3,7 +3,7 @@ package ssr
 templ productDetailPage(vm productDetailPageViewModel) {
 	<!DOCTYPE html>
 	<html lang="en" class="scroll-smooth">
-		@siteHead(vm.Product.Name + " | Thailand Gift Shop")
+		@siteHead(vm.Metadata)
 		<body class="min-h-screen bg-[#F8F4EE] text-[#17172A] antialiased">
 			@siteHeader("page", vm.HeaderCartLabel)
 			<main>
@@ -12,6 +12,7 @@ templ productDetailPage(vm productDetailPageViewModel) {
 						<img class="aspect-[4/3] w-full bg-[#F4F5F8] object-cover" src={ vm.Product.DisplayImageURL(vm.ProductImagePlaceholderURL) } alt={ vm.Product.Name }/>
 					</div>
 					<div class="self-center">
+						@breadcrumbNav(vm.Breadcrumbs)
 						<a href="/products" class="text-sm font-black text-[#A51931] transition hover:text-[#831426]">Back to products</a>
 						<h1 class="mt-5 text-5xl font-black leading-none text-[#2D2A4A] sm:text-6xl">{ vm.Product.Name }</h1>
 						<p class="mt-6 inline-flex rounded-full bg-white px-4 py-2 text-xl font-black text-[#A51931] shadow-sm">{ formatPrice(vm.Product.PriceCents) }</p>
