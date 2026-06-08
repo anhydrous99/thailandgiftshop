@@ -9,6 +9,7 @@ import (
 	adminauth "github.com/anhydrous99/thailandgiftshop/internal/admin"
 	cartsession "github.com/anhydrous99/thailandgiftshop/internal/cart"
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
+	appobservability "github.com/anhydrous99/thailandgiftshop/internal/observability"
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/assertions"
 	"github.com/aws/jsii-runtime-go"
@@ -124,6 +125,53 @@ func TestStackIncludesObservabilityResources(t *testing.T) {
 			"DetailedMetricsEnabled": true,
 		},
 	})
+
+	template.ResourceCountIs(jsii.String("AWS::CloudWatch::Dashboard"), jsii.Number(1))
+	template.HasResourceProperties(jsii.String("AWS::CloudWatch::Dashboard"), map[string]any{
+		"DashboardName": operationsDashboardName,
+	})
+	template.ResourceCountIs(jsii.String("AWS::CloudWatch::Alarm"), jsii.Number(16))
+	template.AllResourcesProperties(jsii.String("AWS::CloudWatch::Alarm"), map[string]any{
+		"ActionsEnabled":   false,
+		"TreatMissingData": "notBreaching",
+	})
+
+	appAlarmMetrics := map[string]string{
+		"ThailandGiftshop-Admin-OriginRejected":      appobservability.MetricAdminOriginRejected,
+		"ThailandGiftshop-CatalogWrite-Errors":       appobservability.MetricCatalogWrite,
+		"ThailandGiftshop-ProductImageUpload-Errors": appobservability.MetricProductImageUpload,
+	}
+	for alarmName, metricName := range appAlarmMetrics {
+		template.HasResourceProperties(jsii.String("AWS::CloudWatch::Alarm"), map[string]any{
+			"AlarmName": alarmName,
+		})
+		alarmText := templateValueString(t, cloudWatchAlarmProperties(t, templateJSON, alarmName))
+		for _, want := range []string{appobservability.Namespace, metricName, "Service", "admin"} {
+			if !strings.Contains(alarmText, want) {
+				t.Fatalf("alarm %s missing %q: %s", alarmName, want, alarmText)
+			}
+		}
+	}
+
+	templateText := templateValueString(t, templateJSON)
+	for _, want := range []string{
+		"Thailand Gift Shop operations",
+		"AWS/ApiGateway",
+		"AWS/CloudFront",
+		"AWS/DynamoDB",
+		"AWS/Lambda",
+		"AWS/S3",
+		"AWS/WAFV2",
+		appobservability.Namespace,
+		appobservability.MetricAdminLoginAttempt,
+		appobservability.MetricCatalogWrite,
+		appobservability.MetricProductImageUpload,
+		"Alarm actions are intentionally disabled.",
+	} {
+		if !strings.Contains(templateText, want) {
+			t.Fatalf("observability template missing %q", want)
+		}
+	}
 }
 
 func TestStackIncludesSsrCartCookieSecret(t *testing.T) {
@@ -1145,6 +1193,24 @@ func managedLogGroupExists(t *testing.T, templateJSON *map[string]any, logGroupN
 	}
 
 	return false
+}
+
+func cloudWatchAlarmProperties(t *testing.T, templateJSON *map[string]any, alarmName string) map[string]any {
+	t.Helper()
+
+	for _, resource := range templateResources(t, templateJSON) {
+		resourceMap := asStringMap(t, resource)
+		if resourceMap["Type"] != "AWS::CloudWatch::Alarm" {
+			continue
+		}
+		properties := asStringMap(t, resourceMap["Properties"])
+		if properties["AlarmName"] == alarmName {
+			return properties
+		}
+	}
+
+	t.Fatalf("CloudWatch alarm %q not found", alarmName)
+	return nil
 }
 
 func lambdaRoleID(t *testing.T, resources map[string]any, functionName string) string {

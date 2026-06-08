@@ -135,7 +135,9 @@ gofmt -l $(git ls-files '*.go')
 
 The CDK stack provisions the SSR Lambda with its own CloudWatch Logs group at `/aws/lambda/thailandgiftshop-ssr` and 3-month retention. The HTTP API stage writes access logs to `/aws/apigateway/thailandgiftshop-ssr`, also with 3-month retention. Static and product image deployment helper logs are written to `/aws/lambda/thailandgiftshop-static-assets-deployment` with the same 3-month retention policy.
 
-Lambda emits AWS-managed CloudWatch metrics automatically, and the HTTP API default stage has detailed metrics enabled. Lambda X-Ray tracing is active and the Lambda role includes the X-Ray write permissions required to publish trace data.
+Lambda emits AWS-managed CloudWatch metrics automatically, and the HTTP API default stage has detailed metrics enabled. Lambda X-Ray tracing is active and the Lambda role includes the X-Ray write permissions required to publish trace data. CloudFront, WAF, S3, DynamoDB, API Gateway, and Lambda metrics are collected into a CloudWatch dashboard named `ThailandGiftshop-Operations`.
+
+The admin Lambda emits custom embedded metric format (EMF) events to the `ThailandGiftshop/App` namespace for admin login attempts, origin-header rejections, catalog writes, and product image uploads. The stack also provisions CloudWatch alarms for the dashboard watchlist. Alarm actions are intentionally disabled, so the alarms surface state in CloudWatch without sending notifications until an action target is added later.
 
 ## Bootstrap
 

@@ -147,31 +147,38 @@ func adminCategorySlugAction(path string) (string, string, bool) {
 func (h *Handler) createCategory(ctx context.Context, request events.APIGatewayV2HTTPRequest, csrfValue string, cookies []string) events.APIGatewayV2HTTPResponse {
 	values, err := formValues(request)
 	if err != nil {
+		h.recordCatalogWrite(metricEntityCategory, metricOperationCreate, metricOutcomeValidationError)
 		return adminHTMLResponse(http.StatusBadRequest, "Invalid form", nil, nil)
 	}
 	category, selectedProductIDs, errorsList := categoryFromForm(values, catalog.Category{}, h.currentTime().UTC(), true)
 	if len(errorsList) > 0 {
+		h.recordCatalogWrite(metricEntityCategory, metricOperationCreate, metricOutcomeValidationError)
 		vm := newCategoryFormViewModel(csrfValue, errorsList).withCategory(category, selectedProductIDs)
 		return h.categoryFormResponse(ctx, csrfValue, cookies, vm, http.StatusBadRequest)
 	}
 	written, err := h.catalogStore().CreateCategory(ctx, category)
 	if err != nil {
+		h.recordCatalogWrite(metricEntityCategory, metricOperationCreate, catalogWriteOutcome(err))
 		vm := newCategoryFormViewModel(csrfValue, nil).withCategory(category, selectedProductIDs)
 		return h.categoryWriteError(ctx, csrfValue, cookies, vm, err)
 	}
 	if err := h.syncCategoryMemberships(ctx, written.Slug, selectedProductIDs); err != nil {
+		h.recordCatalogWrite(metricEntityCategory, metricOperationCreate, catalogWriteOutcome(err))
 		vm := newCategoryFormViewModel(csrfValue, nil).withCategory(written, selectedProductIDs)
 		return h.categoryWriteError(ctx, csrfValue, cookies, vm, err)
 	}
+	h.recordCatalogWrite(metricEntityCategory, metricOperationCreate, metricOutcomeSuccess)
 	return adminRedirectResponse(http.StatusSeeOther, "/admin/categories/"+url.PathEscape(written.Slug)+"/edit?saved=created", nil)
 }
 
 func (h *Handler) updateCategory(ctx context.Context, request events.APIGatewayV2HTTPRequest, previous catalog.Category, csrfValue string, cookies []string) events.APIGatewayV2HTTPResponse {
 	values, err := formValues(request)
 	if err != nil {
+		h.recordCatalogWrite(metricEntityCategory, metricOperationUpdate, metricOutcomeValidationError)
 		return adminHTMLResponse(http.StatusBadRequest, "Invalid form", nil, nil)
 	}
 	if strconv.Itoa(previous.Version) != strings.TrimSpace(values.Get("version")) {
+		h.recordCatalogWrite(metricEntityCategory, metricOperationUpdate, metricOutcomeConflict)
 		vm, err := h.editCategoryFormViewModel(ctx, csrfValue, previous, []string{"This category changed while you were editing. Reload and try again."}, "")
 		if err != nil {
 			return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
@@ -180,29 +187,35 @@ func (h *Handler) updateCategory(ctx context.Context, request events.APIGatewayV
 	}
 	category, selectedProductIDs, errorsList := categoryFromForm(values, previous, h.currentTime().UTC(), false)
 	if len(errorsList) > 0 {
+		h.recordCatalogWrite(metricEntityCategory, metricOperationUpdate, metricOutcomeValidationError)
 		vm := editCategoryFormViewModel(csrfValue, category, selectedProductIDs, errorsList, "")
 		return h.categoryFormResponse(ctx, csrfValue, cookies, vm, http.StatusBadRequest)
 	}
 	written, err := h.catalogStore().UpdateCategory(ctx, category, previous.Version)
 	if err != nil {
+		h.recordCatalogWrite(metricEntityCategory, metricOperationUpdate, catalogWriteOutcome(err))
 		vm := editCategoryFormViewModel(csrfValue, category, selectedProductIDs, nil, "")
 		return h.categoryWriteError(ctx, csrfValue, cookies, vm, err)
 	}
 	if err := h.syncCategoryMemberships(ctx, written.Slug, selectedProductIDs); err != nil {
+		h.recordCatalogWrite(metricEntityCategory, metricOperationUpdate, catalogWriteOutcome(err))
 		vm := editCategoryFormViewModel(csrfValue, written, selectedProductIDs, nil, "")
 		return h.categoryWriteError(ctx, csrfValue, cookies, vm, err)
 	}
+	h.recordCatalogWrite(metricEntityCategory, metricOperationUpdate, metricOutcomeSuccess)
 	return adminRedirectResponse(http.StatusSeeOther, "/admin/categories/"+url.PathEscape(written.Slug)+"/edit?saved=updated", nil)
 }
 
 func (h *Handler) archiveCategory(ctx context.Context, category catalog.Category) events.APIGatewayV2HTTPResponse {
 	_, err := h.catalogStore().ArchiveCategory(ctx, category)
 	if err != nil {
+		h.recordCatalogWrite(metricEntityCategory, metricOperationArchive, catalogWriteOutcome(err))
 		if errors.Is(err, catalog.ErrVersionConflict) {
 			return adminHTMLResponse(http.StatusConflict, "Version conflict", nil, nil)
 		}
 		return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 	}
+	h.recordCatalogWrite(metricEntityCategory, metricOperationArchive, metricOutcomeSuccess)
 	return adminRedirectResponse(http.StatusSeeOther, "/admin/categories?status=archived&saved=archived", nil)
 }
 

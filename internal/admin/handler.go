@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
+	"github.com/anhydrous99/thailandgiftshop/internal/observability"
 	"github.com/aws/aws-lambda-go/events"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -42,6 +43,7 @@ type Handler struct {
 	catalog       catalog.AdminStore
 	uploads       productImageUploads
 	loginThrottle adminLoginThrottle
+	metrics       observability.Recorder
 }
 
 func NewHandler() *Handler {
@@ -81,6 +83,7 @@ func NewHandlerFromEnvironment(ctx context.Context) (*Handler, error) {
 	}
 	handler := NewHandlerWithCredentialsAndCatalog(credentials, adminStore)
 	handler.loginThrottle = loginThrottle
+	handler.metrics = observability.NewEMFRecorder(os.Stdout)
 	return handler, nil
 }
 
@@ -96,6 +99,7 @@ func (h *Handler) Handle(ctx context.Context, request events.APIGatewayV2HTTPReq
 		return htmlResponse(http.StatusNotFound, "Not found", nil), nil
 	}
 	if !validAdminOrigin(request) {
+		h.recordAdminOriginRejected()
 		return adminHTMLResponse(http.StatusForbidden, "Forbidden", nil, nil), nil
 	}
 	if path == "/admin/" {
@@ -129,32 +133,40 @@ func (h *Handler) handleLogin(ctx context.Context, request events.APIGatewayV2HT
 	client := adminLoginClient(request)
 	status, err := h.loginThrottleForRequest().ReserveAttempt(ctx, client, h.currentTime())
 	if err != nil {
+		h.recordAdminLoginAttempt(metricOutcomeError)
 		return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 	}
 	if !status.Allowed {
+		h.recordAdminLoginAttempt(metricOutcomeThrottled)
 		return adminLoginThrottleResponse(status, h.currentTime())
 	}
 
 	values, err := formValues(request)
 	if err != nil || !h.validPasswordWithCredentials(credentials, values.Get(passwordFieldName)) {
 		if status.Locked(h.currentTime()) {
+			h.recordAdminLoginAttempt(metricOutcomeThrottled)
 			return adminLoginThrottleResponse(status, h.currentTime())
 		}
+		h.recordAdminLoginAttempt(metricOutcomeInvalid)
 		return adminHTMLResponse(http.StatusUnauthorized, loginPageBody("Invalid credentials"), nil, nil)
 	}
 	if err := h.loginThrottleForRequest().Clear(ctx, client); err != nil {
+		h.recordAdminLoginAttempt(metricOutcomeError)
 		return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 	}
 
 	session, sessionValue, err := newAdminSession(credentials.SessionSecret, h.currentTime())
 	if err != nil {
+		h.recordAdminLoginAttempt(metricOutcomeError)
 		return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 	}
 	csrfValue, err := newAdminCSRFToken(session, credentials.SessionSecret)
 	if err != nil {
+		h.recordAdminLoginAttempt(metricOutcomeError)
 		return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 	}
 
+	h.recordAdminLoginAttempt(metricOutcomeSuccess)
 	return adminRedirectResponse(http.StatusSeeOther, "/admin", []string{
 		adminSessionCookie(sessionValue, session.ExpiresAt).String(),
 		adminCSRFCookie(csrfValue, session.ExpiresAt).String(),
@@ -319,8 +331,10 @@ func (h *Handler) currentTime() time.Time {
 }
 
 func (h *Handler) handleProductImageUpload(ctx context.Context, path string, request events.APIGatewayV2HTTPRequest, session adminSession) events.APIGatewayV2HTTPResponse {
+	step := productImageUploadStep(path)
 	uploads, err := h.productImageUploads(ctx)
 	if err != nil {
+		h.recordProductImageUpload(step, metricOutcomeError)
 		return adminJSONErrorResponse(http.StatusInternalServerError, "upload service unavailable")
 	}
 
@@ -328,40 +342,52 @@ func (h *Handler) handleProductImageUpload(ctx context.Context, path string, req
 	case productImagePresignPath:
 		var payload productImagePresignRequest
 		if err := jsonRequestBody(request, &payload); err != nil {
+			h.recordProductImageUpload(step, metricOutcomeValidationError)
 			return adminJSONErrorResponse(http.StatusBadRequest, "invalid upload request")
 		}
 		if err := validateProductImagePresignRequest(payload); err != nil {
+			h.recordProductImageUpload(step, metricOutcomeValidationError)
 			return adminJSONErrorResponse(http.StatusBadRequest, "invalid upload request")
 		}
 		response, err := uploads.Presign(ctx, payload, h.currentTime())
 		if err != nil {
 			if isInvalidProductImageUpload(err) {
+				h.recordProductImageUpload(step, metricOutcomeValidationError)
 				return adminJSONErrorResponse(http.StatusBadRequest, "invalid upload request")
 			}
+			h.recordProductImageUpload(step, metricOutcomeError)
 			return adminJSONErrorResponse(http.StatusInternalServerError, "upload service unavailable")
 		}
+		h.recordProductImageUpload(step, metricOutcomeSuccess)
 		return adminJSONResponse(http.StatusOK, response)
 	case productImageConfirmPath:
 		var payload productImageConfirmRequest
 		if err := jsonRequestBody(request, &payload); err != nil {
+			h.recordProductImageUpload(step, metricOutcomeValidationError)
 			return adminJSONErrorResponse(http.StatusBadRequest, "invalid upload request")
 		}
 		url, err := uploads.Confirm(ctx, payload)
 		if err != nil {
 			if isProductImageObjectNotFound(err) {
+				h.recordProductImageUpload(step, metricOutcomeNotFound)
 				return adminJSONErrorResponse(http.StatusNotFound, "uploaded object not found")
 			}
 			if isInvalidProductImageUpload(err) {
+				h.recordProductImageUpload(step, metricOutcomeValidationError)
 				return adminJSONErrorResponse(http.StatusBadRequest, "invalid upload request")
 			}
+			h.recordProductImageUpload(step, metricOutcomeError)
 			return adminJSONErrorResponse(http.StatusInternalServerError, "upload service unavailable")
 		}
 		token, err := newConfirmedProductImageToken(url, session, h.credentials.SessionSecret, h.currentTime())
 		if err != nil {
+			h.recordProductImageUpload(step, metricOutcomeError)
 			return adminJSONErrorResponse(http.StatusInternalServerError, "upload service unavailable")
 		}
+		h.recordProductImageUpload(step, metricOutcomeSuccess)
 		return adminJSONResponse(http.StatusOK, map[string]string{"url": url, "token": token})
 	default:
+		h.recordProductImageUpload(step, metricOutcomeNotFound)
 		return adminJSONErrorResponse(http.StatusNotFound, "not found")
 	}
 }

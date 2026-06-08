@@ -159,51 +159,62 @@ func (h *Handler) catalogStore() catalog.AdminStore {
 func (h *Handler) createProduct(ctx context.Context, request events.APIGatewayV2HTTPRequest, session adminSession, csrfValue string, cookies []string) events.APIGatewayV2HTTPResponse {
 	values, err := formValues(request)
 	if err != nil {
+		h.recordCatalogWrite(metricEntityProduct, metricOperationCreate, metricOutcomeValidationError)
 		return adminHTMLResponse(http.StatusBadRequest, "Invalid form", nil, nil)
 	}
 	product, imageToken, errorsList := productFromForm(values, catalog.Product{}, session, h.credentials.SessionSecret, h.currentTime(), true)
 	if len(errorsList) > 0 {
+		h.recordCatalogWrite(metricEntityProduct, metricOperationCreate, metricOutcomeValidationError)
 		return h.productFormResponse(ctx, csrfValue, cookies, newProductFormViewModel(csrfValue, errorsList).withProduct(product, imageToken), http.StatusBadRequest)
 	}
 	written, err := h.catalogStore().CreateProduct(ctx, product)
 	if err != nil {
+		h.recordCatalogWrite(metricEntityProduct, metricOperationCreate, catalogWriteOutcome(err))
 		return h.productWriteError(ctx, csrfValue, cookies, newProductFormViewModel(csrfValue, nil).withProduct(product, imageToken), err)
 	}
+	h.recordCatalogWrite(metricEntityProduct, metricOperationCreate, metricOutcomeSuccess)
 	return adminRedirectResponse(http.StatusSeeOther, "/admin/products/"+url.PathEscape(written.ID)+"/edit?saved=created", nil)
 }
 
 func (h *Handler) updateProduct(ctx context.Context, request events.APIGatewayV2HTTPRequest, session adminSession, previous catalog.Product, csrfValue string, cookies []string) events.APIGatewayV2HTTPResponse {
 	values, err := formValues(request)
 	if err != nil {
+		h.recordCatalogWrite(metricEntityProduct, metricOperationUpdate, metricOutcomeValidationError)
 		return adminHTMLResponse(http.StatusBadRequest, "Invalid form", nil, nil)
 	}
 	if strconv.Itoa(previous.Version) != strings.TrimSpace(values.Get("version")) {
+		h.recordCatalogWrite(metricEntityProduct, metricOperationUpdate, metricOutcomeConflict)
 		vm := editProductFormViewModel(csrfValue, previous, []string{"This product changed while you were editing. Reload and try again."}, "")
 		return h.productFormResponse(ctx, csrfValue, cookies, vm, http.StatusConflict)
 	}
 	product, imageToken, errorsList := productFromForm(values, previous, session, h.credentials.SessionSecret, h.currentTime(), false)
 	if len(errorsList) > 0 {
+		h.recordCatalogWrite(metricEntityProduct, metricOperationUpdate, metricOutcomeValidationError)
 		vm := editProductFormViewModel(csrfValue, product, errorsList, "")
 		vm.ImageToken = imageToken
 		return h.productFormResponse(ctx, csrfValue, cookies, vm, http.StatusBadRequest)
 	}
 	written, err := h.catalogStore().UpdateProduct(ctx, previous, product)
 	if err != nil {
+		h.recordCatalogWrite(metricEntityProduct, metricOperationUpdate, catalogWriteOutcome(err))
 		vm := editProductFormViewModel(csrfValue, product, nil, "")
 		vm.ImageToken = imageToken
 		return h.productWriteError(ctx, csrfValue, cookies, vm, err)
 	}
+	h.recordCatalogWrite(metricEntityProduct, metricOperationUpdate, metricOutcomeSuccess)
 	return adminRedirectResponse(http.StatusSeeOther, "/admin/products/"+url.PathEscape(written.ID)+"/edit?saved=updated", nil)
 }
 
 func (h *Handler) archiveProduct(ctx context.Context, product catalog.Product) events.APIGatewayV2HTTPResponse {
 	_, err := h.catalogStore().ArchiveProduct(ctx, product)
 	if err != nil {
+		h.recordCatalogWrite(metricEntityProduct, metricOperationArchive, catalogWriteOutcome(err))
 		if errors.Is(err, catalog.ErrVersionConflict) {
 			return adminHTMLResponse(http.StatusConflict, "Version conflict", nil, nil)
 		}
 		return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 	}
+	h.recordCatalogWrite(metricEntityProduct, metricOperationArchive, metricOutcomeSuccess)
 	return adminRedirectResponse(http.StatusSeeOther, "/admin/products?status=archived&saved=archived", nil)
 }
 

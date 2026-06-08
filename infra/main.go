@@ -6,12 +6,14 @@ import (
 	adminauth "github.com/anhydrous99/thailandgiftshop/internal/admin"
 	cartsession "github.com/anhydrous99/thailandgiftshop/internal/cart"
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
+	appobservability "github.com/anhydrous99/thailandgiftshop/internal/observability"
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsapigatewayv2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsapigatewayv2integrations"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscertificatemanager"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfront"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfrontorigins"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudwatch"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsdynamodb"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsiam"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awslambda"
@@ -49,10 +51,44 @@ const (
 	adminLoginAttemptsTTLName  = "expires_at"
 
 	ssrOriginRequestPolicyName = "thailandgiftshop-ssr-origin"
+
+	operationsDashboardName = "ThailandGiftshop-Operations"
 )
 
 type ThailandGiftshopStackProps struct {
 	awscdk.StackProps
+}
+
+type ssrResources struct {
+	httpAPI  awsapigatewayv2.HttpApi
+	function awslambda.Function
+	admin    adminResources
+}
+
+type adminResources struct {
+	routes   []awsapigatewayv2.HttpRoute
+	function awslambda.Function
+}
+
+type siteResources struct {
+	distribution awscloudfront.Distribution
+	adminWebACL  awswafv2.CfnWebACL
+}
+
+type observabilityResources struct {
+	catalogTable            awsdynamodb.Table
+	productImagesBucket     awss3.IBucket
+	adminLoginAttemptsTable awsdynamodb.Table
+	ssrFunction             awslambda.IFunction
+	adminFunction           awslambda.IFunction
+	httpAPI                 awsapigatewayv2.IHttpApi
+	distribution            awscloudfront.Distribution
+	adminWebACL             awswafv2.CfnWebACL
+}
+
+type dynamoMetricOperation struct {
+	idSuffix  string
+	dimension string
 }
 
 func NewThailandGiftshopStack(scope constructs.Construct, id string, props *ThailandGiftshopStackProps) awscdk.Stack {
@@ -71,8 +107,18 @@ func NewThailandGiftshopStack(scope constructs.Construct, id string, props *Thai
 	productImagesBucket := addProductImagesBucket(stack)
 	adminLoginAttemptsTable := addAdminLoginAttempts(stack)
 	adminOriginHeaderSecret := addAdminOriginHeaderSecret(stack)
-	httpAPI := addSSR(stack, catalogTable, productImagesBucket, adminLoginAttemptsTable, adminOriginHeaderSecret)
-	addSite(stack, httpAPI, productImagesBucket, adminOriginHeaderSecret)
+	ssr := addSSR(stack, catalogTable, productImagesBucket, adminLoginAttemptsTable, adminOriginHeaderSecret)
+	site := addSite(stack, ssr.httpAPI, productImagesBucket, adminOriginHeaderSecret)
+	addObservability(stack, observabilityResources{
+		catalogTable:            catalogTable,
+		productImagesBucket:     productImagesBucket,
+		adminLoginAttemptsTable: adminLoginAttemptsTable,
+		ssrFunction:             ssr.function,
+		adminFunction:           ssr.admin.function,
+		httpAPI:                 ssr.httpAPI,
+		distribution:            site.distribution,
+		adminWebACL:             site.adminWebACL,
+	})
 
 	return stack
 }
@@ -183,7 +229,7 @@ func addAdminLoginAttempts(stack awscdk.Stack) awsdynamodb.Table {
 	})
 }
 
-func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, productImagesBucket awss3.IBucket, adminLoginAttemptsTable awsdynamodb.ITable, adminOriginHeaderSecret awssecretsmanager.ISecret) awsapigatewayv2.HttpApi {
+func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, productImagesBucket awss3.IBucket, adminLoginAttemptsTable awsdynamodb.ITable, adminOriginHeaderSecret awssecretsmanager.ISecret) ssrResources {
 	lambdaLogGroup := awslogs.NewLogGroup(stack, jsii.String("SsrLambdaLogGroup"), &awslogs.LogGroupProps{
 		LogGroupName: jsii.String("/aws/lambda/thailandgiftshop-ssr"),
 		Retention:    awslogs.RetentionDays_THREE_MONTHS,
@@ -233,7 +279,7 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, productImagesBu
 			Timeout:              awscdk.Duration_Seconds(jsii.Number(10)),
 		}),
 	})
-	adminRoutes := addAdmin(stack, catalogTable, productImagesBucket, adminLoginAttemptsTable, adminOriginHeaderSecret, httpAPI)
+	admin := addAdmin(stack, catalogTable, productImagesBucket, adminLoginAttemptsTable, adminOriginHeaderSecret, httpAPI)
 
 	accessLogGroup := awslogs.NewLogGroup(stack, jsii.String("SsrHttpApiAccessLogGroup"), &awslogs.LogGroupProps{
 		LogGroupName: jsii.String("/aws/apigateway/thailandgiftshop-ssr"),
@@ -254,7 +300,7 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, productImagesBu
 		StageName:   jsii.String("$default"),
 	})
 	stage.Node().AddDependency(defaultRoute)
-	for _, route := range adminRoutes {
+	for _, route := range admin.routes {
 		stage.Node().AddDependency(route)
 	}
 
@@ -263,10 +309,10 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, productImagesBu
 		Value:       httpAPI.ApiEndpoint(),
 	})
 
-	return httpAPI
+	return ssrResources{httpAPI: httpAPI, function: ssrFunction, admin: admin}
 }
 
-func addAdmin(stack awscdk.Stack, catalogTable awsdynamodb.ITable, productImagesBucket awss3.IBucket, adminLoginAttemptsTable awsdynamodb.ITable, adminOriginHeaderSecret awssecretsmanager.ISecret, httpAPI awsapigatewayv2.HttpApi) []awsapigatewayv2.HttpRoute {
+func addAdmin(stack awscdk.Stack, catalogTable awsdynamodb.ITable, productImagesBucket awss3.IBucket, adminLoginAttemptsTable awsdynamodb.ITable, adminOriginHeaderSecret awssecretsmanager.ISecret, httpAPI awsapigatewayv2.HttpApi) adminResources {
 	lambdaLogGroup := awslogs.LogGroup_FromLogGroupName(stack, jsii.String("AdminLambdaLogGroup"), jsii.String(adminLambdaLogGroupName))
 	awslogs.NewLogRetention(stack, jsii.String("AdminLambdaLogRetention"), &awslogs.LogRetentionProps{
 		LogGroupName:  jsii.String(adminLambdaLogGroupName),
@@ -342,7 +388,7 @@ func addAdmin(stack awscdk.Stack, catalogTable awsdynamodb.ITable, productImages
 		Integration: adminIntegration,
 	})
 
-	return []awsapigatewayv2.HttpRoute{exactRoute, proxyRoute}
+	return adminResources{routes: []awsapigatewayv2.HttpRoute{exactRoute, proxyRoute}, function: adminFunction}
 }
 
 func adminCredentialsSecret(stack awscdk.Stack) awssecretsmanager.ISecret {
@@ -494,7 +540,7 @@ func cartCookieSecretReference(secret awssecretsmanager.ISecret) *string {
 	).ToString()
 }
 
-func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi, productImagesBucket awss3.IBucket, adminOriginHeaderSecret awssecretsmanager.ISecret) {
+func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi, productImagesBucket awss3.IBucket, adminOriginHeaderSecret awssecretsmanager.ISecret) siteResources {
 	hostedZone := siteHostedZone(stack)
 	certificate := awscertificatemanager.NewCertificate(stack, jsii.String("SiteCertificate"), &awscertificatemanager.CertificateProps{
 		DomainName: jsii.String(siteDomainName),
@@ -608,6 +654,274 @@ func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi, productImagesB
 		Description: jsii.String("CloudFront base URL path for product images"),
 		Value:       jsii.String("https://" + siteDomainName + "/" + productImagesKeyPrefix + "/"),
 	})
+
+	return siteResources{distribution: distribution, adminWebACL: adminWebACL}
+}
+
+func addObservability(stack awscdk.Stack, resources observabilityResources) {
+	period5m := awscdk.Duration_Minutes(jsii.Number(5))
+	period1d := awscdk.Duration_Days(jsii.Number(1))
+
+	apiRequests := resources.httpAPI.MetricCount(sumMetric("HTTP API requests", period5m, awscloudwatch.Unit_COUNT))
+	api5xx := resources.httpAPI.MetricServerError(sumMetric("HTTP API 5xx", period5m, awscloudwatch.Unit_COUNT))
+	apiLatencyP95 := resources.httpAPI.MetricLatency(percentileMetric("HTTP API p95 latency", period5m, awscloudwatch.Unit_MILLISECONDS, 95))
+	apiIntegrationLatencyP95 := resources.httpAPI.MetricIntegrationLatency(percentileMetric("HTTP API integration p95 latency", period5m, awscloudwatch.Unit_MILLISECONDS, 95))
+
+	cfRequests := resources.distribution.MetricRequests(sumMetric("CloudFront requests", period5m, awscloudwatch.Unit_COUNT))
+	cf4xxRate := resources.distribution.Metric4xxErrorRate(avgMetric("CloudFront 4xx rate", period5m, awscloudwatch.Unit_PERCENT))
+	cf5xxRate := resources.distribution.Metric5xxErrorRate(avgMetric("CloudFront 5xx rate", period5m, awscloudwatch.Unit_PERCENT))
+
+	ssrInvocations := resources.ssrFunction.MetricInvocations(sumMetric("SSR invocations", period5m, awscloudwatch.Unit_COUNT))
+	ssrErrors := resources.ssrFunction.MetricErrors(sumMetric("SSR errors", period5m, awscloudwatch.Unit_COUNT))
+	ssrThrottles := resources.ssrFunction.MetricThrottles(sumMetric("SSR throttles", period5m, awscloudwatch.Unit_COUNT))
+	ssrDurationP95 := resources.ssrFunction.MetricDuration(percentileMetric("SSR p95 duration", period5m, awscloudwatch.Unit_MILLISECONDS, 95))
+	adminInvocations := resources.adminFunction.MetricInvocations(sumMetric("Admin invocations", period5m, awscloudwatch.Unit_COUNT))
+	adminErrors := resources.adminFunction.MetricErrors(sumMetric("Admin errors", period5m, awscloudwatch.Unit_COUNT))
+	adminThrottles := resources.adminFunction.MetricThrottles(sumMetric("Admin throttles", period5m, awscloudwatch.Unit_COUNT))
+	adminDurationP95 := resources.adminFunction.MetricDuration(percentileMetric("Admin p95 duration", period5m, awscloudwatch.Unit_MILLISECONDS, 95))
+
+	catalogDynamoOperations := []dynamoMetricOperation{
+		{idSuffix: "get", dimension: "GetItem"},
+		{idSuffix: "batchget", dimension: "BatchGetItem"},
+		{idSuffix: "query", dimension: "Query"},
+		{idSuffix: "scan", dimension: "Scan"},
+		{idSuffix: "put", dimension: "PutItem"},
+		{idSuffix: "delete", dimension: "DeleteItem"},
+		{idSuffix: "update", dimension: "UpdateItem"},
+		{idSuffix: "batchwrite", dimension: "BatchWriteItem"},
+		{idSuffix: "transactwrite", dimension: "TransactWriteItems"},
+	}
+	adminLoginThrottleDynamoOperations := []dynamoMetricOperation{
+		{idSuffix: "get", dimension: "GetItem"},
+		{idSuffix: "update", dimension: "UpdateItem"},
+		{idSuffix: "delete", dimension: "DeleteItem"},
+	}
+	catalogReadCapacity := resources.catalogTable.MetricConsumedReadCapacityUnits(sumMetric("Catalog read capacity", period5m, awscloudwatch.Unit_COUNT))
+	catalogWriteCapacity := resources.catalogTable.MetricConsumedWriteCapacityUnits(sumMetric("Catalog write capacity", period5m, awscloudwatch.Unit_COUNT))
+	catalogThrottles := dynamoOperationSumMetric(resources.catalogTable, "ThrottledRequests", "Catalog throttles", period5m, awscloudwatch.Unit_COUNT, "ct", catalogDynamoOperations)
+	catalogSystemErrors := dynamoOperationSumMetric(resources.catalogTable, "SystemErrors", "Catalog system errors", period5m, awscloudwatch.Unit_COUNT, "cs", catalogDynamoOperations)
+	adminLoginThrottleTableThrottles := dynamoOperationSumMetric(resources.adminLoginAttemptsTable, "ThrottledRequests", "Admin login throttle table throttles", period5m, awscloudwatch.Unit_COUNT, "alt", adminLoginThrottleDynamoOperations)
+
+	wafAllowed := wafMetric("AllowedRequests", "ALL", "WAF allowed requests", period5m)
+	wafBlocked := wafMetric("BlockedRequests", "ALL", "WAF blocked requests", period5m)
+	wafLoginBlocked := wafMetric("BlockedRequests", "ThailandGiftshopAdminCloudFrontLoginPost", "WAF login blocks", period5m)
+
+	adminLoginSuccess := appMetric(appobservability.MetricAdminLoginAttempt, "Admin login success", period5m, map[string]*string{"Service": jsii.String("admin"), "Operation": jsii.String("login"), "Outcome": jsii.String("success")})
+	adminLoginInvalid := appMetric(appobservability.MetricAdminLoginAttempt, "Admin login invalid", period5m, map[string]*string{"Service": jsii.String("admin"), "Operation": jsii.String("login"), "Outcome": jsii.String("invalid")})
+	adminLoginThrottled := appMetric(appobservability.MetricAdminLoginAttempt, "Admin login throttled", period5m, map[string]*string{"Service": jsii.String("admin"), "Operation": jsii.String("login"), "Outcome": jsii.String("throttled")})
+	adminOriginRejected := appMetric(appobservability.MetricAdminOriginRejected, "Admin origin rejected", period5m, map[string]*string{"Service": jsii.String("admin"), "Operation": jsii.String("origin"), "Outcome": jsii.String("rejected")})
+	catalogWriteSuccess := appMetric(appobservability.MetricCatalogWrite, "Catalog write success", period5m, map[string]*string{"Service": jsii.String("admin"), "Outcome": jsii.String("success")})
+	catalogWriteErrors := appMetric(appobservability.MetricCatalogWrite, "Catalog write errors", period5m, map[string]*string{"Service": jsii.String("admin"), "Outcome": jsii.String("error")})
+	imageUploadSuccess := appMetric(appobservability.MetricProductImageUpload, "Image upload success", period5m, map[string]*string{"Service": jsii.String("admin"), "Outcome": jsii.String("success")})
+	imageUploadErrors := appMetric(appobservability.MetricProductImageUpload, "Image upload errors", period5m, map[string]*string{"Service": jsii.String("admin"), "Outcome": jsii.String("error")})
+
+	productImagesBucketSize := s3StorageMetric(resources.productImagesBucket, "BucketSizeBytes", "Product image bytes", period1d, awscloudwatch.Unit_BYTES, "StandardStorage")
+	productImagesObjectCount := s3StorageMetric(resources.productImagesBucket, "NumberOfObjects", "Product image objects", period1d, awscloudwatch.Unit_COUNT, "AllStorageTypes")
+
+	alarms := []awscloudwatch.Alarm{
+		addAlarm(stack, "CloudFront5xxRateAlarm", "ThailandGiftshop-CloudFront-5xxRate-High", cf5xxRate, 5, 2, "CloudFront 5xx error rate is above 5%."),
+		addAlarm(stack, "HttpApi5xxAlarm", "ThailandGiftshop-HttpApi-5xx-High", api5xx, 5, 2, "HTTP API is returning elevated 5xx responses."),
+		addAlarm(stack, "HttpApiLatencyAlarm", "ThailandGiftshop-HttpApi-LatencyP95-High", apiLatencyP95, 3000, 3, "HTTP API p95 latency is above 3 seconds."),
+		addAlarm(stack, "SsrLambdaErrorsAlarm", "ThailandGiftshop-SsrLambda-Errors", ssrErrors, 0, 2, "SSR Lambda has errors."),
+		addAlarm(stack, "AdminLambdaErrorsAlarm", "ThailandGiftshop-AdminLambda-Errors", adminErrors, 0, 2, "Admin Lambda has errors."),
+		addAlarm(stack, "SsrLambdaThrottlesAlarm", "ThailandGiftshop-SsrLambda-Throttles", ssrThrottles, 0, 1, "SSR Lambda is throttling."),
+		addAlarm(stack, "AdminLambdaThrottlesAlarm", "ThailandGiftshop-AdminLambda-Throttles", adminThrottles, 0, 1, "Admin Lambda is throttling."),
+		addAlarm(stack, "CatalogThrottlesAlarm", "ThailandGiftshop-CatalogTable-Throttles", catalogThrottles, 0, 1, "Catalog DynamoDB table is throttling."),
+		addAlarm(stack, "CatalogSystemErrorsAlarm", "ThailandGiftshop-CatalogTable-SystemErrors", catalogSystemErrors, 0, 1, "Catalog DynamoDB table has system errors."),
+		addAlarm(stack, "WafAdminBlocksAlarm", "ThailandGiftshop-WAF-AdminBlocks", wafBlocked, 10, 1, "Admin WAF blocks exceeded the normal operating threshold."),
+		addAlarm(stack, "AdminOriginRejectedAlarm", "ThailandGiftshop-Admin-OriginRejected", adminOriginRejected, 0, 1, "Admin origin header rejections were observed."),
+		addAlarm(stack, "AdminLoginInvalidAlarm", "ThailandGiftshop-Admin-InvalidLogins", adminLoginInvalid, 10, 1, "Admin invalid login attempts exceeded the normal operating threshold."),
+		addAlarm(stack, "AdminLoginThrottledAlarm", "ThailandGiftshop-Admin-ThrottledLogins", adminLoginThrottled, 0, 1, "Admin login throttling occurred."),
+		addAlarm(stack, "CatalogWriteErrorsAlarm", "ThailandGiftshop-CatalogWrite-Errors", catalogWriteErrors, 0, 1, "Admin catalog write errors occurred."),
+		addAlarm(stack, "ImageUploadErrorsAlarm", "ThailandGiftshop-ProductImageUpload-Errors", imageUploadErrors, 0, 1, "Product image upload errors occurred."),
+		addAlarm(stack, "AdminLoginThrottleTableThrottlesAlarm", "ThailandGiftshop-AdminLoginThrottleTable-Throttles", adminLoginThrottleTableThrottles, 0, 1, "Admin login throttle DynamoDB table is throttling."),
+	}
+
+	dashboard := awscloudwatch.NewDashboard(stack, jsii.String("OperationsDashboard"), &awscloudwatch.DashboardProps{
+		DashboardName:   jsii.String(operationsDashboardName),
+		DefaultInterval: awscdk.Duration_Hours(jsii.Number(6)),
+	})
+	dashboard.AddWidgets(awscloudwatch.NewTextWidget(&awscloudwatch.TextWidgetProps{
+		Markdown: jsii.String("# Thailand Gift Shop operations\nProduction service metrics for https://" + siteDomainName + " in us-east-1. Alarm actions are intentionally disabled."),
+		Width:    jsii.Number(24),
+		Height:   jsii.Number(2),
+	}))
+	dashboard.AddWidgets(
+		awscloudwatch.NewSingleValueWidget(&awscloudwatch.SingleValueWidgetProps{
+			Title:   jsii.String("Current volume and errors"),
+			Width:   jsii.Number(8),
+			Height:  jsii.Number(4),
+			Metrics: cwMetrics(cfRequests, apiRequests, cf5xxRate, api5xx),
+		}),
+		awscloudwatch.NewGraphWidget(&awscloudwatch.GraphWidgetProps{
+			Title: jsii.String("Public traffic and edge errors"),
+			Width: jsii.Number(16),
+			Left:  cwMetrics(cfRequests, apiRequests),
+			Right: cwMetrics(cf4xxRate, cf5xxRate),
+		}),
+	)
+	dashboard.AddWidgets(
+		awscloudwatch.NewGraphWidget(&awscloudwatch.GraphWidgetProps{
+			Title: jsii.String("API and Lambda latency"),
+			Width: jsii.Number(12),
+			Left:  cwMetrics(apiLatencyP95, apiIntegrationLatencyP95, ssrDurationP95, adminDurationP95),
+		}),
+		awscloudwatch.NewGraphWidget(&awscloudwatch.GraphWidgetProps{
+			Title: jsii.String("Lambda health"),
+			Width: jsii.Number(12),
+			Left:  cwMetrics(ssrInvocations, adminInvocations),
+			Right: cwMetrics(ssrErrors, adminErrors, ssrThrottles, adminThrottles),
+		}),
+	)
+	dashboard.AddWidgets(
+		awscloudwatch.NewGraphWidget(&awscloudwatch.GraphWidgetProps{
+			Title: jsii.String("Admin and WAF security"),
+			Width: jsii.Number(12),
+			Left:  cwMetrics(wafAllowed, wafBlocked, wafLoginBlocked),
+			Right: cwMetrics(adminLoginSuccess, adminLoginInvalid, adminLoginThrottled, adminOriginRejected),
+		}),
+		awscloudwatch.NewGraphWidget(&awscloudwatch.GraphWidgetProps{
+			Title: jsii.String("Catalog and DynamoDB health"),
+			Width: jsii.Number(12),
+			Left:  cwMetrics(catalogWriteSuccess, catalogWriteErrors, catalogReadCapacity, catalogWriteCapacity),
+			Right: cwMetrics(catalogThrottles, catalogSystemErrors, adminLoginThrottleTableThrottles),
+		}),
+	)
+	dashboard.AddWidgets(
+		awscloudwatch.NewGraphWidget(&awscloudwatch.GraphWidgetProps{
+			Title: jsii.String("Product image uploads and storage"),
+			Width: jsii.Number(12),
+			Left:  cwMetrics(imageUploadSuccess, imageUploadErrors),
+			Right: cwMetrics(productImagesBucketSize, productImagesObjectCount),
+		}),
+		awscloudwatch.NewSingleValueWidget(&awscloudwatch.SingleValueWidgetProps{
+			Title:   jsii.String("Alarm watchlist"),
+			Width:   jsii.Number(12),
+			Height:  jsii.Number(4),
+			Metrics: cwMetrics(alarmMetrics(alarms...)...),
+		}),
+	)
+}
+
+func sumMetric(label string, period awscdk.Duration, unit awscloudwatch.Unit) *awscloudwatch.MetricOptions {
+	return metricOptions(label, period, awscloudwatch.Stats_SUM(), unit)
+}
+
+func avgMetric(label string, period awscdk.Duration, unit awscloudwatch.Unit) *awscloudwatch.MetricOptions {
+	return metricOptions(label, period, awscloudwatch.Stats_AVERAGE(), unit)
+}
+
+func percentileMetric(label string, period awscdk.Duration, unit awscloudwatch.Unit, percentile float64) *awscloudwatch.MetricOptions {
+	return metricOptions(label, period, awscloudwatch.Stats_P(jsii.Number(percentile)), unit)
+}
+
+func metricOptions(label string, period awscdk.Duration, statistic *string, unit awscloudwatch.Unit) *awscloudwatch.MetricOptions {
+	return &awscloudwatch.MetricOptions{
+		Label:     jsii.String(label),
+		Period:    period,
+		Statistic: statistic,
+		Unit:      unit,
+	}
+}
+
+func dynamoOperationSumMetric(table awsdynamodb.ITable, metricName string, label string, period awscdk.Duration, unit awscloudwatch.Unit, idPrefix string, operations []dynamoMetricOperation) awscloudwatch.MathExpression {
+	usingMetrics := make(map[string]awscloudwatch.IMetric, len(operations))
+	expression := ""
+	for index, operation := range operations {
+		id := idPrefix + operation.idSuffix
+		if index > 0 {
+			expression += "+"
+		}
+		expression += id
+		usingMetrics[id] = awscloudwatch.NewMetric(&awscloudwatch.MetricProps{
+			Namespace:  jsii.String("AWS/DynamoDB"),
+			MetricName: jsii.String(metricName),
+			DimensionsMap: &map[string]*string{
+				"TableName": table.TableName(),
+				"Operation": jsii.String(operation.dimension),
+			},
+			Label:     jsii.String(operation.dimension),
+			Period:    period,
+			Statistic: awscloudwatch.Stats_SUM(),
+			Unit:      unit,
+		})
+	}
+
+	return awscloudwatch.NewMathExpression(&awscloudwatch.MathExpressionProps{
+		Expression:   jsii.String(expression),
+		Label:        jsii.String(label),
+		Period:       period,
+		UsingMetrics: &usingMetrics,
+	})
+}
+
+func appMetric(metricName string, label string, period awscdk.Duration, dimensions map[string]*string) awscloudwatch.Metric {
+	return awscloudwatch.NewMetric(&awscloudwatch.MetricProps{
+		Namespace:     jsii.String(appobservability.Namespace),
+		MetricName:    jsii.String(metricName),
+		DimensionsMap: &dimensions,
+		Label:         jsii.String(label),
+		Period:        period,
+		Statistic:     awscloudwatch.Stats_SUM(),
+		Unit:          awscloudwatch.Unit_COUNT,
+	})
+}
+
+func wafMetric(metricName string, rule string, label string, period awscdk.Duration) awscloudwatch.Metric {
+	return awscloudwatch.NewMetric(&awscloudwatch.MetricProps{
+		Namespace:  jsii.String("AWS/WAFV2"),
+		MetricName: jsii.String(metricName),
+		DimensionsMap: &map[string]*string{
+			"Region": jsii.String("Global"),
+			"Rule":   jsii.String(rule),
+			"WebACL": jsii.String("ThailandGiftshopAdminCloudFront"),
+		},
+		Label:     jsii.String(label),
+		Period:    period,
+		Statistic: awscloudwatch.Stats_SUM(),
+		Unit:      awscloudwatch.Unit_COUNT,
+		Region:    jsii.String("us-east-1"),
+	})
+}
+
+func s3StorageMetric(bucket awss3.IBucket, metricName string, label string, period awscdk.Duration, unit awscloudwatch.Unit, storageType string) awscloudwatch.Metric {
+	return awscloudwatch.NewMetric(&awscloudwatch.MetricProps{
+		Namespace:  jsii.String("AWS/S3"),
+		MetricName: jsii.String(metricName),
+		DimensionsMap: &map[string]*string{
+			"BucketName":  bucket.BucketName(),
+			"StorageType": jsii.String(storageType),
+		},
+		Label:     jsii.String(label),
+		Period:    period,
+		Statistic: awscloudwatch.Stats_AVERAGE(),
+		Unit:      unit,
+	})
+}
+
+func addAlarm(stack awscdk.Stack, id string, name string, metric awscloudwatch.IMetric, threshold float64, evaluationPeriods float64, description string) awscloudwatch.Alarm {
+	return awscloudwatch.NewAlarm(stack, jsii.String(id), &awscloudwatch.AlarmProps{
+		ActionsEnabled:     jsii.Bool(false),
+		AlarmDescription:   jsii.String(description),
+		AlarmName:          jsii.String(name),
+		ComparisonOperator: awscloudwatch.ComparisonOperator_GREATER_THAN_THRESHOLD,
+		EvaluationPeriods:  jsii.Number(evaluationPeriods),
+		Metric:             metric,
+		Threshold:          jsii.Number(threshold),
+		TreatMissingData:   awscloudwatch.TreatMissingData_NOT_BREACHING,
+	})
+}
+
+func cwMetrics(metrics ...awscloudwatch.IMetric) *[]awscloudwatch.IMetric {
+	return &metrics
+}
+
+func alarmMetrics(alarms ...awscloudwatch.Alarm) []awscloudwatch.IMetric {
+	metrics := make([]awscloudwatch.IMetric, 0, len(alarms))
+	for _, alarm := range alarms {
+		metrics = append(metrics, alarm.Metric())
+	}
+	return metrics
 }
 
 func siteHostedZone(stack awscdk.Stack) awsroute53.IHostedZone {
