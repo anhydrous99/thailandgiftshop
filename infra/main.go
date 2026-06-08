@@ -41,13 +41,12 @@ const (
 	catalogRecentIndexPKName = "gsi3pk"
 	catalogRecentIndexSKName = "gsi3sk"
 
-	staticAssetsKeyPrefix       = "static"
-	productImagesKeyPrefix      = "images"
-	adminCredentialsSecretName  = "thailandgiftshop/admin/credentials"
-	adminLambdaLogGroupName     = "/aws/lambda/thailandgiftshop-admin"
-	adminLoginAttemptsTableName = "thailandgiftshop-admin-login-attempts"
-	adminLoginAttemptsPKName    = "client_key"
-	adminLoginAttemptsTTLName   = "expires_at"
+	staticAssetsKeyPrefix      = "static"
+	productImagesKeyPrefix     = "images"
+	adminCredentialsSecretName = "thailandgiftshop/admin/credentials"
+	adminLambdaLogGroupName    = "/aws/lambda/thailandgiftshop-admin"
+	adminLoginAttemptsPKName   = "client_key"
+	adminLoginAttemptsTTLName  = "expires_at"
 
 	ssrOriginRequestPolicyName = "thailandgiftshop-ssr-origin"
 )
@@ -179,8 +178,7 @@ func addAdminLoginAttempts(stack awscdk.Stack) awsdynamodb.Table {
 			Name: jsii.String(adminLoginAttemptsPKName),
 			Type: awsdynamodb.AttributeType_STRING,
 		},
-		RemovalPolicy:       awscdk.RemovalPolicy_RETAIN,
-		TableName:           jsii.String(adminLoginAttemptsTableName),
+		RemovalPolicy:       awscdk.RemovalPolicy_DESTROY,
 		TimeToLiveAttribute: jsii.String(adminLoginAttemptsTTLName),
 	})
 }

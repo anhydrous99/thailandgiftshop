@@ -232,10 +232,10 @@ func TestStackIncludesAdminLoginAttemptThrottleStorage(t *testing.T) {
 	template := assertions.Template_FromStack(stack, nil)
 
 	template.HasResource(jsii.String("AWS::DynamoDB::Table"), map[string]any{
-		"DeletionPolicy":      "Retain",
-		"UpdateReplacePolicy": "Retain",
+		"DeletionPolicy":      "Delete",
+		"UpdateReplacePolicy": "Delete",
 		"Properties": assertions.Match_ObjectLike(&map[string]any{
-			"TableName":   adminLoginAttemptsTableName,
+			"TableName":   assertions.Match_Absent(),
 			"BillingMode": "PAY_PER_REQUEST",
 			"KeySchema": assertions.Match_ArrayWith(&[]any{
 				map[string]any{
@@ -1029,7 +1029,7 @@ func statementResourceReferencesAdminLoginAttemptsTable(t *testing.T, value any)
 
 	switch resource := value.(type) {
 	case string:
-		return strings.Contains(resource, adminLoginAttemptsTableName)
+		return strings.Contains(resource, "AdminLoginAttemptsTable")
 	case []any:
 		for _, item := range resource {
 			if statementResourceReferencesAdminLoginAttemptsTable(t, item) {
@@ -1042,7 +1042,7 @@ func statementResourceReferencesAdminLoginAttemptsTable(t *testing.T, value any)
 		if err != nil {
 			t.Fatalf("marshal policy resource: %v", err)
 		}
-		return strings.Contains(string(encoded), adminLoginAttemptsTableName) || strings.Contains(string(encoded), "AdminLoginAttemptsTable")
+		return strings.Contains(string(encoded), "AdminLoginAttemptsTable")
 	default:
 		return false
 	}

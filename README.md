@@ -151,10 +151,14 @@ Replace `ACCOUNT_ID` as needed. Production deploys intentionally fail outside `u
 Bootstrap the production admin credentials as a manually managed Secrets Manager JSON secret named `thailandgiftshop/admin/credentials` before deploying the admin Lambda wiring:
 
 ```sh
+go run ./scripts/generate-admin-secret.go -out /tmp/thailandgiftshop-admin-secret.json
+```
+
+```sh
 aws secretsmanager create-secret \
   --region us-east-1 \
   --name thailandgiftshop/admin/credentials \
-  --secret-string '{"password_hash": "<bcrypt-hash>", "session_secret": "<session-secret>"}'
+  --secret-string file:///tmp/thailandgiftshop-admin-secret.json
 ```
 
 Rotate the same named secret by writing a new JSON value with the same fields:
@@ -163,12 +167,12 @@ Rotate the same named secret by writing a new JSON value with the same fields:
 aws secretsmanager put-secret-value \
   --region us-east-1 \
   --secret-id thailandgiftshop/admin/credentials \
-  --secret-string '{"password_hash": "<bcrypt-hash>", "session_secret": "<session-secret>"}'
+  --secret-string file:///tmp/thailandgiftshop-admin-secret.json
 ```
 
-The CDK stack imports that name and passes the secret string to the admin Lambda through the `ADMIN_CREDENTIALS_SECRET_JSON` dynamic reference. The JSON fields are `password_hash` and `session_secret`; the examples above are placeholders only.
+The generator prints the admin password once and writes the JSON fields `password_hash` and `session_secret`. The CDK stack imports that name and passes the secret string to the admin Lambda through the `ADMIN_CREDENTIALS_SECRET_JSON` dynamic reference.
 
-The stack also creates a retained DynamoDB table named `thailandgiftshop-admin-login-attempts` and passes its name to the admin Lambda as `ADMIN_LOGIN_ATTEMPTS_TABLE_NAME`. Failed admin logins are tracked per client, locked after 8 failures in 15 minutes, and receive a generic `429` with `Retry-After` during the 15-minute lockout.
+The stack also creates a DynamoDB table for admin login attempts and passes its generated name to the admin Lambda as `ADMIN_LOGIN_ATTEMPTS_TABLE_NAME`. Failed admin logins are tracked per client, locked after 8 failures in 15 minutes, and receive a generic `429` with `Retry-After` during the 15-minute lockout.
 
 CloudFront has an admin-scoped AWS WAF web ACL with rate limits for `POST /admin/login` and `/admin*`. Direct API Gateway access through the `SsrHttpApiUrl` output remains useful for public SSR checks, but production admin access must use `https://thailandgiftshop.com/admin` so CloudFront can apply WAF rules and inject the admin origin header.
 
