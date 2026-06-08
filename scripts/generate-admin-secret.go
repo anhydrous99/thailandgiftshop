@@ -24,6 +24,23 @@ func randomToken(size int) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(buf), nil
 }
 
+func generateAdminSecret(adminPassword string, cost int) (adminSecret, error) {
+	sessionSecret, err := randomToken(48)
+	if err != nil {
+		return adminSecret{}, fmt.Errorf("generate session secret: %w", err)
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(adminPassword), cost)
+	if err != nil {
+		return adminSecret{}, fmt.Errorf("bcrypt password: %w", err)
+	}
+
+	return adminSecret{
+		PasswordHash:  string(hash),
+		SessionSecret: sessionSecret,
+	}, nil
+}
+
 func main() {
 	outPath := flag.String("out", "", "path for the generated secret JSON")
 	password := flag.String("password", "", "admin password to hash; generated when omitted")
@@ -47,22 +64,13 @@ func main() {
 		generatedPassword = true
 	}
 
-	sessionSecret, err := randomToken(48)
+	secret, err := generateAdminSecret(adminPassword, *cost)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "generate session secret: %v\n", err)
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(adminPassword), *cost)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "bcrypt password: %v\n", err)
-		os.Exit(1)
-	}
-
-	payload, err := json.Marshal(adminSecret{
-		PasswordHash:  string(hash),
-		SessionSecret: sessionSecret,
-	})
+	payload, err := json.Marshal(secret)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "encode secret: %v\n", err)
 		os.Exit(1)
