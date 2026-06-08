@@ -170,7 +170,13 @@ aws secretsmanager put-secret-value \
   --secret-string file:///tmp/thailandgiftshop-admin-secret.json
 ```
 
-The generator prints the admin password once and writes the JSON fields `password_hash` and `session_secret`. The CDK stack imports that name and passes the secret string to the admin Lambda through the `ADMIN_CREDENTIALS_SECRET_JSON` dynamic reference.
+The generator prints the admin password once and writes this JSON shape:
+
+```json
+{"password_hash": "<bcrypt-hash>", "session_secret": "<session-secret>"}
+```
+
+The CDK stack imports that name and passes the secret string to the admin Lambda through the `ADMIN_CREDENTIALS_SECRET_JSON` dynamic reference.
 
 The stack also creates a DynamoDB table for admin login attempts and passes its generated name to the admin Lambda as `ADMIN_LOGIN_ATTEMPTS_TABLE_NAME`. Failed admin logins are tracked per client, locked after 8 failures in 15 minutes, and receive a generic `429` with `Retry-After` during the 15-minute lockout.
 
