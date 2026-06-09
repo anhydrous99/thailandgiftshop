@@ -12,8 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anhydrous99/thailandgiftshop/internal/appenv"
 	"github.com/anhydrous99/thailandgiftshop/internal/cart"
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
+	"github.com/anhydrous99/thailandgiftshop/internal/httpapi"
 	"github.com/anhydrous99/thailandgiftshop/internal/observability"
 	"github.com/aws/aws-lambda-go/events"
 )
@@ -1045,7 +1047,7 @@ func TestHandle(t *testing.T) {
 	}
 }
 
-func TestPublicHTMLPagesDoNotSetCacheControl(t *testing.T) {
+func TestPublicHTMLPagesSetSharedCacheControl(t *testing.T) {
 	handler := NewHandler(routeMatrixStore())
 	for _, path := range []string{"/", "/products", "/products/thai-tea-sampler", "/categories", "/categories/thai-snacks", "/story"} {
 		t.Run(path, func(t *testing.T) {
@@ -1056,10 +1058,92 @@ func TestPublicHTMLPagesDoNotSetCacheControl(t *testing.T) {
 			if response.StatusCode != http.StatusOK {
 				t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
 			}
-			if got := response.Headers["Cache-Control"]; got != "" {
-				t.Fatalf("Cache-Control = %q, want empty", got)
+			if got := response.Headers["Cache-Control"]; got != catalogPageCacheControl {
+				t.Fatalf("Cache-Control = %q, want %q", got, catalogPageCacheControl)
 			}
 		})
+	}
+}
+
+func TestCatalogPage404sDoNotSetCacheControl(t *testing.T) {
+	handler := NewHandler(routeMatrixStore())
+	for _, path := range []string{"/products/missing-product", "/categories/missing-category"} {
+		t.Run(path, func(t *testing.T) {
+			response, err := handler.Handle(context.Background(), pageRequest(http.MethodGet, path))
+			if err != nil {
+				t.Fatalf("Handle returned error: %v", err)
+			}
+			if response.StatusCode != http.StatusNotFound {
+				t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusNotFound)
+			}
+			if got := response.Headers["Cache-Control"]; got != "" {
+				t.Fatalf("Cache-Control = %q, want empty on 404s", got)
+			}
+		})
+	}
+}
+
+func TestSSROriginSecretBlocksDirectRequestsWhenConfigured(t *testing.T) {
+	t.Setenv(envOriginHeaderSecret, "origin-secret")
+	handler := NewHandler(routeMatrixStore())
+
+	blocked, err := handler.Handle(context.Background(), pageRequest(http.MethodGet, "/"))
+	if err != nil {
+		t.Fatalf("Handle blocked returned error: %v", err)
+	}
+	if blocked.StatusCode != http.StatusForbidden {
+		t.Fatalf("blocked status = %d, want %d", blocked.StatusCode, http.StatusForbidden)
+	}
+	if blocked.Body != "Forbidden" {
+		t.Fatalf("blocked body = %q, want Forbidden", blocked.Body)
+	}
+
+	allowedRequest := pageRequest(http.MethodGet, "/")
+	allowedRequest.Headers = map[string]string{originSecretHeaderName: "origin-secret"}
+	allowed, err := handler.Handle(context.Background(), allowedRequest)
+	if err != nil {
+		t.Fatalf("Handle allowed returned error: %v", err)
+	}
+	if allowed.StatusCode != http.StatusOK {
+		t.Fatalf("allowed status = %d, want %d", allowed.StatusCode, http.StatusOK)
+	}
+
+	mismatchedRequest := pageRequest(http.MethodGet, "/")
+	mismatchedRequest.Headers = map[string]string{originSecretHeaderName: "wrong-secret"}
+	mismatched, err := handler.Handle(context.Background(), mismatchedRequest)
+	if err != nil {
+		t.Fatalf("Handle mismatched returned error: %v", err)
+	}
+	if mismatched.StatusCode != http.StatusForbidden {
+		t.Fatalf("mismatched status = %d, want %d", mismatched.StatusCode, http.StatusForbidden)
+	}
+}
+
+func TestProductionSSROriginSecretMissingBlocksDirectRequests(t *testing.T) {
+	t.Setenv(appenv.EnvAppEnvironment, appenv.EnvironmentProduction)
+	t.Setenv(envOriginHeaderSecret, "")
+	handler := NewHandler(routeMatrixStore())
+
+	response, err := handler.Handle(context.Background(), pageRequest(http.MethodGet, "/"))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusForbidden)
+	}
+}
+
+func TestLocalSSROriginSecretMissingAllowsDirectRequests(t *testing.T) {
+	t.Setenv(appenv.EnvAppEnvironment, "development")
+	t.Setenv(envOriginHeaderSecret, "")
+	handler := NewHandler(routeMatrixStore())
+
+	response, err := handler.Handle(context.Background(), pageRequest(http.MethodGet, "/"))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusOK)
 	}
 }
 
@@ -1099,7 +1183,7 @@ func decodedCartFromResponse(t *testing.T, response events.APIGatewayV2HTTPRespo
 	if len(response.Cookies) != 1 {
 		t.Fatalf("response cookies = %#v, want one cart cookie", response.Cookies)
 	}
-	value, found := namedCookieValue(response.Cookies[0], cart.CookieName)
+	value, found := httpapi.NamedCookieValue(response.Cookies[0], cart.CookieName)
 	if !found {
 		t.Fatalf("cart cookie missing from %#v", response.Cookies)
 	}
@@ -1483,17 +1567,24 @@ func TestHomeRendersDataDrivenAisleLinks(t *testing.T) {
 	})
 }
 
-func TestHeaderRendersCartLinkLabelFromNormalizedCookie(t *testing.T) {
+func TestHeaderRendersCartLinkLabelFromSignedCookieWithoutCatalogLookupsOrCookies(t *testing.T) {
 	t.Setenv(cart.EnvCookieSecret, ssrTestCartSecret)
 	request := pageRequest(http.MethodGet, "/products")
 	request.Cookies = []string{cart.CookieName + "=" + encodedTestCart(t, []cart.Line{{Slug: "mango-sticky-rice-kit", Quantity: 2}})}
 
-	response, err := NewHandler(cartRouteStore()).Handle(context.Background(), request)
+	store := cartRouteStore()
+	response, err := NewHandler(store).Handle(context.Background(), request)
 	if err != nil {
 		t.Fatalf("Handle returned error: %v", err)
 	}
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	if len(response.Cookies) != 0 {
+		t.Fatalf("response cookies = %v, want none on catalog pages", response.Cookies)
+	}
+	if got := store.productLookupCount("mango-sticky-rice-kit"); got != 0 {
+		t.Fatalf("GetProductBySlug lookups for mango-sticky-rice-kit = %d, want 0 for the header label", got)
 	}
 	assertBodyContains(t, response.Body, []string{
 		`href="/cart">Cart (2)</a>`,
@@ -1501,6 +1592,30 @@ func TestHeaderRendersCartLinkLabelFromNormalizedCookie(t *testing.T) {
 		`Categories</a>`,
 		`Story</a>`,
 	})
+}
+
+func TestHeaderCartLinkLabelCountsCookieLinesWithoutValidatingProducts(t *testing.T) {
+	t.Setenv(cart.EnvCookieSecret, ssrTestCartSecret)
+	request := pageRequest(http.MethodGet, "/products")
+	request.Cookies = []string{cart.CookieName + "=" + encodedTestCart(t, []cart.Line{{Slug: "missing-product", Quantity: 3}})}
+
+	store := cartRouteStore()
+	response, err := NewHandler(store).Handle(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	if len(response.Cookies) != 0 {
+		t.Fatalf("response cookies = %v, want none on catalog pages", response.Cookies)
+	}
+	if got := store.productLookupCount("missing-product"); got != 0 {
+		t.Fatalf("GetProductBySlug lookups for missing-product = %d, want 0 for the header label", got)
+	}
+	// The badge counts signed cookie lines as-is; /cart and mutations are the
+	// routes that drop unavailable products and repair the cookie.
+	assertBodyContains(t, response.Body, []string{`href="/cart">Cart (3)</a>`})
 }
 
 func TestCartBearingPagesReuseNormalizedRequestCart(t *testing.T) {
@@ -1536,6 +1651,7 @@ func TestCatalogPageReadsStartConcurrently(t *testing.T) {
 		{name: "home", path: "/", starts: []string{"ListRecentlyAddedProducts", "ListActiveCategories"}},
 		{name: "product listing", path: "/products", starts: []string{"ListActiveProducts", "ListActiveCategories"}},
 		{name: "product detail", path: "/products/mango-sticky-rice-kit", starts: []string{"GetProductBySlug:mango-sticky-rice-kit", "ListActiveCategories"}},
+		{name: "category detail", path: "/categories/thai-snacks", starts: []string{"ListActiveCategories", "ListActiveProductsByCategory:thai-snacks"}},
 	}
 
 	for _, test := range tests {
@@ -2606,7 +2722,7 @@ func TestCategoryDetailValidSlugWithNoProductsRendersEmptyState(t *testing.T) {
 	assertBodyOmits(t, response.Body, []string{`data-testid="product-card"`})
 }
 
-func TestCategoryDetailMissingInactiveAndUnlistedSlugsReturn404BeforeProductLookup(t *testing.T) {
+func TestCategoryDetailMissingInactiveAndUnlistedSlugsReturn404(t *testing.T) {
 	store := &fakeCatalogStore{
 		categories: []catalog.Category{
 			{
@@ -2645,9 +2761,6 @@ func TestCategoryDetailMissingInactiveAndUnlistedSlugsReturn404BeforeProductLook
 			}
 			if response.Body != "Not found" {
 				t.Fatalf("body = %q, want Not found", response.Body)
-			}
-			if len(store.categoryProductLookups) != 0 {
-				t.Fatalf("ListActiveProductsByCategory lookups = %v, want none before slug validation", store.categoryProductLookups)
 			}
 		})
 	}
@@ -2735,9 +2848,12 @@ func TestCategoryPagesEscapeCatalogText(t *testing.T) {
 }
 
 func TestStoryReturnsStaticPageWithoutCatalogQuery(t *testing.T) {
+	t.Setenv(cart.EnvCookieSecret, ssrTestCartSecret)
 	handler := NewHandler(&fakeCatalogStore{err: errors.New("story should not query catalog")})
 
-	response, err := handler.Handle(context.Background(), pageRequest(http.MethodGet, "/story"))
+	request := pageRequest(http.MethodGet, "/story")
+	request.Cookies = []string{cart.CookieName + "=" + encodedTestCart(t, []cart.Line{{Slug: "mango-sticky-rice-kit", Quantity: 2}})}
+	response, err := handler.Handle(context.Background(), request)
 	if err != nil {
 		t.Fatalf("Handle returned error: %v", err)
 	}
@@ -2748,6 +2864,7 @@ func TestStoryReturnsStaticPageWithoutCatalogQuery(t *testing.T) {
 		t.Fatalf("Content-Type = %q, want %q", got, htmlContentType)
 	}
 	assertBodyContains(t, response.Body, []string{
+		`href="/cart">Cart (2)</a>`,
 		`<!doctype html>`,
 		`<html lang="en" class="scroll-smooth">`,
 		`<title>Our Story | Thailand Gift Shop</title>`,

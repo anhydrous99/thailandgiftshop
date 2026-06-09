@@ -94,54 +94,26 @@ func envOrDefault(name string, fallback string) string {
 	return value
 }
 
+type lambdaHandleFunc func(context.Context, events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error)
+
 func handleSSR(handler *ssr.Handler, responseWriter http.ResponseWriter, request *http.Request) {
-	body, err := io.ReadAll(request.Body)
-	if err != nil {
-		http.Error(responseWriter, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
-	}
-
-	apiResponse, err := handler.Handle(request.Context(), events.APIGatewayV2HTTPRequest{
-		RawPath:               request.URL.Path,
-		RawQueryString:        request.URL.RawQuery,
-		Headers:               requestHeaders(request),
-		Cookies:               requestCookies(request),
-		Body:                  string(body),
-		IsBase64Encoded:       false,
-		QueryStringParameters: queryParameters(request),
-		RequestContext: events.APIGatewayV2HTTPRequestContext{
-			HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
-				Method:   request.Method,
-				Path:     request.URL.Path,
-				SourceIP: requestSourceIP(request),
-			},
-		},
-	})
-	if err != nil {
-		http.Error(responseWriter, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
-	}
-
-	for key, value := range apiResponse.Headers {
-		responseWriter.Header().Set(key, value)
-	}
-	for _, cookie := range apiResponse.Cookies {
-		responseWriter.Header().Add("Set-Cookie", cookie)
-	}
-	responseWriter.WriteHeader(apiResponse.StatusCode)
-	if request.Method != http.MethodHead {
-		_, _ = responseWriter.Write([]byte(apiResponse.Body))
-	}
+	serveLambda(handler.Handle, responseWriter, request)
 }
 
 func handleAdmin(handler *admin.Handler, responseWriter http.ResponseWriter, request *http.Request) {
+	serveLambda(handler.Handle, responseWriter, request)
+}
+
+// serveLambda adapts a plain HTTP request into the API Gateway v2 event the
+// Lambda handlers consume and writes their response back.
+func serveLambda(handle lambdaHandleFunc, responseWriter http.ResponseWriter, request *http.Request) {
 	body, err := io.ReadAll(request.Body)
 	if err != nil {
 		http.Error(responseWriter, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
 
-	apiResponse, err := handler.Handle(request.Context(), events.APIGatewayV2HTTPRequest{
+	apiResponse, err := handle(request.Context(), events.APIGatewayV2HTTPRequest{
 		RawPath:               request.URL.Path,
 		RawQueryString:        request.URL.RawQuery,
 		Headers:               requestHeaders(request),

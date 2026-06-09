@@ -12,6 +12,9 @@ cdk.out/
 node_modules/
 npm-debug.log*
 
+# Playwright
+web/test-results/
+
 # Local environment
 .env
 .env.*

@@ -1,11 +1,13 @@
 package admin
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -71,15 +73,16 @@ type s3PostPresigner interface {
 	PresignPostObject(context.Context, *s3.PutObjectInput, ...func(*s3.PresignPostOptions)) (*s3.PresignedPostRequest, error)
 }
 
-type s3HeadObjectClient interface {
+type s3ObjectClient interface {
 	HeadObject(context.Context, *s3.HeadObjectInput, ...func(*s3.Options)) (*s3.HeadObjectOutput, error)
+	GetObject(context.Context, *s3.GetObjectInput, ...func(*s3.Options)) (*s3.GetObjectOutput, error)
 }
 
 type productImageUploadService struct {
-	bucketName string
-	keyPrefix  string
-	presigner  s3PostPresigner
-	headClient s3HeadObjectClient
+	bucketName   string
+	keyPrefix    string
+	presigner    s3PostPresigner
+	objectClient s3ObjectClient
 }
 
 func productImageUploadServiceFromEnvironment(ctx context.Context) (*productImageUploadService, error) {
@@ -95,10 +98,10 @@ func productImageUploadServiceFromEnvironment(ctx context.Context) (*productImag
 	}
 	client := s3.NewFromConfig(awsConfig)
 	return &productImageUploadService{
-		bucketName: bucketName,
-		keyPrefix:  keyPrefix,
-		presigner:  s3.NewPresignClient(client),
-		headClient: client,
+		bucketName:   bucketName,
+		keyPrefix:    keyPrefix,
+		presigner:    s3.NewPresignClient(client),
+		objectClient: client,
 	}, nil
 }
 
@@ -142,7 +145,7 @@ func (s productImageUploadService) Presign(ctx context.Context, request productI
 
 func (s productImageUploadService) Confirm(ctx context.Context, request productImageConfirmRequest) (string, error) {
 	contentType, extension, ok := allowedProductImageType(request.ContentType)
-	if !ok || !validUploadSize(request.SizeBytes) || s.bucketName == "" || s.headClient == nil {
+	if !ok || !validUploadSize(request.SizeBytes) || s.bucketName == "" || s.objectClient == nil {
 		return "", errInvalidProductImageUpload
 	}
 	keyPrefix := normalizedProductImageKeyPrefix(s.keyPrefix)
@@ -150,7 +153,7 @@ func (s productImageUploadService) Confirm(ctx context.Context, request productI
 		return "", err
 	}
 
-	head, err := s.headClient.HeadObject(ctx, &s3.HeadObjectInput{
+	head, err := s.objectClient.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(s.bucketName),
 		Key:    aws.String(request.Key),
 	})
@@ -160,8 +163,48 @@ func (s productImageUploadService) Confirm(ctx context.Context, request productI
 	if head == nil || strings.TrimSpace(aws.ToString(head.ContentType)) != contentType || aws.ToInt64(head.ContentLength) != request.SizeBytes {
 		return "", errInvalidProductImageUpload
 	}
+	if err := s.validateUploadedImageBytes(ctx, request.Key, contentType); err != nil {
+		return "", err
+	}
 
 	return "/" + request.Key, nil
+}
+
+const productImageMagicByteProbeLength = 16
+
+// validateUploadedImageBytes reads the first bytes of the uploaded object and
+// checks the file signature, so a non-image payload uploaded with an image
+// Content-Type never becomes a product image URL.
+func (s productImageUploadService) validateUploadedImageBytes(ctx context.Context, key string, contentType string) error {
+	object, err := s.objectClient.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.bucketName),
+		Key:    aws.String(key),
+		Range:  aws.String(fmt.Sprintf("bytes=0-%d", productImageMagicByteProbeLength-1)),
+	})
+	if err != nil {
+		return errProductImageObjectNotFound
+	}
+	if object == nil || object.Body == nil {
+		return errInvalidProductImageUpload
+	}
+	defer object.Body.Close()
+	prefix, err := io.ReadAll(io.LimitReader(object.Body, productImageMagicByteProbeLength))
+	if err != nil || !productImageMagicBytesMatch(contentType, prefix) {
+		return errInvalidProductImageUpload
+	}
+	return nil
+}
+
+func productImageMagicBytesMatch(contentType string, prefix []byte) bool {
+	switch contentType {
+	case "image/jpeg":
+		return len(prefix) >= 3 && bytes.Equal(prefix[:3], []byte{0xFF, 0xD8, 0xFF})
+	case "image/png":
+		return len(prefix) >= 8 && bytes.Equal(prefix[:8], []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A})
+	case "image/webp":
+		return len(prefix) >= 12 && bytes.Equal(prefix[0:4], []byte("RIFF")) && bytes.Equal(prefix[8:12], []byte("WEBP"))
+	}
+	return false
 }
 
 func isProductImageUploadPath(path string) bool {

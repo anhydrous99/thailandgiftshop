@@ -489,6 +489,15 @@ func TestStackWiresAdminOriginHeaderSecretThroughCloudFrontAndAdminLambda(t *tes
 	if value := templateValueString(t, adminOriginSecret); !strings.Contains(value, "AdminOriginHeaderSecret") || !strings.Contains(value, "SecretString") {
 		t.Fatalf("admin origin secret reference = %s, want generated AdminOriginHeaderSecret SecretString", value)
 	}
+
+	ssrVariables := lambdaEnvironmentVariables(t, templateJSON, "thailandgiftshop-ssr")
+	ssrOriginSecret, found := ssrVariables[adminauth.EnvAdminOriginHeaderSecret]
+	if !found {
+		t.Fatalf("ssr lambda missing %s env var: %#v", adminauth.EnvAdminOriginHeaderSecret, ssrVariables)
+	}
+	if templateValueString(t, originHeaderValue) != templateValueString(t, ssrOriginSecret) {
+		t.Fatalf("CloudFront origin header and ssr lambda env use different secrets:\norigin=%s\nenv=%s", templateValueString(t, originHeaderValue), templateValueString(t, ssrOriginSecret))
+	}
 }
 
 func TestStackIncludesCatalogResources(t *testing.T) {
@@ -842,7 +851,9 @@ func TestStackIncludesStaticAssetsDistribution(t *testing.T) {
 					"POST",
 					"DELETE",
 				}),
-				"CachePolicyId":           "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",
+				"CachePolicyId": assertions.Match_ObjectLike(&map[string]any{
+					"Ref": assertions.Match_StringLikeRegexp(jsii.String("SsrCachePolicy")),
+				}),
 				"Compress":                true,
 				"OriginRequestPolicyId":   assertions.Match_AnyValue(),
 				"ResponseHeadersPolicyId": assertions.Match_AnyValue(),
@@ -893,6 +904,31 @@ func TestStackIncludesStaticAssetsDistribution(t *testing.T) {
 					"HX-Request",
 					"X-CSRF-Token",
 				}),
+			},
+		},
+	})
+
+	template.HasResourceProperties(jsii.String("AWS::CloudFront::CachePolicy"), map[string]any{
+		"CachePolicyConfig": map[string]any{
+			"Name":       ssrCachePolicyName,
+			"MinTTL":     float64(0),
+			"DefaultTTL": float64(0),
+			"MaxTTL":     float64(86400),
+			"ParametersInCacheKeyAndForwardedToOrigin": map[string]any{
+				"CookiesConfig": map[string]any{
+					"CookieBehavior": "whitelist",
+					"Cookies": assertions.Match_ArrayEquals(&[]any{
+						cartsession.CookieName,
+					}),
+				},
+				"QueryStringsConfig": map[string]any{
+					"QueryStringBehavior": "all",
+				},
+				"HeadersConfig": map[string]any{
+					"HeaderBehavior": "none",
+				},
+				"EnableAcceptEncodingGzip":   true,
+				"EnableAcceptEncodingBrotli": true,
 			},
 		},
 	})

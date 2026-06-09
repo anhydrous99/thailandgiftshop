@@ -6,12 +6,14 @@ import (
 	"errors"
 	"os"
 	"strings"
+
+	"github.com/anhydrous99/thailandgiftshop/internal/httpapi"
 )
 
 const EnvAdminPasswordHash = "ADMIN_PASSWORD_HASH"
 const EnvAdminSessionSecret = "ADMIN_SESSION_SECRET"
 const EnvAdminCredentialsSecretJSON = "ADMIN_CREDENTIALS_SECRET_JSON"
-const EnvAdminOriginHeaderSecret = "ADMIN_ORIGIN_HEADER_SECRET"
+const EnvAdminOriginHeaderSecret = httpapi.EnvOriginHeaderSecret
 
 type Credentials struct {
 	PasswordHash  string

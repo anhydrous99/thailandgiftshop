@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
@@ -13,6 +14,10 @@ import (
 const canonicalHost = "https://thailandgiftshop.com"
 const privatePageCacheControl = "private, no-store"
 const seoDiscoveryCacheControl = "public, max-age=300, s-maxage=600"
+
+// Browsers revalidate every visit (max-age=0) so admin edits show up on
+// refresh; CloudFront keeps a shared edge copy for five minutes (s-maxage).
+const catalogPageCacheControl = "public, max-age=0, s-maxage=300"
 
 type seoMetadata struct {
 	Title       string
@@ -54,7 +59,10 @@ func noindexMetadata(title string, description string, path string) seoMetadata 
 	return metadata
 }
 
-func homeMetadata() seoMetadata {
+// The metadata for pages without dynamic content is built once per warm
+// Lambda and shared across requests. The returned seoMetadata (including
+// its JSONLD slice and maps) must be treated as immutable by callers.
+var homeMetadata = sync.OnceValue(func() seoMetadata {
 	metadata := metadataForPath(
 		"Thailand Gift Shop",
 		"Browse a Thai gift-shop catalog of snacks, souvenirs, pantry favorites, textiles, decor, wellness, and small keepsakes.",
@@ -76,15 +84,15 @@ func homeMetadata() seoMetadata {
 		},
 	}
 	return metadata
-}
+})
 
-func productListingMetadata() seoMetadata {
+var productListingMetadata = sync.OnceValue(func() seoMetadata {
 	return metadataWithBreadcrumbs(metadataForPath(
 		"Products | Thailand Gift Shop",
 		"Browse Thai snacks, souvenirs, textiles, pantry items, decor, wellness, and small keepsakes.",
 		"/products",
 	), productListingBreadcrumbs())
-}
+})
 
 func productDetailMetadata(product catalog.Product, placeholderURL string) seoMetadata {
 	metadata := metadataForPath(
@@ -97,13 +105,13 @@ func productDetailMetadata(product catalog.Product, placeholderURL string) seoMe
 	return metadataWithBreadcrumbs(metadata, productDetailBreadcrumbs(product))
 }
 
-func categoryIndexMetadata() seoMetadata {
+var categoryIndexMetadata = sync.OnceValue(func() seoMetadata {
 	return metadataWithBreadcrumbs(metadataForPath(
 		"Categories | Thailand Gift Shop",
 		"Shop Thai gift-shop finds by aisle, including snacks, souvenirs, textiles, decor, wellness, and pantry favorites.",
 		"/categories",
 	), categoryIndexBreadcrumbs())
-}
+})
 
 func categoryDetailMetadata(category catalog.Category) seoMetadata {
 	return metadataWithBreadcrumbs(
@@ -112,29 +120,29 @@ func categoryDetailMetadata(category catalog.Category) seoMetadata {
 	)
 }
 
-func storyMetadata() seoMetadata {
+var storyMetadata = sync.OnceValue(func() seoMetadata {
 	return metadataWithBreadcrumbs(metadataForPath(
 		"Our Story | Thailand Gift Shop",
 		"Learn how Thailand Gift Shop organizes Thai snacks, souvenirs, textiles, pantry items, decor, wellness, and small keepsakes for calm browsing.",
 		"/story",
 	), storyBreadcrumbs())
-}
+})
 
-func cartMetadata() seoMetadata {
+var cartMetadata = sync.OnceValue(func() seoMetadata {
 	return noindexMetadata(
 		"Cart | Thailand Gift Shop",
 		"Review quantities for your Thai gift-shop finds before checkout review.",
 		"/cart",
 	)
-}
+})
 
-func checkoutMetadata() seoMetadata {
+var checkoutMetadata = sync.OnceValue(func() seoMetadata {
 	return noindexMetadata(
 		"Checkout Review | Thailand Gift Shop",
 		"Confirm your current cart summary; no customer details, payment details, or order are collected here.",
 		"/checkout",
 	)
-}
+})
 
 func metadataWithBreadcrumbs(metadata seoMetadata, breadcrumbs []breadcrumbItem) seoMetadata {
 	if len(breadcrumbs) == 0 {
@@ -240,10 +248,11 @@ func robotsTxt() string {
 }
 
 func sitemapXML(products []catalog.Product, categories []catalog.Category) (string, error) {
-	urls := []sitemapURL{
-		{Loc: canonicalURL("/")},
-		{Loc: canonicalURL("/products")},
-	}
+	urls := make([]sitemapURL, 0, len(products)+len(categories)+4)
+	urls = append(urls,
+		sitemapURL{Loc: canonicalURL("/")},
+		sitemapURL{Loc: canonicalURL("/products")},
+	)
 	for _, product := range products {
 		if product.Status != catalog.StatusActive {
 			continue
@@ -291,6 +300,8 @@ func seoHeadersForRoute(kind pageKind) map[string]string {
 		}
 	case pageRobotsTxt, pageSitemapXML:
 		return map[string]string{"Cache-Control": seoDiscoveryCacheControl}
+	case pageHome, pageProducts, pageProductDetail, pageCategories, pageCategoryDetail, pageStory:
+		return map[string]string{"Cache-Control": catalogPageCacheControl}
 	}
 	return nil
 }

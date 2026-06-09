@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 const testSecret = "cart-test-secret"
@@ -44,6 +45,9 @@ func TestCartCookieRoundTrip(t *testing.T) {
 	decodedPayload := decodeTestPayload(t, encoded)
 	if decodedPayload.Version != payloadVersion {
 		t.Fatalf("payload version = %d, want %d", decodedPayload.Version, payloadVersion)
+	}
+	if decodedPayload.IssuedAt <= 0 {
+		t.Fatalf("payload issued at = %d, want positive unix seconds", decodedPayload.IssuedAt)
 	}
 	if got := decodedPayload.Lines; !reflect.DeepEqual(got, wantLines) {
 		t.Fatalf("payload lines = %#v, want %#v", got, wantLines)
@@ -195,7 +199,8 @@ func TestCartRejectsInvalidSlugs(t *testing.T) {
 
 func TestCartCookieNormalizesDuplicateSlugs(t *testing.T) {
 	encoded := signedTestCookie(t, cookiePayload{
-		Version: payloadVersion,
+		Version:  payloadVersion,
+		IssuedAt: time.Now().Unix(),
 		Lines: []Line{
 			{Slug: "mango", Quantity: 60},
 			{Slug: "tea", Quantity: 2},
@@ -214,7 +219,7 @@ func TestCartCookieNormalizesDuplicateSlugs(t *testing.T) {
 }
 
 func TestCartCookiePreservesLegacyLinesWithoutVariantID(t *testing.T) {
-	encoded := signedRawTestCookie(t, []byte(`{"version":1,"lines":[{"slug":"mango","quantity":2}]}`))
+	encoded := signedRawTestCookie(t, fmt.Appendf(nil, `{"version":1,"iat":%d,"lines":[{"slug":"mango","quantity":2}]}`, time.Now().Unix()))
 
 	decoded := DecodeCookie(encoded, testSecret)
 	if decoded.NeedsClear {
@@ -228,7 +233,8 @@ func TestCartCookiePreservesLegacyLinesWithoutVariantID(t *testing.T) {
 
 func TestCartCookieNormalizesDuplicateVariantLinesBySlugAndVariantID(t *testing.T) {
 	encoded := signedTestCookie(t, cookiePayload{
-		Version: payloadVersion,
+		Version:  payloadVersion,
+		IssuedAt: time.Now().Unix(),
 		Lines: []Line{
 			{Slug: "linen-shirt", VariantID: "var-small", Quantity: 2},
 			{Slug: "linen-shirt", VariantID: "var-large", Quantity: 3},
@@ -344,8 +350,8 @@ func TestCartCookieRejectsMalformed(t *testing.T) {
 		"one.two.three",
 		"%%%.signature",
 		signedRawTestCookie(t, []byte("{")),
-		signedTestCookie(t, cookiePayload{Version: payloadVersion, Lines: []Line{{Slug: "mango", Quantity: 0}}}),
-		signedTestCookie(t, cookiePayload{Version: payloadVersion, Lines: []Line{{Slug: "mango", Quantity: -1}}}),
+		signedTestCookie(t, cookiePayload{Version: payloadVersion, IssuedAt: time.Now().Unix(), Lines: []Line{{Slug: "mango", Quantity: 0}}}),
+		signedTestCookie(t, cookiePayload{Version: payloadVersion, IssuedAt: time.Now().Unix(), Lines: []Line{{Slug: "mango", Quantity: -1}}}),
 	}
 
 	for _, value := range malformed {
@@ -376,11 +382,75 @@ func TestCartCookieRejectsUnsupportedVersion(t *testing.T) {
 	}
 }
 
+func TestCartCookieRejectsMissingIssuedAt(t *testing.T) {
+	// Cookies signed before issued-at validation existed carry no iat claim;
+	// they clear once and the next cart mutation mints a fresh cookie.
+	encoded := signedTestCookie(t, cookiePayload{
+		Version: payloadVersion,
+		Lines:   []Line{{Slug: "mango", Quantity: 1}},
+	})
+
+	decoded := DecodeCookie(encoded, testSecret)
+	if !decoded.NeedsClear {
+		t.Fatal("DecodeCookie missing issued-at NeedsClear = false, want true")
+	}
+	if decoded.Cart.LineCount() != 0 {
+		t.Fatalf("missing issued-at cart line count = %d, want 0", decoded.Cart.LineCount())
+	}
+}
+
+func TestCartCookieIssuedAtBounds(t *testing.T) {
+	issued := time.Now()
+	encoded, err := encodeCookieAt(mustCartFromLines(t, []Line{{Slug: "mango", Quantity: 1}}), testSecret, issued)
+	if err != nil {
+		t.Fatalf("encodeCookieAt returned error: %v", err)
+	}
+
+	tests := []struct {
+		name      string
+		now       time.Time
+		wantClear bool
+	}{
+		{name: "fresh", now: issued, wantClear: false},
+		{name: "near expiry", now: issued.Add(CookieMaxAge*time.Second - time.Second), wantClear: false},
+		{name: "expired", now: issued.Add(CookieMaxAge*time.Second + time.Second), wantClear: true},
+		{name: "future within skew", now: issued.Add(-cookieIssuedAtSkew + time.Minute), wantClear: false},
+		{name: "future beyond skew", now: issued.Add(-cookieIssuedAtSkew - time.Minute), wantClear: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			decoded := decodeCookieAt(encoded, testSecret, test.now)
+			if decoded.NeedsClear != test.wantClear {
+				t.Fatalf("NeedsClear = %t, want %t", decoded.NeedsClear, test.wantClear)
+			}
+			wantLines := 1
+			if test.wantClear {
+				wantLines = 0
+			}
+			if got := decoded.Cart.LineCount(); got != wantLines {
+				t.Fatalf("line count = %d, want %d", got, wantLines)
+			}
+		})
+	}
+}
+
+func mustCartFromLines(t *testing.T, lines []Line) Cart {
+	t.Helper()
+
+	cart, err := New(lines)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	return cart
+}
+
 func TestCartCookieRejectsInvalidSlugs(t *testing.T) {
 	for _, slug := range []string{"", "products/mango"} {
 		encoded := signedTestCookie(t, cookiePayload{
-			Version: payloadVersion,
-			Lines:   []Line{{Slug: slug, Quantity: 1}},
+			Version:  payloadVersion,
+			IssuedAt: time.Now().Unix(),
+			Lines:    []Line{{Slug: slug, Quantity: 1}},
 		})
 
 		decoded := DecodeCookie(encoded, testSecret)

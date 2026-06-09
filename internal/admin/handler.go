@@ -2,14 +2,10 @@ package admin
 
 import (
 	"context"
-	"crypto/sha256"
-	"crypto/subtle"
-	"encoding/base64"
 	"encoding/json"
 	"maps"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -17,15 +13,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/anhydrous99/thailandgiftshop/internal/appenv"
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
+	"github.com/anhydrous99/thailandgiftshop/internal/httpapi"
 	"github.com/anhydrous99/thailandgiftshop/internal/observability"
 	"github.com/aws/aws-lambda-go/events"
 	"golang.org/x/crypto/bcrypt"
 )
 
-const htmlContentType = "text/html; charset=utf-8"
-const jsonContentType = "application/json; charset=utf-8"
 const adminRobotsTag = "noindex, nofollow"
 
 const adminAllowedMethods = http.MethodGet + ", " + http.MethodHead
@@ -34,7 +28,7 @@ const logoutAllowedMethods = http.MethodPost
 const uploadAllowedMethods = http.MethodPost
 
 const csrfHeaderName = "X-CSRF-Token"
-const adminOriginHeaderName = "X-TGS-Origin-Secret"
+const adminOriginHeaderName = httpapi.OriginSecretHeaderName
 const cloudFrontViewerAddressHeaderName = "CloudFront-Viewer-Address"
 const passwordFieldName = "password"
 const csrfFieldName = "csrf_token"
@@ -42,23 +36,30 @@ const csrfFieldName = "csrf_token"
 const dummyBcryptHash = "$2a$04$Vn0nSllZrX4bNwFaMifZAuS4xCZ9oE4DngJ02k8pYDz7zlXzpOfgK"
 
 type Handler struct {
-	stateMu       sync.RWMutex
-	credentials   Credentials
-	now           func() time.Time
-	catalog       catalog.AdminStore
-	uploads       productImageUploads
-	loginThrottle adminLoginThrottle
-	metrics       observability.Recorder
+	stateMu            sync.RWMutex
+	credentials        Credentials
+	now                func() time.Time
+	catalog            catalog.AdminStore
+	uploads            productImageUploads
+	loginThrottle      adminLoginThrottle
+	metrics            observability.Recorder
+	originSecretDigest [32]byte
+	originSecretSet    bool
 }
 
 var adminColdStartRecorded atomic.Bool
 
 func NewHandler() *Handler {
-	return &Handler{now: time.Now, loginThrottle: noopAdminLoginThrottle{}}
+	return withOriginSecretFromEnvironment(&Handler{now: time.Now, loginThrottle: noopAdminLoginThrottle{}})
 }
 
 func NewHandlerWithCredentials(credentials Credentials) *Handler {
-	return &Handler{credentials: credentials, now: time.Now}
+	return withOriginSecretFromEnvironment(&Handler{credentials: credentials, now: time.Now})
+}
+
+func withOriginSecretFromEnvironment(h *Handler) *Handler {
+	h.originSecretDigest, h.originSecretSet = httpapi.OriginSecretDigestFromEnvironment()
+	return h
 }
 
 func NewHandlerWithCredentialsAndCatalog(credentials Credentials, adminStore catalog.AdminStore) *Handler {
@@ -103,7 +104,7 @@ func Handle(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events
 
 func (h *Handler) Handle(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	started := time.Now()
-	method := requestMethod(request)
+	method := httpapi.Method(request)
 	route := h.adminMetricRoute(request)
 	response, err := h.handle(ctx, request)
 	h.recordRouteMetrics(started, route, method, response.StatusCode)
@@ -111,11 +112,11 @@ func (h *Handler) Handle(ctx context.Context, request events.APIGatewayV2HTTPReq
 }
 
 func (h *Handler) handle(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	path := requestPath(request)
+	path := httpapi.Path(request)
 	if path != "/admin" && !strings.HasPrefix(path, "/admin/") {
-		return htmlResponse(http.StatusNotFound, "Not found", nil), nil
+		return httpapi.HTMLResponse(http.StatusNotFound, "Not found", nil), nil
 	}
-	if !validAdminOrigin(request) {
+	if !h.validAdminOrigin(request) {
 		h.recordAdminOriginRejected()
 		return adminHTMLResponse(http.StatusForbidden, "Forbidden", nil, nil), nil
 	}
@@ -134,11 +135,11 @@ func (h *Handler) handle(ctx context.Context, request events.APIGatewayV2HTTPReq
 }
 
 func (h *Handler) adminMetricRoute(request events.APIGatewayV2HTTPRequest) string {
-	path := requestPath(request)
+	path := httpapi.Path(request)
 	if path != "/admin" && !strings.HasPrefix(path, "/admin/") {
 		return "not_found"
 	}
-	if !validAdminOrigin(request) {
+	if !h.validAdminOrigin(request) {
 		return "origin_rejected"
 	}
 	if path == "/admin/login" {
@@ -180,7 +181,7 @@ func (h *Handler) recordRouteMetrics(started time.Time, route string, method str
 }
 
 func (h *Handler) handleLogin(ctx context.Context, request events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
-	method := requestMethod(request)
+	method := httpapi.Method(request)
 	if method != http.MethodGet && method != http.MethodHead && method != http.MethodPost {
 		return adminHTMLResponse(http.StatusMethodNotAllowed, "Method not allowed", map[string]string{"Allow": loginAllowedMethods}, nil)
 	}
@@ -196,6 +197,7 @@ func (h *Handler) handleLogin(ctx context.Context, request events.APIGatewayV2HT
 	client := adminLoginClient(request)
 	status, err := h.loginThrottleForRequest().ReserveAttempt(ctx, client, h.currentTime())
 	if err != nil {
+		logAdminError("login: reserve throttle attempt", err)
 		h.recordAdminLoginAttempt(metricOutcomeError)
 		return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 	}
@@ -204,7 +206,7 @@ func (h *Handler) handleLogin(ctx context.Context, request events.APIGatewayV2HT
 		return adminLoginThrottleResponse(status, h.currentTime())
 	}
 
-	values, err := formValues(request)
+	values, err := httpapi.FormValues(request)
 	if err != nil || !h.validPasswordWithCredentials(credentials, values.Get(passwordFieldName)) {
 		if status.Locked(h.currentTime()) {
 			h.recordAdminLoginAttempt(metricOutcomeThrottled)
@@ -214,17 +216,20 @@ func (h *Handler) handleLogin(ctx context.Context, request events.APIGatewayV2HT
 		return adminHTMLResponse(http.StatusUnauthorized, loginPageBody("Invalid credentials"), nil, nil)
 	}
 	if err := h.loginThrottleForRequest().Clear(ctx, client); err != nil {
+		logAdminError("login: clear throttle", err)
 		h.recordAdminLoginAttempt(metricOutcomeError)
 		return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 	}
 
 	session, sessionValue, err := newAdminSession(credentials.SessionSecret, h.currentTime())
 	if err != nil {
+		logAdminError("login: create session", err)
 		h.recordAdminLoginAttempt(metricOutcomeError)
 		return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 	}
 	csrfValue, err := newAdminCSRFToken(session, credentials.SessionSecret)
 	if err != nil {
+		logAdminError("login: create csrf token", err)
 		h.recordAdminLoginAttempt(metricOutcomeError)
 		return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 	}
@@ -237,7 +242,7 @@ func (h *Handler) handleLogin(ctx context.Context, request events.APIGatewayV2HT
 }
 
 func (h *Handler) handleLogout(ctx context.Context, request events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
-	if requestMethod(request) != http.MethodPost {
+	if httpapi.Method(request) != http.MethodPost {
 		return adminHTMLResponse(http.StatusMethodNotAllowed, "Method not allowed", map[string]string{"Allow": logoutAllowedMethods}, nil)
 	}
 
@@ -261,8 +266,8 @@ func (h *Handler) handleProtectedAdmin(ctx context.Context, request events.APIGa
 		return adminRedirectResponse(http.StatusSeeOther, "/admin/login", nil)
 	}
 
-	path := requestPath(request)
-	method := requestMethod(request)
+	path := httpapi.Path(request)
+	method := httpapi.Method(request)
 	if method == http.MethodPost && !h.validCSRF(ctx, request, session) {
 		return adminHTMLResponse(http.StatusForbidden, "Forbidden", nil, nil)
 	}
@@ -284,10 +289,12 @@ func (h *Handler) handleProtectedAdmin(ctx context.Context, request events.APIGa
 
 	csrfValue, cookies, err := h.csrfForProtectedResponse(ctx, request, session)
 	if err != nil {
+		logAdminError("dashboard: issue csrf token", err)
 		return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 	}
 	body, err := h.adminPageBody(ctx, csrfValue)
 	if err != nil {
+		logAdminError("dashboard: render", err)
 		return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 	}
 	if method == http.MethodHead {
@@ -305,6 +312,7 @@ func (h *Handler) credentialsForRequest(ctx context.Context) Credentials {
 
 	loadedCredentials, err := CredentialsFromEnvironment(ctx)
 	if err != nil {
+		logAdminError("load credentials from environment", err)
 		return credentials
 	}
 
@@ -372,9 +380,9 @@ func (h *Handler) validCSRF(ctx context.Context, request events.APIGatewayV2HTTP
 	if !found {
 		return false
 	}
-	submittedValue := headerValue(request.Headers, csrfHeaderName)
+	submittedValue := httpapi.HeaderValue(request.Headers, csrfHeaderName)
 	if submittedValue == "" {
-		values, err := formValues(request)
+		values, err := httpapi.FormValues(request)
 		if err != nil {
 			return false
 		}
@@ -413,6 +421,7 @@ func (h *Handler) handleProductImageUpload(ctx context.Context, path string, req
 	step := productImageUploadStep(path)
 	uploads, err := h.productImageUploads(ctx)
 	if err != nil {
+		logAdminError("product image upload: init service", err)
 		h.recordProductImageUpload(step, metricOutcomeError)
 		return adminJSONErrorResponse(http.StatusInternalServerError, "upload service unavailable")
 	}
@@ -420,7 +429,7 @@ func (h *Handler) handleProductImageUpload(ctx context.Context, path string, req
 	switch path {
 	case productImagePresignPath:
 		var payload productImagePresignRequest
-		if err := jsonRequestBody(request, &payload); err != nil {
+		if err := httpapi.JSONBody(request, &payload); err != nil {
 			h.recordProductImageUpload(step, metricOutcomeValidationError)
 			return adminJSONErrorResponse(http.StatusBadRequest, "invalid upload request")
 		}
@@ -434,6 +443,7 @@ func (h *Handler) handleProductImageUpload(ctx context.Context, path string, req
 				h.recordProductImageUpload(step, metricOutcomeValidationError)
 				return adminJSONErrorResponse(http.StatusBadRequest, "invalid upload request")
 			}
+			logAdminError("product image upload: presign", err)
 			h.recordProductImageUpload(step, metricOutcomeError)
 			return adminJSONErrorResponse(http.StatusInternalServerError, "upload service unavailable")
 		}
@@ -441,7 +451,7 @@ func (h *Handler) handleProductImageUpload(ctx context.Context, path string, req
 		return adminJSONResponse(http.StatusOK, response)
 	case productImageConfirmPath:
 		var payload productImageConfirmRequest
-		if err := jsonRequestBody(request, &payload); err != nil {
+		if err := httpapi.JSONBody(request, &payload); err != nil {
 			h.recordProductImageUpload(step, metricOutcomeValidationError)
 			return adminJSONErrorResponse(http.StatusBadRequest, "invalid upload request")
 		}
@@ -455,12 +465,14 @@ func (h *Handler) handleProductImageUpload(ctx context.Context, path string, req
 				h.recordProductImageUpload(step, metricOutcomeValidationError)
 				return adminJSONErrorResponse(http.StatusBadRequest, "invalid upload request")
 			}
+			logAdminError("product image upload: confirm", err)
 			h.recordProductImageUpload(step, metricOutcomeError)
 			return adminJSONErrorResponse(http.StatusInternalServerError, "upload service unavailable")
 		}
 		credentials := h.credentialsForRequest(ctx)
 		token, err := newConfirmedProductImageToken(url, session, credentials.SessionSecret, h.currentTime())
 		if err != nil {
+			logAdminError("product image upload: sign confirmed token", err)
 			h.recordProductImageUpload(step, metricOutcomeError)
 			return adminJSONErrorResponse(http.StatusInternalServerError, "upload service unavailable")
 		}
@@ -523,72 +535,16 @@ func (h *Handler) adminPageBody(ctx context.Context, csrfValue string) (string, 
 	return renderAdminDashboard(ctx, vm)
 }
 
-func requestPath(request events.APIGatewayV2HTTPRequest) string {
-	if request.RawPath != "" {
-		return request.RawPath
-	}
-	if request.RequestContext.HTTP.Path != "" {
-		return request.RequestContext.HTTP.Path
-	}
-
-	return "/"
-}
-
-func requestMethod(request events.APIGatewayV2HTTPRequest) string {
-	if request.RequestContext.HTTP.Method != "" {
-		return request.RequestContext.HTTP.Method
-	}
-
-	return http.MethodGet
-}
-
 func requestCookieValue(request events.APIGatewayV2HTTPRequest, name string) (string, bool) {
-	for _, cookieHeader := range request.Cookies {
-		if value, found := namedCookieValue(cookieHeader, name); found {
-			return value, true
-		}
-	}
-	if cookieHeader := headerValue(request.Headers, "Cookie"); cookieHeader != "" {
-		return namedCookieValue(cookieHeader, name)
-	}
-
-	return "", false
+	return httpapi.CookieValue(request, name)
 }
 
-func namedCookieValue(cookieHeader string, name string) (string, bool) {
-	for part := range strings.SplitSeq(cookieHeader, ";") {
-		cookieName, value, ok := strings.Cut(strings.TrimSpace(part), "=")
-		if ok && cookieName == name {
-			return value, true
-		}
-	}
-
-	return "", false
-}
-
-func headerValue(headers map[string]string, name string) string {
-	for key, value := range headers {
-		if strings.EqualFold(key, name) {
-			return value
-		}
-	}
-
-	return ""
-}
-
-func validAdminOrigin(request events.APIGatewayV2HTTPRequest) bool {
-	secret := strings.TrimSpace(os.Getenv(EnvAdminOriginHeaderSecret))
-	if secret == "" {
-		return !appenv.IsProduction()
-	}
-	provided := headerValue(request.Headers, adminOriginHeaderName)
-	providedDigest := sha256.Sum256([]byte(provided))
-	secretDigest := sha256.Sum256([]byte(secret))
-	return subtle.ConstantTimeCompare(providedDigest[:], secretDigest[:]) == 1
+func (h *Handler) validAdminOrigin(request events.APIGatewayV2HTTPRequest) bool {
+	return httpapi.ValidOriginSecret(request, h.originSecretDigest, h.originSecretSet)
 }
 
 func adminLoginClient(request events.APIGatewayV2HTTPRequest) string {
-	if client := normalizedAdminClientAddress(headerValue(request.Headers, cloudFrontViewerAddressHeaderName)); client != "" {
+	if client := normalizedAdminClientAddress(httpapi.HeaderValue(request.Headers, cloudFrontViewerAddressHeaderName)); client != "" {
 		return client
 	}
 	sourceIP := strings.TrimSpace(request.RequestContext.HTTP.SourceIP)
@@ -628,33 +584,6 @@ func normalizedAdminClientAddress(value string) string {
 	return ""
 }
 
-func formValues(request events.APIGatewayV2HTTPRequest) (url.Values, error) {
-	body := request.Body
-	if request.IsBase64Encoded {
-		decoded, err := base64.StdEncoding.DecodeString(body)
-		if err != nil {
-			return nil, err
-		}
-		body = string(decoded)
-	}
-
-	return url.ParseQuery(body)
-}
-
-func jsonRequestBody(request events.APIGatewayV2HTTPRequest, target any) error {
-	body := request.Body
-	if request.IsBase64Encoded {
-		decoded, err := base64.StdEncoding.DecodeString(body)
-		if err != nil {
-			return err
-		}
-		body = string(decoded)
-	}
-	decoder := json.NewDecoder(strings.NewReader(body))
-	decoder.DisallowUnknownFields()
-	return decoder.Decode(target)
-}
-
 func adminRedirectResponse(statusCode int, location string, cookies []string) events.APIGatewayV2HTTPResponse {
 	return events.APIGatewayV2HTTPResponse{
 		StatusCode: statusCode,
@@ -667,14 +596,10 @@ func adminRedirectResponse(statusCode int, location string, cookies []string) ev
 	}
 }
 
-func htmlResponse(statusCode int, body string, headers map[string]string) events.APIGatewayV2HTTPResponse {
-	return htmlResponseWithCookies(statusCode, body, headers, nil)
-}
-
 func adminHTMLResponse(statusCode int, body string, headers map[string]string, cookies []string) events.APIGatewayV2HTTPResponse {
 	adminHeaders := map[string]string{"Cache-Control": "no-store", "X-Robots-Tag": adminRobotsTag}
 	maps.Copy(adminHeaders, headers)
-	return htmlResponseWithCookies(statusCode, body, adminHeaders, cookies)
+	return httpapi.HTMLResponseWithCookies(statusCode, body, adminHeaders, cookies)
 }
 
 func adminJSONErrorResponse(statusCode int, message string) events.APIGatewayV2HTTPResponse {
@@ -691,23 +616,9 @@ func adminJSONResponse(statusCode int, payload any) events.APIGatewayV2HTTPRespo
 		StatusCode: statusCode,
 		Headers: map[string]string{
 			"Cache-Control": "no-store",
-			"Content-Type":  jsonContentType,
+			"Content-Type":  httpapi.JSONContentType,
 			"X-Robots-Tag":  adminRobotsTag,
 		},
 		Body: string(body),
-	}
-}
-
-func htmlResponseWithCookies(statusCode int, body string, headers map[string]string, cookies []string) events.APIGatewayV2HTTPResponse {
-	responseHeaders := map[string]string{
-		"Content-Type": htmlContentType,
-	}
-	maps.Copy(responseHeaders, headers)
-
-	return events.APIGatewayV2HTTPResponse{
-		StatusCode: statusCode,
-		Headers:    responseHeaders,
-		Body:       body,
-		Cookies:    cookies,
 	}
 }

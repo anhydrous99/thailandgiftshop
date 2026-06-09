@@ -165,6 +165,9 @@ func adminSessionCookie(value string, expiresAt time.Time) *http.Cookie {
 	}
 }
 
+// The CSRF token reaches the browser twice: in this cookie and in hidden form
+// inputs rendered into every admin form. Scripts only ever read the hidden
+// input, so the cookie can stay HttpOnly.
 func adminCSRFCookie(value string, expiresAt time.Time) *http.Cookie {
 	return &http.Cookie{
 		Name:     adminCSRFCookieName,
@@ -172,6 +175,7 @@ func adminCSRFCookie(value string, expiresAt time.Time) *http.Cookie {
 		Path:     "/",
 		Expires:  expiresAt,
 		MaxAge:   int(adminSessionTTL.Seconds()),
+		HttpOnly: true,
 		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 	}
@@ -195,6 +199,7 @@ func clearAdminCSRFCookie() *http.Cookie {
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,
+		HttpOnly: true,
 		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 	}

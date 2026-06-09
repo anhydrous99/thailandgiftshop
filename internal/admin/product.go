@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
+	"github.com/anhydrous99/thailandgiftshop/internal/httpapi"
 	"github.com/aws/aws-lambda-go/events"
 )
 
@@ -61,9 +62,10 @@ func isAdminProductPath(path string) bool {
 }
 
 func (h *Handler) handleAdminProducts(ctx context.Context, path string, request events.APIGatewayV2HTTPRequest, session adminSession) events.APIGatewayV2HTTPResponse {
-	method := requestMethod(request)
+	method := httpapi.Method(request)
 	csrfValue, cookies, err := h.csrfForProtectedResponse(ctx, request, session)
 	if err != nil {
+		logAdminError("products: issue csrf token", err)
 		return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 	}
 	store := h.catalogStore()
@@ -72,10 +74,12 @@ func (h *Handler) handleAdminProducts(ctx context.Context, path string, request 
 		if method == http.MethodGet || method == http.MethodHead {
 			products, err := store.ListProducts(ctx)
 			if err != nil {
+				logAdminError("products: list", err)
 				return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 			}
 			body, err := renderAdminProductList(ctx, adminProductListViewModel{CSRFValue: csrfValue, Products: filterAdminProducts(products, productFilters(request)), Filters: productFilters(request), Flash: request.QueryStringParameters["saved"]})
 			if err != nil {
+				logAdminError("products: render list", err)
 				return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 			}
 			if method == http.MethodHead {
@@ -94,6 +98,7 @@ func (h *Handler) handleAdminProducts(ctx context.Context, path string, request 
 		}
 		body, err := h.productForm(ctx, csrfValue, newProductFormViewModel(csrfValue, nil))
 		if err != nil {
+			logAdminError("products: render new form", err)
 			return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 		}
 		if method == http.MethodHead {
@@ -108,6 +113,7 @@ func (h *Handler) handleAdminProducts(ctx context.Context, path string, request 
 	}
 	product, found, err := store.GetProductByID(ctx, productID)
 	if err != nil {
+		logAdminError("products: load product", err)
 		return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 	}
 	if !found {
@@ -119,6 +125,7 @@ func (h *Handler) handleAdminProducts(ctx context.Context, path string, request 
 			vm := editProductFormViewModel(csrfValue, product, nil, request.QueryStringParameters["saved"])
 			body, err := h.productForm(ctx, csrfValue, vm)
 			if err != nil {
+				logAdminError("products: render edit form", err)
 				return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 			}
 			if method == http.MethodHead {
@@ -157,7 +164,7 @@ func (h *Handler) catalogStore() catalog.AdminStore {
 }
 
 func (h *Handler) createProduct(ctx context.Context, request events.APIGatewayV2HTTPRequest, session adminSession, csrfValue string, cookies []string) events.APIGatewayV2HTTPResponse {
-	values, err := formValues(request)
+	values, err := httpapi.FormValues(request)
 	if err != nil {
 		h.recordCatalogWrite(metricEntityProduct, metricOperationCreate, metricOutcomeValidationError)
 		return adminHTMLResponse(http.StatusBadRequest, "Invalid form", nil, nil)
@@ -178,7 +185,7 @@ func (h *Handler) createProduct(ctx context.Context, request events.APIGatewayV2
 }
 
 func (h *Handler) updateProduct(ctx context.Context, request events.APIGatewayV2HTTPRequest, session adminSession, previous catalog.Product, csrfValue string, cookies []string) events.APIGatewayV2HTTPResponse {
-	values, err := formValues(request)
+	values, err := httpapi.FormValues(request)
 	if err != nil {
 		h.recordCatalogWrite(metricEntityProduct, metricOperationUpdate, metricOutcomeValidationError)
 		return adminHTMLResponse(http.StatusBadRequest, "Invalid form", nil, nil)
@@ -214,6 +221,7 @@ func (h *Handler) archiveProduct(ctx context.Context, product catalog.Product) e
 		if errors.Is(err, catalog.ErrVersionConflict) {
 			return adminHTMLResponse(http.StatusConflict, "Version conflict", nil, nil)
 		}
+		logAdminError("products: archive", err)
 		return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 	}
 	h.recordCatalogWrite(metricEntityProduct, metricOperationArchive, metricOutcomeSuccess)
@@ -231,6 +239,7 @@ func (h *Handler) productWriteError(ctx context.Context, csrfValue string, cooki
 	} else if strings.Contains(err.Error(), "variant") {
 		message = err.Error()
 	} else {
+		logAdminError("products: save", err)
 		status = http.StatusInternalServerError
 		message = "Internal server error"
 	}
@@ -241,6 +250,7 @@ func (h *Handler) productWriteError(ctx context.Context, csrfValue string, cooki
 func (h *Handler) productFormResponse(ctx context.Context, csrfValue string, cookies []string, vm adminProductFormViewModel, status int) events.APIGatewayV2HTTPResponse {
 	body, err := h.productForm(ctx, csrfValue, vm)
 	if err != nil {
+		logAdminError("products: render form", err)
 		return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 	}
 	return adminHTMLResponse(status, body, nil, cookies)

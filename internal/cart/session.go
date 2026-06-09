@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"time"
 )
 
 const (
@@ -19,6 +20,10 @@ const (
 )
 
 const payloadVersion = 1
+
+// cookieIssuedAtSkew tolerates clock drift between the host that signed a
+// cookie and the host validating it.
+const cookieIssuedAtSkew = 5 * time.Minute
 
 var (
 	ErrInvalidSlug     = errors.New("invalid cart slug")
@@ -43,8 +48,9 @@ type DecodeResult struct {
 }
 
 type cookiePayload struct {
-	Version int    `json:"version"`
-	Lines   []Line `json:"lines"`
+	Version  int    `json:"version"`
+	IssuedAt int64  `json:"iat"`
+	Lines    []Line `json:"lines"`
 }
 
 func New(lines []Line) (Cart, error) {
@@ -153,14 +159,19 @@ func (c Cart) LineCount() int {
 }
 
 func EncodeCookie(c Cart, secret string) (string, error) {
+	return encodeCookieAt(c, secret, time.Now())
+}
+
+func encodeCookieAt(c Cart, secret string, now time.Time) (string, error) {
 	normalized, err := normalizeLines(c.lines, true, false)
 	if err != nil {
 		return "", err
 	}
 
 	jsonPayload, err := json.Marshal(cookiePayload{
-		Version: payloadVersion,
-		Lines:   normalized.lines,
+		Version:  payloadVersion,
+		IssuedAt: now.UTC().Unix(),
+		Lines:    normalized.lines,
 	})
 	if err != nil {
 		return "", err
@@ -177,6 +188,10 @@ func EncodeCookie(c Cart, secret string) (string, error) {
 }
 
 func DecodeCookie(value string, secret string) DecodeResult {
+	return decodeCookieAt(value, secret, time.Now())
+}
+
+func decodeCookieAt(value string, secret string, now time.Time) DecodeResult {
 	if len(value) == 0 || len(value) > MaxEncodedCookieLength {
 		return invalidDecodeResult()
 	}
@@ -205,6 +220,9 @@ func DecodeCookie(value string, secret string) DecodeResult {
 	if payload.Version != payloadVersion {
 		return invalidDecodeResult()
 	}
+	if !validIssuedAt(payload.IssuedAt, now) {
+		return invalidDecodeResult()
+	}
 
 	normalized, err := normalizeLines(payload.Lines, true, true)
 	if err != nil {
@@ -216,6 +234,19 @@ func DecodeCookie(value string, secret string) DecodeResult {
 
 func invalidDecodeResult() DecodeResult {
 	return DecodeResult{Cart: Cart{}, NeedsClear: true}
+}
+
+// validIssuedAt bounds how long a signed cookie stays valid server-side; the
+// browser Max-Age alone cannot expire a captured cookie value.
+func validIssuedAt(issuedAt int64, now time.Time) bool {
+	if issuedAt <= 0 {
+		return false
+	}
+	issued := time.Unix(issuedAt, 0)
+	if issued.After(now.Add(cookieIssuedAtSkew)) {
+		return false
+	}
+	return now.Sub(issued) <= CookieMaxAge*time.Second
 }
 
 func normalizeLines(lines []Line, capLineItems bool, rejectNonPositive bool) (Cart, error) {

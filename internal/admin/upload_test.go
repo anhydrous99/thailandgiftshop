@@ -1,15 +1,18 @@
 package admin
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/anhydrous99/thailandgiftshop/internal/httpapi"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -296,9 +299,9 @@ func TestProductImageConfirmRejectsMissingObjectAndMetadataMismatches(t *testing
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			service := productImageUploadService{
-				bucketName: "product-images-bucket",
-				keyPrefix:  "images",
-				headClient: &recordingHeadObjectClient{output: tc.head, err: tc.headErr},
+				bucketName:   "product-images-bucket",
+				keyPrefix:    "images",
+				objectClient: &recordingObjectClient{output: tc.head, err: tc.headErr},
 			}
 			_, err := service.Confirm(context.Background(), productImageConfirmRequest{
 				Key:         "images/products/uploads/2026/06/11111111-1111-4111-8111-111111111111.jpg",
@@ -312,11 +315,99 @@ func TestProductImageConfirmRejectsMissingObjectAndMetadataMismatches(t *testing
 	}
 }
 
+func TestProductImageConfirmValidatesMagicBytes(t *testing.T) {
+	jpegBytes := []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00, 0x01, 0x01, 0x00, 0x00, 0x48}
+	pngBytes := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 'I', 'H', 'D', 'R'}
+	webpBytes := []byte{'R', 'I', 'F', 'F', 0x24, 0x00, 0x00, 0x00, 'W', 'E', 'B', 'P', 'V', 'P', '8', ' '}
+
+	tests := []struct {
+		name        string
+		contentType string
+		extension   string
+		body        []byte
+		getErr      error
+		wantErr     error
+	}{
+		{name: "valid jpeg", contentType: "image/jpeg", extension: "jpg", body: jpegBytes},
+		{name: "valid png", contentType: "image/png", extension: "png", body: pngBytes},
+		{name: "valid webp", contentType: "image/webp", extension: "webp", body: webpBytes},
+		{name: "png bytes under jpeg content type", contentType: "image/jpeg", extension: "jpg", body: pngBytes, wantErr: errInvalidProductImageUpload},
+		{name: "html payload", contentType: "image/png", extension: "png", body: []byte("<!doctype html><script>"), wantErr: errInvalidProductImageUpload},
+		{name: "truncated body", contentType: "image/png", extension: "png", body: pngBytes[:4], wantErr: errInvalidProductImageUpload},
+		{name: "object read failure", contentType: "image/jpeg", extension: "jpg", body: jpegBytes, getErr: errors.New("denied"), wantErr: errProductImageObjectNotFound},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &recordingObjectClient{
+				output: &s3.HeadObjectOutput{
+					ContentType:   aws.String(tc.contentType),
+					ContentLength: aws.Int64(1024),
+				},
+				body:   tc.body,
+				getErr: tc.getErr,
+			}
+			service := productImageUploadService{
+				bucketName:   "product-images-bucket",
+				keyPrefix:    "images",
+				objectClient: client,
+			}
+
+			url, err := service.Confirm(context.Background(), productImageConfirmRequest{
+				Key:         "images/products/uploads/2026/06/11111111-1111-4111-8111-111111111111." + tc.extension,
+				ContentType: tc.contentType,
+				SizeBytes:   1024,
+			})
+			if tc.wantErr != nil {
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("Confirm error = %v, want %v", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Confirm returned error: %v", err)
+			}
+			if url == "" {
+				t.Fatal("Confirm returned empty URL")
+			}
+			if got := aws.ToString(client.getInput.Range); got != "bytes=0-15" {
+				t.Fatalf("GetObject range = %q, want bytes=0-15", got)
+			}
+		})
+	}
+}
+
+func TestProductImageMagicBytesMatch(t *testing.T) {
+	tests := []struct {
+		name        string
+		contentType string
+		prefix      []byte
+		want        bool
+	}{
+		{name: "jpeg minimal", contentType: "image/jpeg", prefix: []byte{0xFF, 0xD8, 0xFF}, want: true},
+		{name: "jpeg short", contentType: "image/jpeg", prefix: []byte{0xFF, 0xD8}, want: false},
+		{name: "png", contentType: "image/png", prefix: []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}, want: true},
+		{name: "png wrong terminator", contentType: "image/png", prefix: []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0B}, want: false},
+		{name: "webp", contentType: "image/webp", prefix: []byte("RIFF\x10\x00\x00\x00WEBP"), want: true},
+		{name: "riff but not webp", contentType: "image/webp", prefix: []byte("RIFF\x10\x00\x00\x00WAVE"), want: false},
+		{name: "unknown content type", contentType: "image/gif", prefix: []byte("GIF89a"), want: false},
+		{name: "empty prefix", contentType: "image/jpeg", prefix: nil, want: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := productImageMagicBytesMatch(tc.contentType, tc.prefix); got != tc.want {
+				t.Fatalf("productImageMagicBytesMatch(%q) = %t, want %t", tc.contentType, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestProductImageConfirmRejectsCallerChosenTrustedPaths(t *testing.T) {
 	service := productImageUploadService{
 		bucketName: "product-images-bucket",
 		keyPrefix:  "images",
-		headClient: &recordingHeadObjectClient{output: &s3.HeadObjectOutput{
+		objectClient: &recordingObjectClient{output: &s3.HeadObjectOutput{
 			ContentType:   aws.String("image/jpeg"),
 			ContentLength: aws.Int64(1024),
 		}},
@@ -383,13 +474,16 @@ func (r *recordingPostPresigner) PresignPostObject(ctx context.Context, input *s
 	}, nil
 }
 
-type recordingHeadObjectClient struct {
-	input  *s3.HeadObjectInput
-	output *s3.HeadObjectOutput
-	err    error
+type recordingObjectClient struct {
+	input    *s3.HeadObjectInput
+	output   *s3.HeadObjectOutput
+	err      error
+	getInput *s3.GetObjectInput
+	body     []byte
+	getErr   error
 }
 
-func (r *recordingHeadObjectClient) HeadObject(ctx context.Context, input *s3.HeadObjectInput, optFns ...func(*s3.Options)) (*s3.HeadObjectOutput, error) {
+func (r *recordingObjectClient) HeadObject(ctx context.Context, input *s3.HeadObjectInput, optFns ...func(*s3.Options)) (*s3.HeadObjectOutput, error) {
 	_ = ctx
 	_ = optFns
 	r.input = input
@@ -397,6 +491,16 @@ func (r *recordingHeadObjectClient) HeadObject(ctx context.Context, input *s3.He
 		return nil, r.err
 	}
 	return r.output, nil
+}
+
+func (r *recordingObjectClient) GetObject(ctx context.Context, input *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error) {
+	_ = ctx
+	_ = optFns
+	r.getInput = input
+	if r.getErr != nil {
+		return nil, r.getErr
+	}
+	return &s3.GetObjectOutput{Body: io.NopCloser(bytes.NewReader(r.body))}, nil
 }
 
 type presignPolicy struct {
@@ -435,8 +539,8 @@ func authenticatedUploadRequest(t *testing.T, handler *Handler, path string, pay
 
 func decodeJSONResponse(t *testing.T, response events.APIGatewayV2HTTPResponse, target any) {
 	t.Helper()
-	if response.Headers["Content-Type"] != jsonContentType {
-		t.Fatalf("Content-Type = %q, want %q", response.Headers["Content-Type"], jsonContentType)
+	if response.Headers["Content-Type"] != httpapi.JSONContentType {
+		t.Fatalf("Content-Type = %q, want %q", response.Headers["Content-Type"], httpapi.JSONContentType)
 	}
 	if err := json.Unmarshal([]byte(response.Body), target); err != nil {
 		t.Fatalf("decode response %q: %v", response.Body, err)

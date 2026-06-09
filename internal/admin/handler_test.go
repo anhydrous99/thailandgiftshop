@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/anhydrous99/thailandgiftshop/internal/appenv"
+	"github.com/anhydrous99/thailandgiftshop/internal/httpapi"
 	"github.com/aws/aws-lambda-go/events"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -64,13 +65,13 @@ func TestLoginCorrectPasswordSetsAdminSessionAndCSRFTokenCookies(t *testing.T) {
 	}
 
 	csrfCookie := responseCookie(t, response, adminCSRFCookieName)
-	for _, want := range []string{adminCSRFCookieName + "=", "Path=/", "Secure", "SameSite=Lax"} {
+	for _, want := range []string{adminCSRFCookieName + "=", "Path=/", "HttpOnly", "Secure", "SameSite=Lax"} {
 		if !strings.Contains(csrfCookie, want) {
 			t.Fatalf("csrf cookie = %q, missing %q", csrfCookie, want)
 		}
 	}
-	if strings.Contains(csrfCookie, "Domain=") || strings.Contains(csrfCookie, "HttpOnly") {
-		t.Fatalf("csrf cookie = %q, want no Domain and no HttpOnly", csrfCookie)
+	if strings.Contains(csrfCookie, "Domain=") {
+		t.Fatalf("csrf cookie = %q, want no Domain", csrfCookie)
 	}
 	assertNoStore(t, response)
 }
@@ -337,8 +338,8 @@ func TestProtectedAdminRootRequiresAuthenticatedSession(t *testing.T) {
 }
 
 func TestAdminOriginSecretBlocksDirectAdminRequestsWhenConfigured(t *testing.T) {
-	handler, _ := newAuthTestHandler(t)
 	t.Setenv(EnvAdminOriginHeaderSecret, "origin-secret")
+	handler, _ := newAuthTestHandler(t)
 
 	blocked, err := handler.Handle(context.Background(), adminRequest(http.MethodGet, "/admin/login"))
 	if err != nil {
@@ -369,9 +370,9 @@ func TestAdminOriginSecretBlocksDirectAdminRequestsWhenConfigured(t *testing.T) 
 }
 
 func TestProductionAdminOriginSecretMissingBlocksDirectAdminRequests(t *testing.T) {
-	handler, _ := newAuthTestHandler(t)
 	t.Setenv(appenv.EnvAppEnvironment, appenv.EnvironmentProduction)
 	t.Setenv(EnvAdminOriginHeaderSecret, "")
+	handler, _ := newAuthTestHandler(t)
 
 	response, err := handler.Handle(context.Background(), adminRequest(http.MethodGet, "/admin/login"))
 	if err != nil {
@@ -384,9 +385,9 @@ func TestProductionAdminOriginSecretMissingBlocksDirectAdminRequests(t *testing.
 }
 
 func TestLocalAdminOriginSecretMissingAllowsDirectAdminRequests(t *testing.T) {
-	handler, _ := newAuthTestHandler(t)
 	t.Setenv(appenv.EnvAppEnvironment, "development")
 	t.Setenv(EnvAdminOriginHeaderSecret, "")
+	handler, _ := newAuthTestHandler(t)
 
 	response, err := handler.Handle(context.Background(), adminRequest(http.MethodGet, "/admin/login"))
 	if err != nil {
@@ -836,7 +837,7 @@ func responseCookie(t *testing.T, response events.APIGatewayV2HTTPResponse, name
 
 func responseCookieValue(response events.APIGatewayV2HTTPResponse, name string) (string, bool) {
 	for _, cookie := range response.Cookies {
-		if value, found := namedCookieValue(cookie, name); found {
+		if value, found := httpapi.NamedCookieValue(cookie, name); found {
 			return value, true
 		}
 	}

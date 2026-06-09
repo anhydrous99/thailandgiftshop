@@ -57,6 +57,7 @@ const (
 	adminLoginAttemptsTTLName  = "expires_at"
 
 	ssrOriginRequestPolicyName = "thailandgiftshop-ssr-origin"
+	ssrCachePolicyName         = "thailandgiftshop-ssr-cache"
 
 	operationsDashboardName  = "ThailandGiftshop-Operations"
 	operationsAlarmTopicName = "thailandgiftshop-operations-alarms"
@@ -278,6 +279,7 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, productImagesBu
 			catalog.EnvProductImagePlaceholderURL: jsii.String(catalog.DefaultProductImagePlaceholderURL),
 			appenv.EnvAppEnvironment:              jsii.String(appenv.EnvironmentProduction),
 			cartsession.EnvCookieSecret:           cartCookieSecretReference(cartCookieSecret),
+			adminauth.EnvAdminOriginHeaderSecret:  adminOriginHeaderSecretReference(adminOriginHeaderSecret),
 		},
 		FunctionName: jsii.String("thailandgiftshop-ssr"),
 		Handler:      jsii.String("bootstrap"),
@@ -542,6 +544,25 @@ func ssrOriginRequestPolicy(stack awscdk.Stack) awscloudfront.OriginRequestPolic
 	})
 }
 
+// ssrCachePolicy caches only responses that opt in with an explicit cacheable
+// Cache-Control header (DefaultTtl is zero), keyed on the cart cookie so a
+// signed-in cart's "Cart (N)" header never serves to another visitor. Cart,
+// checkout, and admin responses send no-store and stay uncached.
+func ssrCachePolicy(stack awscdk.Stack) awscloudfront.CachePolicy {
+	return awscloudfront.NewCachePolicy(stack, jsii.String("SsrCachePolicy"), &awscloudfront.CachePolicyProps{
+		CachePolicyName:            jsii.String(ssrCachePolicyName),
+		Comment:                    jsii.String("Cache opt-in SSR responses for thailandgiftshop.com keyed on the cart cookie"),
+		CookieBehavior:             awscloudfront.CacheCookieBehavior_AllowList(jsii.String(cartsession.CookieName)),
+		QueryStringBehavior:        awscloudfront.CacheQueryStringBehavior_All(),
+		HeaderBehavior:             awscloudfront.CacheHeaderBehavior_None(),
+		MinTtl:                     awscdk.Duration_Seconds(jsii.Number(0)),
+		DefaultTtl:                 awscdk.Duration_Seconds(jsii.Number(0)),
+		MaxTtl:                     awscdk.Duration_Days(jsii.Number(1)),
+		EnableAcceptEncodingGzip:   jsii.Bool(true),
+		EnableAcceptEncodingBrotli: jsii.Bool(true),
+	})
+}
+
 func adminOriginHeaderSecretReference(secret awssecretsmanager.ISecret) *string {
 	return awscdk.NewCfnDynamicReference(
 		awscdk.CfnDynamicReferenceService_SECRETS_MANAGER,
@@ -637,6 +658,7 @@ func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi, productImagesB
 	securityHeadersPolicy := siteSecurityHeaders(stack)
 	adminWebACL := addAdminCloudFrontWebACL(stack)
 	originRequestPolicy := ssrOriginRequestPolicy(stack)
+	cachePolicy := ssrCachePolicy(stack)
 	canonicalHostRedirectFunction := addCanonicalHostRedirectFunction(stack)
 	canonicalHostRedirectFunctionAssociations := canonicalHostRedirectAssociations(canonicalHostRedirectFunction)
 
@@ -661,7 +683,7 @@ func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi, productImagesB
 		},
 		DefaultBehavior: &awscloudfront.BehaviorOptions{
 			AllowedMethods:        awscloudfront.AllowedMethods_ALLOW_ALL(),
-			CachePolicy:           awscloudfront.CachePolicy_CACHING_DISABLED(),
+			CachePolicy:           cachePolicy,
 			Compress:              jsii.Bool(true),
 			Origin:                ssrOrigin(httpAPI, adminOriginHeaderSecret),
 			OriginRequestPolicy:   originRequestPolicy,

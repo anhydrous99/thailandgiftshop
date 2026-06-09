@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
+	"github.com/anhydrous99/thailandgiftshop/internal/httpapi"
 	"github.com/aws/aws-lambda-go/events"
 )
 
@@ -49,9 +50,10 @@ func isAdminCategoryPath(path string) bool {
 }
 
 func (h *Handler) handleAdminCategories(ctx context.Context, path string, request events.APIGatewayV2HTTPRequest, session adminSession) events.APIGatewayV2HTTPResponse {
-	method := requestMethod(request)
+	method := httpapi.Method(request)
 	csrfValue, cookies, err := h.csrfForProtectedResponse(ctx, request, session)
 	if err != nil {
+		logAdminError("categories: issue csrf token", err)
 		return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 	}
 	store := h.catalogStore()
@@ -60,11 +62,13 @@ func (h *Handler) handleAdminCategories(ctx context.Context, path string, reques
 		if method == http.MethodGet || method == http.MethodHead {
 			categories, err := store.ListCategories(ctx)
 			if err != nil {
+				logAdminError("categories: list", err)
 				return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 			}
 			filters := categoryFilters(request)
 			body, err := renderAdminCategoryList(ctx, adminCategoryListViewModel{CSRFValue: csrfValue, Categories: filterAdminCategories(categories, filters), Filters: filters, Flash: request.QueryStringParameters["saved"]})
 			if err != nil {
+				logAdminError("categories: render list", err)
 				return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 			}
 			if method == http.MethodHead {
@@ -83,6 +87,7 @@ func (h *Handler) handleAdminCategories(ctx context.Context, path string, reques
 		}
 		body, err := h.categoryForm(ctx, csrfValue, newCategoryFormViewModel(csrfValue, nil))
 		if err != nil {
+			logAdminError("categories: render new form", err)
 			return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 		}
 		if method == http.MethodHead {
@@ -97,6 +102,7 @@ func (h *Handler) handleAdminCategories(ctx context.Context, path string, reques
 	}
 	category, found, err := adminCategoryBySlug(ctx, store, slug)
 	if err != nil {
+		logAdminError("categories: load category", err)
 		return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 	}
 	if !found {
@@ -107,10 +113,12 @@ func (h *Handler) handleAdminCategories(ctx context.Context, path string, reques
 		if method == http.MethodGet || method == http.MethodHead {
 			vm, err := h.editCategoryFormViewModel(ctx, csrfValue, category, nil, request.QueryStringParameters["saved"])
 			if err != nil {
+				logAdminError("categories: build edit form", err)
 				return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 			}
 			body, err := h.categoryForm(ctx, csrfValue, vm)
 			if err != nil {
+				logAdminError("categories: render edit form", err)
 				return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 			}
 			if method == http.MethodHead {
@@ -145,7 +153,7 @@ func adminCategorySlugAction(path string) (string, string, bool) {
 }
 
 func (h *Handler) createCategory(ctx context.Context, request events.APIGatewayV2HTTPRequest, csrfValue string, cookies []string) events.APIGatewayV2HTTPResponse {
-	values, err := formValues(request)
+	values, err := httpapi.FormValues(request)
 	if err != nil {
 		h.recordCatalogWrite(metricEntityCategory, metricOperationCreate, metricOutcomeValidationError)
 		return adminHTMLResponse(http.StatusBadRequest, "Invalid form", nil, nil)
@@ -172,7 +180,7 @@ func (h *Handler) createCategory(ctx context.Context, request events.APIGatewayV
 }
 
 func (h *Handler) updateCategory(ctx context.Context, request events.APIGatewayV2HTTPRequest, previous catalog.Category, csrfValue string, cookies []string) events.APIGatewayV2HTTPResponse {
-	values, err := formValues(request)
+	values, err := httpapi.FormValues(request)
 	if err != nil {
 		h.recordCatalogWrite(metricEntityCategory, metricOperationUpdate, metricOutcomeValidationError)
 		return adminHTMLResponse(http.StatusBadRequest, "Invalid form", nil, nil)
@@ -181,6 +189,7 @@ func (h *Handler) updateCategory(ctx context.Context, request events.APIGatewayV
 		h.recordCatalogWrite(metricEntityCategory, metricOperationUpdate, metricOutcomeConflict)
 		vm, err := h.editCategoryFormViewModel(ctx, csrfValue, previous, []string{"This category changed while you were editing. Reload and try again."}, "")
 		if err != nil {
+			logAdminError("categories: build conflict form", err)
 			return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 		}
 		return h.categoryFormResponse(ctx, csrfValue, cookies, vm, http.StatusConflict)
@@ -213,6 +222,7 @@ func (h *Handler) archiveCategory(ctx context.Context, category catalog.Category
 		if errors.Is(err, catalog.ErrVersionConflict) {
 			return adminHTMLResponse(http.StatusConflict, "Version conflict", nil, nil)
 		}
+		logAdminError("categories: archive", err)
 		return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 	}
 	h.recordCatalogWrite(metricEntityCategory, metricOperationArchive, metricOutcomeSuccess)
@@ -269,6 +279,7 @@ func (h *Handler) categoryWriteError(ctx context.Context, csrfValue string, cook
 		status = http.StatusConflict
 		message = "This category changed while you were editing. Reload and try again."
 	} else {
+		logAdminError("categories: save", err)
 		status = http.StatusInternalServerError
 		message = "Internal server error"
 	}
@@ -279,6 +290,7 @@ func (h *Handler) categoryWriteError(ctx context.Context, csrfValue string, cook
 func (h *Handler) categoryFormResponse(ctx context.Context, csrfValue string, cookies []string, vm adminCategoryFormViewModel, status int) events.APIGatewayV2HTTPResponse {
 	body, err := h.categoryForm(ctx, csrfValue, vm)
 	if err != nil {
+		logAdminError("categories: render form", err)
 		return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 	}
 	return adminHTMLResponse(status, body, nil, cookies)
