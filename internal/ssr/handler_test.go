@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1518,8 +1519,8 @@ func TestCartBearingPagesReuseNormalizedRequestCart(t *testing.T) {
 			if response.StatusCode != http.StatusOK {
 				t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
 			}
-			if len(store.productSlugLookups) != 1 || store.productSlugLookups[0] != "mango-sticky-rice-kit" {
-				t.Fatalf("GetProductBySlug lookups = %v, want one normalized cart lookup", store.productSlugLookups)
+			if got := store.productLookupCount("mango-sticky-rice-kit"); got != 1 {
+				t.Fatalf("GetProductBySlug lookups for mango-sticky-rice-kit = %d, want 1", got)
 			}
 			assertBodyContains(t, response.Body, []string{`Cart (2)`, `Mango Sticky Rice Treats`})
 		})
@@ -1563,6 +1564,297 @@ func TestCatalogPageReadsStartConcurrently(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCartProductLookupsStartConcurrently(t *testing.T) {
+	store := newCartLookupBlockingStore()
+	slugs := []string{"mango-sticky-rice-kit", "thai-tea-cookies", "coconut-rolls"}
+	lines := make([]cart.Line, 0, len(slugs))
+	for _, slug := range slugs {
+		store.productsBySlug[slug] = catalog.Product{Slug: slug, Name: slug, Status: catalog.StatusActive, StockQuantity: 5}
+		lines = append(lines, cart.Line{Slug: slug, Quantity: 1})
+	}
+	handler := NewHandler(store)
+	result := make(chan cartProductsBySlugResult, 1)
+
+	go func() {
+		products, err := handler.cartProductsBySlug(context.Background(), lines)
+		result <- cartProductsBySlugResult{products: products, err: err}
+	}()
+
+	if missing := missingCatalogStarts(store.started, slugs, 200*time.Millisecond); len(missing) > 0 {
+		store.releaseAll()
+		drainCartProductsBySlugResult(t, result)
+		t.Fatalf("cart product lookups did not start concurrently; missing %s", strings.Join(missing, ", "))
+	}
+	store.releaseAll()
+
+	got := drainCartProductsBySlugResult(t, result)
+	if got.err != nil {
+		t.Fatalf("cartProductsBySlug returned error: %v", got.err)
+	}
+	if len(got.products) != len(slugs) {
+		t.Fatalf("lookup result count = %d, want %d", len(got.products), len(slugs))
+	}
+	for _, slug := range slugs {
+		lookup, ok := got.products[slug]
+		if !ok || !lookup.found || lookup.product.Slug != slug {
+			t.Fatalf("lookup result for %q = %#v, found in map %t", slug, lookup, ok)
+		}
+	}
+}
+
+func TestCartProductLookupsAreBounded(t *testing.T) {
+	store := newCartLookupBlockingStore()
+	lineCount := maxCartProductLookupConcurrency + 5
+	lines := make([]cart.Line, 0, lineCount)
+	for i := range lineCount {
+		slug := "bounded-product-" + strconv.Itoa(i)
+		store.productsBySlug[slug] = catalog.Product{Slug: slug, Name: slug, Status: catalog.StatusActive, StockQuantity: 5}
+		lines = append(lines, cart.Line{Slug: slug, Quantity: 1})
+	}
+	handler := NewHandler(store)
+	result := make(chan cartProductsBySlugResult, 1)
+
+	go func() {
+		products, err := handler.cartProductsBySlug(context.Background(), lines)
+		result <- cartProductsBySlugResult{products: products, err: err}
+	}()
+
+	initialStarts := make([]string, 0, maxCartProductLookupConcurrency)
+	for range maxCartProductLookupConcurrency {
+		select {
+		case slug := <-store.started:
+			initialStarts = append(initialStarts, slug)
+		case <-time.After(time.Second):
+			store.releaseAll()
+			drainCartProductsBySlugResult(t, result)
+			t.Fatalf("observed %d initial lookup starts, want %d", len(initialStarts), maxCartProductLookupConcurrency)
+		}
+	}
+	store.releaseAll()
+
+	got := drainCartProductsBySlugResult(t, result)
+	if got.err != nil {
+		t.Fatalf("cartProductsBySlug returned error: %v", got.err)
+	}
+	if gotMax := store.maxInFlightLookups(); gotMax > maxCartProductLookupConcurrency {
+		t.Fatalf("max in-flight lookups = %d, want <= %d", gotMax, maxCartProductLookupConcurrency)
+	}
+	if len(got.products) != lineCount {
+		t.Fatalf("lookup result count = %d, want %d", len(got.products), lineCount)
+	}
+}
+
+func TestCartProductLookupsDeduplicateSlugs(t *testing.T) {
+	store := newCartLookupBlockingStore()
+	store.productsBySlug["variant-shirt"] = catalog.Product{
+		Slug:   "variant-shirt",
+		Name:   "Variant Shirt",
+		Status: catalog.StatusActive,
+		Variants: []catalog.ProductVariant{
+			{ID: "small", Label: "Small", Status: catalog.StatusActive, StockQuantity: 3},
+			{ID: "medium", Label: "Medium", Status: catalog.StatusActive, StockQuantity: 4},
+		},
+	}
+	lines := []cart.Line{
+		{Slug: "variant-shirt", VariantID: "small", Quantity: 1},
+		{Slug: "variant-shirt", VariantID: "medium", Quantity: 2},
+		{Slug: "variant-shirt", VariantID: "small", Quantity: 3},
+	}
+	handler := NewHandler(store)
+	result := make(chan cartProductsBySlugResult, 1)
+
+	go func() {
+		products, err := handler.cartProductsBySlug(context.Background(), lines)
+		result <- cartProductsBySlugResult{products: products, err: err}
+	}()
+
+	if missing := missingCatalogStarts(store.started, []string{"variant-shirt"}, 200*time.Millisecond); len(missing) > 0 {
+		store.releaseAll()
+		drainCartProductsBySlugResult(t, result)
+		t.Fatalf("cart product lookup did not start; missing %s", strings.Join(missing, ", "))
+	}
+	store.releaseAll()
+
+	got := drainCartProductsBySlugResult(t, result)
+	if got.err != nil {
+		t.Fatalf("cartProductsBySlug returned error: %v", got.err)
+	}
+	if gotCount := store.productLookupCount("variant-shirt"); gotCount != 1 {
+		t.Fatalf("GetProductBySlug lookups for variant-shirt = %d, want 1", gotCount)
+	}
+	if len(got.products) != 1 {
+		t.Fatalf("lookup result count = %d, want 1", len(got.products))
+	}
+	if lookup := got.products["variant-shirt"]; !lookup.found || lookup.product.Slug != "variant-shirt" {
+		t.Fatalf("lookup result for variant-shirt = %#v", lookup)
+	}
+}
+
+func TestCartProductLookupsReturnHardErrors(t *testing.T) {
+	t.Setenv(cart.EnvCookieSecret, ssrTestCartSecret)
+	store := newCartLookupBlockingStore()
+	lookupErr := errors.New("catalog lookup failed")
+	store.productsBySlug["ok-product"] = catalog.Product{Slug: "ok-product", Name: "OK Product", Status: catalog.StatusActive, StockQuantity: 5}
+	store.productsBySlug["error-product"] = catalog.Product{Slug: "error-product", Name: "Error Product", Status: catalog.StatusActive, StockQuantity: 5}
+	store.errorsBySlug["error-product"] = lookupErr
+	request := pageRequest(http.MethodGet, "/cart")
+	request.Cookies = []string{cart.CookieName + "=" + encodedTestCart(t, []cart.Line{
+		{Slug: "ok-product", Quantity: 1},
+		{Slug: "error-product", Quantity: 1},
+	})}
+	handler := NewHandler(store)
+	result := make(chan handleResult, 1)
+
+	go func() {
+		response, err := handler.Handle(context.Background(), request)
+		result <- handleResult{response: response, err: err}
+	}()
+
+	wantStarts := []string{"ok-product", "error-product"}
+	if missing := missingCatalogStarts(store.started, wantStarts, 200*time.Millisecond); len(missing) > 0 {
+		store.releaseAll()
+		drainHandleResult(t, result)
+		t.Fatalf("cart product lookups did not start; missing %s", strings.Join(missing, ", "))
+	}
+	store.releaseSlug("error-product")
+
+	got := drainHandleResult(t, result)
+	if got.err != nil {
+		t.Fatalf("Handle returned error: %v", got.err)
+	}
+	if got.response.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("status code = %d, want %d", got.response.StatusCode, http.StatusInternalServerError)
+	}
+	if got.response.Body != "Internal server error" {
+		t.Fatalf("body = %q, want %q", got.response.Body, "Internal server error")
+	}
+	assertCartLookupsCompleted(t, store.completed, wantStarts)
+}
+
+func TestCartProductLookupsCancelBlockedWorkers(t *testing.T) {
+	store := newCartLookupBlockingStore()
+	slugs := []string{"first-blocked", "second-blocked", "third-blocked"}
+	lines := make([]cart.Line, 0, len(slugs))
+	for _, slug := range slugs {
+		store.productsBySlug[slug] = catalog.Product{Slug: slug, Name: slug, Status: catalog.StatusActive, StockQuantity: 5}
+		lines = append(lines, cart.Line{Slug: slug, Quantity: 1})
+	}
+	handler := NewHandler(store)
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan cartProductsBySlugResult, 1)
+
+	go func() {
+		products, err := handler.cartProductsBySlug(ctx, lines)
+		result <- cartProductsBySlugResult{products: products, err: err}
+	}()
+
+	if missing := missingCatalogStarts(store.started, slugs, 200*time.Millisecond); len(missing) > 0 {
+		store.releaseAll()
+		drainCartProductsBySlugResult(t, result)
+		t.Fatalf("cart product lookups did not start; missing %s", strings.Join(missing, ", "))
+	}
+	cancel()
+
+	got := drainCartProductsBySlugResult(t, result)
+	if !errors.Is(got.err, context.Canceled) {
+		t.Fatalf("cartProductsBySlug error = %v, want context.Canceled", got.err)
+	}
+	if got.products != nil {
+		t.Fatalf("products = %#v, want nil on cancellation", got.products)
+	}
+	assertCartLookupsCompleted(t, store.completed, slugs)
+}
+
+func TestCartProductLookupsPreserveOrder(t *testing.T) {
+	t.Setenv(cart.EnvCookieSecret, ssrTestCartSecret)
+	store := newCartLookupBlockingStore()
+	products := []catalog.Product{
+		{Slug: "first-product", Name: "First Product", Status: catalog.StatusActive, StockQuantity: 5, PriceCents: 1000},
+		{Slug: "second-product", Name: "Second Product", Status: catalog.StatusActive, StockQuantity: 5, PriceCents: 2000},
+		{Slug: "third-product", Name: "Third Product", Status: catalog.StatusActive, StockQuantity: 5, PriceCents: 3000},
+	}
+	for _, product := range products {
+		store.productsBySlug[product.Slug] = product
+	}
+	request := pageRequest(http.MethodGet, "/cart")
+	request.Cookies = []string{cart.CookieName + "=" + encodedTestCart(t, []cart.Line{
+		{Slug: "first-product", Quantity: 6},
+		{Slug: "second-product", Quantity: 7},
+		{Slug: "third-product", Quantity: 8},
+	})}
+	handler := NewHandler(store)
+	result := make(chan handleResult, 1)
+
+	go func() {
+		response, err := handler.Handle(context.Background(), request)
+		result <- handleResult{response: response, err: err}
+	}()
+
+	wantSlugs := []string{"first-product", "second-product", "third-product"}
+	if missing := missingCatalogStarts(store.started, wantSlugs, 200*time.Millisecond); len(missing) > 0 {
+		store.releaseAll()
+		drainHandleResult(t, result)
+		t.Fatalf("cart product lookups did not start; missing %s", strings.Join(missing, ", "))
+	}
+	store.releaseSlug("third-product")
+	store.releaseSlug("first-product")
+	store.releaseSlug("second-product")
+
+	got := drainHandleResult(t, result)
+	if got.err != nil {
+		t.Fatalf("Handle returned error: %v", got.err)
+	}
+	if got.response.StatusCode != http.StatusOK {
+		t.Fatalf("status code = %d, want %d", got.response.StatusCode, http.StatusOK)
+	}
+	decoded := decodedCartFromResponse(t, got.response)
+	decodedLines := decoded.Lines()
+	if len(decodedLines) != len(wantSlugs) {
+		t.Fatalf("decoded line count = %d, want %d: %#v", len(decodedLines), len(wantSlugs), decodedLines)
+	}
+	for index, wantSlug := range wantSlugs {
+		if decodedLines[index].Slug != wantSlug || decodedLines[index].Quantity != 5 {
+			t.Fatalf("decoded line %d = %#v, want slug %q capped to 5", index, decodedLines[index], wantSlug)
+		}
+		if gotCount := store.productLookupCount(wantSlug); gotCount != 1 {
+			t.Fatalf("GetProductBySlug lookups for %s = %d, want 1", wantSlug, gotCount)
+		}
+	}
+	assertBodyContainsInOrder(t, got.response.Body, []string{"First Product", "Second Product", "Third Product"})
+}
+
+func TestCartProductLookupsDeduplicatedVariantLinesRenderBothLines(t *testing.T) {
+	t.Setenv(cart.EnvCookieSecret, ssrTestCartSecret)
+	store := cartRouteStore()
+	request := pageRequest(http.MethodGet, "/cart")
+	request.Cookies = []string{cart.CookieName + "=" + encodedTestCart(t, []cart.Line{
+		{Slug: "variant-shirt", VariantID: "var-small", Quantity: 1},
+		{Slug: "variant-shirt", VariantID: "var-large", Quantity: 2},
+	})}
+
+	response, err := NewHandler(store).Handle(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	if gotCount := store.productLookupCount("variant-shirt"); gotCount != 1 {
+		t.Fatalf("GetProductBySlug lookups for variant-shirt = %d, want 1", gotCount)
+	}
+	if gotLines := strings.Count(response.Body, `data-testid="cart-line-item"`); gotLines != 2 {
+		t.Fatalf("rendered cart line count = %d, want 2: %q", gotLines, response.Body)
+	}
+	assertBodyContains(t, response.Body, []string{
+		"Thai Linen Shirt",
+		"Size Small",
+		"Size Large",
+		`type="hidden" name="variant_id" value="var-small"`,
+		`type="hidden" name="variant_id" value="var-large"`,
+	})
+	assertBodyContainsInOrder(t, response.Body, []string{"Size Small", "Size Large"})
 }
 
 func TestHeaderRendersMobileNoJSNavigation(t *testing.T) {
@@ -1723,8 +2015,8 @@ func TestProductDetailRendersExactActiveProduct(t *testing.T) {
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
 	}
-	if len(store.productSlugLookups) != 1 || store.productSlugLookups[0] != "mango-sticky-rice-kit" {
-		t.Fatalf("GetProductBySlug lookups = %v, want exact slug", store.productSlugLookups)
+	if got := store.productLookupCount("mango-sticky-rice-kit"); got != 1 {
+		t.Fatalf("GetProductBySlug lookups for mango-sticky-rice-kit = %d, want 1", got)
 	}
 	assertBodyContains(t, response.Body, []string{
 		`href="/products"`,
@@ -2645,6 +2937,7 @@ func excludedUILabels() []string {
 }
 
 type fakeCatalogStore struct {
+	mu                     sync.Mutex
 	products               []catalog.Product
 	productsBySlug         map[string]catalog.Product
 	categories             []catalog.Category
@@ -2656,8 +2949,26 @@ type fakeCatalogStore struct {
 	categoryProductLimits  []int
 }
 
+func (f *fakeCatalogStore) productLookupCount(slug string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	count := 0
+	for _, lookup := range f.productSlugLookups {
+		if lookup == slug {
+			count++
+		}
+	}
+	return count
+}
+
 type handleResult struct {
 	response events.APIGatewayV2HTTPResponse
+	err      error
+}
+
+type cartProductsBySlugResult struct {
+	products map[string]cartProductLookupResult
 	err      error
 }
 
@@ -2666,6 +2977,142 @@ type blockingCatalogStore struct {
 	release  chan struct{}
 	product  catalog.Product
 	category catalog.Category
+}
+
+type cartLookupBlockingStore struct {
+	mu                sync.Mutex
+	started           chan string
+	completed         chan string
+	releaseAllCh      chan struct{}
+	releaseBySlug     map[string]chan struct{}
+	productsBySlug    map[string]catalog.Product
+	errorsBySlug      map[string]error
+	category          catalog.Category
+	products          []catalog.Product
+	inFlight          int
+	maxInFlight       int
+	lookupCountBySlug map[string]int
+	releaseAllOnce    sync.Once
+	releasedAll       bool
+}
+
+var (
+	_ = newCartLookupBlockingStore
+	_ = (*cartLookupBlockingStore).releaseSlug
+	_ = (*cartLookupBlockingStore).releaseAll
+	_ = (*cartLookupBlockingStore).maxInFlightLookups
+)
+
+func newCartLookupBlockingStore() *cartLookupBlockingStore {
+	return &cartLookupBlockingStore{
+		started:           make(chan string, 128),
+		completed:         make(chan string, 128),
+		releaseAllCh:      make(chan struct{}),
+		releaseBySlug:     make(map[string]chan struct{}),
+		productsBySlug:    make(map[string]catalog.Product),
+		errorsBySlug:      make(map[string]error),
+		lookupCountBySlug: make(map[string]int),
+	}
+}
+
+func (s *cartLookupBlockingStore) ListActiveProducts(ctx context.Context, limit int) ([]catalog.Product, error) {
+	return s.products, nil
+}
+
+func (s *cartLookupBlockingStore) ListRecentlyAddedProducts(ctx context.Context, limit int) ([]catalog.Product, error) {
+	return s.products, nil
+}
+
+func (s *cartLookupBlockingStore) GetProductBySlug(ctx context.Context, slug string) (catalog.Product, bool, error) {
+	s.mu.Lock()
+	s.inFlight++
+	if s.inFlight > s.maxInFlight {
+		s.maxInFlight = s.inFlight
+	}
+	s.lookupCountBySlug[slug]++
+	releaseAllCh := s.releaseAllCh
+	releaseCh := s.releaseBySlug[slug]
+	if releaseCh == nil {
+		releaseCh = make(chan struct{})
+		s.releaseBySlug[slug] = releaseCh
+	}
+	product, found := s.productsBySlug[slug]
+	lookupErr := s.errorsBySlug[slug]
+	s.mu.Unlock()
+
+	s.started <- slug
+	defer func() {
+		s.mu.Lock()
+		s.inFlight--
+		s.mu.Unlock()
+		s.completed <- slug
+	}()
+
+	select {
+	case <-releaseCh:
+	case <-releaseAllCh:
+	case <-ctx.Done():
+		return catalog.Product{}, false, ctx.Err()
+	}
+
+	if lookupErr != nil {
+		return catalog.Product{}, false, lookupErr
+	}
+	return product, found, nil
+}
+
+func (s *cartLookupBlockingStore) ListActiveCategories(ctx context.Context) ([]catalog.Category, error) {
+	if s.category.Slug == "" {
+		return []catalog.Category{}, nil
+	}
+	return []catalog.Category{s.category}, nil
+}
+
+func (s *cartLookupBlockingStore) ListActiveProductsByCategory(ctx context.Context, categorySlug string, limit int) ([]catalog.Product, error) {
+	if categorySlug != s.category.Slug {
+		return []catalog.Product{}, nil
+	}
+	return s.products, nil
+}
+
+func (s *cartLookupBlockingStore) releaseSlug(slug string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.releasedAll {
+		return
+	}
+	if ch, ok := s.releaseBySlug[slug]; ok {
+		select {
+		case <-ch:
+		default:
+			close(ch)
+		}
+		return
+	}
+	ch := make(chan struct{})
+	close(ch)
+	s.releaseBySlug[slug] = ch
+}
+
+func (s *cartLookupBlockingStore) releaseAll() {
+	s.releaseAllOnce.Do(func() {
+		s.mu.Lock()
+		s.releasedAll = true
+		s.mu.Unlock()
+		close(s.releaseAllCh)
+	})
+}
+
+func (s *cartLookupBlockingStore) maxInFlightLookups() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.maxInFlight
+}
+
+func (s *cartLookupBlockingStore) productLookupCount(slug string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lookupCountBySlug[slug]
 }
 
 func newBlockingCatalogStore() *blockingCatalogStore {
@@ -2769,6 +3216,14 @@ func missingCatalogStarts(started <-chan string, wants []string, timeout time.Du
 	return nil
 }
 
+func assertCartLookupsCompleted(t *testing.T, completed <-chan string, wants []string) {
+	t.Helper()
+	missing := missingCatalogStarts(completed, wants, time.Second)
+	if len(missing) > 0 {
+		t.Fatalf("cart product lookups did not complete; missing %s", strings.Join(missing, ", "))
+	}
+}
+
 func drainHandleResult(t *testing.T, result <-chan handleResult) handleResult {
 	t.Helper()
 	select {
@@ -2778,6 +3233,17 @@ func drainHandleResult(t *testing.T, result <-chan handleResult) handleResult {
 		t.Fatal("Handle did not finish")
 	}
 	return handleResult{}
+}
+
+func drainCartProductsBySlugResult(t *testing.T, result <-chan cartProductsBySlugResult) cartProductsBySlugResult {
+	t.Helper()
+	select {
+	case got := <-result:
+		return got
+	case <-time.After(time.Second):
+		t.Fatal("cartProductsBySlug did not finish")
+	}
+	return cartProductsBySlugResult{}
 }
 
 func (f *fakeCatalogStore) ListActiveProducts(ctx context.Context, limit int) ([]catalog.Product, error) {
@@ -2819,7 +3285,9 @@ func (f *fakeCatalogStore) GetProductBySlug(ctx context.Context, slug string) (c
 	if f.err != nil {
 		return catalog.Product{}, false, f.err
 	}
+	f.mu.Lock()
 	f.productSlugLookups = append(f.productSlugLookups, slug)
+	f.mu.Unlock()
 	if f.productsBySlug != nil {
 		product, found := f.productsBySlug[slug]
 		return product, found, nil
@@ -2886,6 +3354,18 @@ func assertBodyOmits(t *testing.T, body string, unwanteds []string) {
 		if strings.Contains(body, unwanted) {
 			t.Fatalf("body unexpectedly contains %q: %q", unwanted, body)
 		}
+	}
+}
+
+func assertBodyContainsInOrder(t *testing.T, body string, wants []string) {
+	t.Helper()
+	searchFrom := 0
+	for _, want := range wants {
+		index := strings.Index(body[searchFrom:], want)
+		if index < 0 {
+			t.Fatalf("body does not contain %q after byte %d: %q", want, searchFrom, body)
+		}
+		searchFrom += index + len(want)
 	}
 }
 

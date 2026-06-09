@@ -11,6 +11,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -870,16 +871,116 @@ func (h *Handler) cartStateFromRequest(ctx context.Context, request events.APIGa
 	return requestCart{cart: normalizedCart, lines: lines}, nil
 }
 
+const maxCartProductLookupConcurrency = 8
+
+type cartProductLookupResult struct {
+	product catalog.Product
+	found   bool
+}
+
+func (h *Handler) cartProductsBySlug(ctx context.Context, lines []cart.Line) (map[string]cartProductLookupResult, error) {
+	if len(lines) == 0 {
+		return map[string]cartProductLookupResult{}, nil
+	}
+
+	seen := make(map[string]bool, len(lines))
+	uniqueSlugs := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if seen[line.Slug] {
+			continue
+		}
+		seen[line.Slug] = true
+		uniqueSlugs = append(uniqueSlugs, line.Slug)
+	}
+	if len(uniqueSlugs) == 0 {
+		return map[string]cartProductLookupResult{}, nil
+	}
+
+	lookupCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	type workerResult struct {
+		slug    string
+		product catalog.Product
+		found   bool
+		err     error
+	}
+
+	workerCount := min(maxCartProductLookupConcurrency, len(uniqueSlugs))
+	jobs := make(chan string)
+	results := make(chan workerResult, workerCount)
+	var workers sync.WaitGroup
+	workers.Add(workerCount)
+	for range workerCount {
+		go func() {
+			defer workers.Done()
+			for slug := range jobs {
+				product, found, err := h.catalogStore.GetProductBySlug(lookupCtx, slug)
+				select {
+				case results <- workerResult{slug: slug, product: product, found: found, err: err}:
+				case <-lookupCtx.Done():
+					return
+				}
+				if err != nil {
+					return
+				}
+			}
+		}()
+	}
+
+	go func() {
+		defer close(jobs)
+		for _, slug := range uniqueSlugs {
+			select {
+			case jobs <- slug:
+			case <-lookupCtx.Done():
+				return
+			}
+		}
+	}()
+
+	go func() {
+		workers.Wait()
+		close(results)
+	}()
+
+	products := make(map[string]cartProductLookupResult, len(uniqueSlugs))
+	var firstErr error
+	for result := range results {
+		if result.err != nil {
+			if firstErr == nil {
+				firstErr = result.err
+				cancel()
+			}
+			continue
+		}
+		products[result.slug] = cartProductLookupResult{product: result.product, found: result.found}
+	}
+	if firstErr != nil {
+		return nil, firstErr
+	}
+	if err := lookupCtx.Err(); err != nil {
+		return nil, err
+	}
+
+	return products, nil
+}
+
 func (h *Handler) normalizeCart(ctx context.Context, currentCart cart.Cart) (cart.Cart, []cartLineView, bool, error) {
+	cartLines := currentCart.Lines()
+	productsBySlug, err := h.cartProductsBySlug(ctx, cartLines)
+	if err != nil {
+		return cart.Empty(), nil, false, err
+	}
+
 	normalizedCart := cart.Empty()
 	lines := make([]cartLineView, 0, currentCart.LineCount())
 	changed := false
 
-	for _, line := range currentCart.Lines() {
-		product, found, err := h.catalogStore.GetProductBySlug(ctx, line.Slug)
-		if err != nil {
-			return cart.Empty(), nil, false, err
-		}
+	for _, line := range cartLines {
+		lookup := productsBySlug[line.Slug]
+		product := lookup.product
+		found := lookup.found
 		if !found || product.Status != catalog.StatusActive {
 			changed = true
 			continue
