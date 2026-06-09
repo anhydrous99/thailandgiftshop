@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	adminauth "github.com/anhydrous99/thailandgiftshop/internal/admin"
+	appenv "github.com/anhydrous99/thailandgiftshop/internal/appenv"
 	cartsession "github.com/anhydrous99/thailandgiftshop/internal/cart"
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
 	appobservability "github.com/anhydrous99/thailandgiftshop/internal/observability"
@@ -133,11 +134,37 @@ func TestStackIncludesObservabilityResources(t *testing.T) {
 	template.HasResourceProperties(jsii.String("AWS::CloudWatch::Dashboard"), map[string]any{
 		"DashboardName": operationsDashboardName,
 	})
+	template.HasParameter(jsii.String("AlarmNotificationEmail"), map[string]any{
+		"Type":        "String",
+		"Description": "Email address subscribed to critical operations alarms",
+	})
+	template.ResourceCountIs(jsii.String("AWS::SNS::Topic"), jsii.Number(1))
+	template.HasResourceProperties(jsii.String("AWS::SNS::Topic"), map[string]any{
+		"TopicName": operationsAlarmTopicName,
+	})
+	template.ResourceCountIs(jsii.String("AWS::SNS::Subscription"), jsii.Number(1))
+	template.HasResourceProperties(jsii.String("AWS::SNS::Subscription"), map[string]any{
+		"Protocol": "email",
+		"Endpoint": map[string]any{
+			"Ref": "AlarmNotificationEmail",
+		},
+		"TopicArn": assertions.Match_AnyValue(),
+	})
 	template.ResourceCountIs(jsii.String("AWS::CloudWatch::Alarm"), jsii.Number(16))
 	template.AllResourcesProperties(jsii.String("AWS::CloudWatch::Alarm"), map[string]any{
-		"ActionsEnabled":   false,
 		"TreatMissingData": "notBreaching",
 	})
+
+	criticalAlarmNames := map[string]bool{
+		"ThailandGiftshop-CloudFront-5xxRate-High":   true,
+		"ThailandGiftshop-HttpApi-5xx-High":          true,
+		"ThailandGiftshop-SsrLambda-Errors":          true,
+		"ThailandGiftshop-AdminLambda-Errors":        true,
+		"ThailandGiftshop-Admin-OriginRejected":      true,
+		"ThailandGiftshop-CatalogWrite-Errors":       true,
+		"ThailandGiftshop-ProductImageUpload-Errors": true,
+	}
+	assertCriticalAlarmActions(t, templateJSON, criticalAlarmNames)
 
 	appAlarmMetrics := map[string]string{
 		"ThailandGiftshop-Admin-OriginRejected":      appobservability.MetricAdminOriginRejected,
@@ -169,7 +196,7 @@ func TestStackIncludesObservabilityResources(t *testing.T) {
 		appobservability.MetricAdminLoginAttempt,
 		appobservability.MetricCatalogWrite,
 		appobservability.MetricProductImageUpload,
-		"Alarm actions are intentionally disabled.",
+		"Critical alarm actions publish to SNS; watchlist alarms remain dashboard-only.",
 	} {
 		if !strings.Contains(templateText, want) {
 			t.Fatalf("observability template missing %q", want)
@@ -209,6 +236,7 @@ func TestStackIncludesSsrCartCookieSecret(t *testing.T) {
 		"Runtime":       "provided.al2023",
 		"Environment": map[string]any{
 			"Variables": assertions.Match_ObjectLike(&map[string]any{
+				appenv.EnvAppEnvironment:    appenv.EnvironmentProduction,
 				cartsession.EnvCookieSecret: assertions.Match_AnyValue(),
 			}),
 		},
@@ -236,6 +264,7 @@ func TestStackIncludesAdminLambdaRoutesAndScopedPermissions(t *testing.T) {
 				"CATALOG_PUBLIC_INDEX_NAME":              catalog.DefaultPublicIndexName,
 				"CATALOG_RECENT_INDEX_NAME":              catalog.DefaultRecentIndexName,
 				"CATALOG_ENTITY_INDEX_NAME":              catalog.DefaultEntityIndexName,
+				appenv.EnvAppEnvironment:                 appenv.EnvironmentProduction,
 				adminauth.EnvProductImagesBucketName:     assertions.Match_AnyValue(),
 				adminauth.EnvProductImagesKeyPrefix:      productImagesKeyPrefix,
 				adminauth.EnvAdminCredentialsSecretJSON:  assertions.Match_AnyValue(),
@@ -1279,6 +1308,48 @@ func cloudWatchAlarmProperties(t *testing.T, templateJSON *map[string]any, alarm
 
 	t.Fatalf("CloudWatch alarm %q not found", alarmName)
 	return nil
+}
+
+func assertCriticalAlarmActions(t *testing.T, templateJSON *map[string]any, criticalAlarmNames map[string]bool) {
+	t.Helper()
+
+	criticalCount := 0
+	for _, resource := range templateResources(t, templateJSON) {
+		resourceMap := asStringMap(t, resource)
+		if resourceMap["Type"] != "AWS::CloudWatch::Alarm" {
+			continue
+		}
+
+		properties := asStringMap(t, resourceMap["Properties"])
+		alarmName, ok := properties["AlarmName"].(string)
+		if !ok {
+			t.Fatalf("CloudWatch alarm missing string AlarmName: %#v", properties)
+		}
+
+		if criticalAlarmNames[alarmName] {
+			criticalCount++
+			if properties["ActionsEnabled"] != true {
+				t.Fatalf("critical alarm %s must enable actions: %#v", alarmName, properties)
+			}
+			alarmActions, found := properties["AlarmActions"]
+			if !found || !strings.Contains(templateValueString(t, alarmActions), "OperationsAlarmTopic") {
+				t.Fatalf("critical alarm %s missing OperationsAlarmTopic alarm action: %#v", alarmName, properties)
+			}
+
+			continue
+		}
+
+		if properties["ActionsEnabled"] != false {
+			t.Fatalf("dashboard-only alarm %s must keep actions disabled: %#v", alarmName, properties)
+		}
+		if _, found := properties["AlarmActions"]; found {
+			t.Fatalf("dashboard-only alarm %s must not have alarm actions: %#v", alarmName, properties)
+		}
+	}
+
+	if criticalCount != len(criticalAlarmNames) {
+		t.Fatalf("critical alarm action count = %d, want %d", criticalCount, len(criticalAlarmNames))
+	}
 }
 
 func lambdaRoleID(t *testing.T, resources map[string]any, functionName string) string {

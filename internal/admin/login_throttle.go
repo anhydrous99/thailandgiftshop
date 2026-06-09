@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/anhydrous99/thailandgiftshop/internal/appenv"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -18,6 +19,8 @@ import (
 )
 
 const EnvAdminLoginAttemptsTableName = "ADMIN_LOGIN_ATTEMPTS_TABLE_NAME"
+
+var ErrAdminLoginThrottleNotConfigured = errors.New("admin login throttle not configured")
 
 const adminLoginAttemptLimit = 8
 const adminLoginAttemptWindow = 15 * time.Minute
@@ -88,6 +91,9 @@ type adminLoginAttemptRecord struct {
 func adminLoginThrottleFromEnvironment(ctx context.Context, secret string) (adminLoginThrottle, error) {
 	tableName := strings.TrimSpace(os.Getenv(EnvAdminLoginAttemptsTableName))
 	if tableName == "" {
+		if appenv.IsProduction() {
+			return nil, ErrAdminLoginThrottleNotConfigured
+		}
 		return noopAdminLoginThrottle{}, nil
 	}
 	awsConfig, err := config.LoadDefaultConfig(ctx)

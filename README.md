@@ -139,7 +139,7 @@ The CDK stack provisions the SSR Lambda with its own CloudWatch Logs group at `/
 
 Lambda emits AWS-managed CloudWatch metrics automatically, and the HTTP API default stage has detailed metrics enabled. Lambda X-Ray tracing is active and the Lambda role includes the X-Ray write permissions required to publish trace data. CloudFront, WAF, S3, DynamoDB, API Gateway, and Lambda metrics are collected into a CloudWatch dashboard named `ThailandGiftshop-Operations`.
 
-The admin Lambda emits custom embedded metric format (EMF) events to the `ThailandGiftshop/App` namespace for admin login attempts, origin-header rejections, catalog writes, and product image uploads. The stack also provisions CloudWatch alarms for the dashboard watchlist. Alarm actions are intentionally disabled, so the alarms surface state in CloudWatch without sending notifications until an action target is added later.
+The admin Lambda emits custom embedded metric format (EMF) events to the `ThailandGiftshop/App` namespace for admin login attempts, origin-header rejections, catalog writes, and product image uploads. The stack also provisions CloudWatch alarms for the dashboard watchlist. Critical alarm actions publish to the `thailandgiftshop-operations-alarms` SNS topic, while watchlist alarms remain dashboard-only. Email subscriptions require confirmation before notifications flow.
 
 ## Bootstrap
 
@@ -199,10 +199,10 @@ Deploy locally:
 
 ```sh
 cd infra
-AWS_REGION=us-east-1 npx cdk deploy ThailandGiftshopStack --parameters HostedZoneId=ROUTE53_HOSTED_ZONE_ID
+AWS_REGION=us-east-1 npx cdk deploy ThailandGiftshopStack --parameters HostedZoneId=ROUTE53_HOSTED_ZONE_ID --parameters AlarmNotificationEmail=ops@example.com
 ```
 
-Replace `ROUTE53_HOSTED_ZONE_ID` with the public Route 53 hosted zone ID for `thailandgiftshop.com`.
+Replace `ROUTE53_HOSTED_ZONE_ID` with the public Route 53 hosted zone ID for `thailandgiftshop.com` and replace `ops@example.com` with the operations email address that should receive critical alarm notifications.
 
 The stack outputs `SiteUrl` as `https://thailandgiftshop.com` and also outputs `SiteDistributionDomainName` for the underlying CloudFront distribution. The existing `SsrHttpApiUrl` output remains available for direct public API Gateway checks while CloudFront handles normal site traffic and all production admin traffic. Catalog infrastructure outputs include `CatalogTableName` and `CatalogTableArn`; product image infrastructure outputs include `ProductImagesBucketName` and `ProductImagesBaseUrl`.
 
@@ -239,6 +239,7 @@ Configure these GitHub settings before the first deployment:
 - Repository or environment secret: `AWS_ROLE_TO_ASSUME`
 - Repository or environment variable: `AWS_REGION` set to `us-east-1`
 - Repository or environment variable: `ROUTE53_HOSTED_ZONE_ID` set to the public Route 53 hosted zone ID for `thailandgiftshop.com`
+- Repository or environment variable: `ALARM_NOTIFICATION_EMAIL` set to the operations email address subscribed to critical alarms
 
 The deployment workflow uses GitHub OIDC through `aws-actions/configure-aws-credentials`, so long-lived AWS access keys are not required.
 

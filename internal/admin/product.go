@@ -62,7 +62,7 @@ func isAdminProductPath(path string) bool {
 
 func (h *Handler) handleAdminProducts(ctx context.Context, path string, request events.APIGatewayV2HTTPRequest, session adminSession) events.APIGatewayV2HTTPResponse {
 	method := requestMethod(request)
-	csrfValue, cookies, err := h.csrfForProtectedResponse(request, session)
+	csrfValue, cookies, err := h.csrfForProtectedResponse(ctx, request, session)
 	if err != nil {
 		return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 	}
@@ -162,7 +162,8 @@ func (h *Handler) createProduct(ctx context.Context, request events.APIGatewayV2
 		h.recordCatalogWrite(metricEntityProduct, metricOperationCreate, metricOutcomeValidationError)
 		return adminHTMLResponse(http.StatusBadRequest, "Invalid form", nil, nil)
 	}
-	product, imageToken, errorsList := productFromForm(values, catalog.Product{}, session, h.credentials.SessionSecret, h.currentTime(), true)
+	credentials := h.credentialsForRequest(ctx)
+	product, imageToken, errorsList := productFromForm(values, catalog.Product{}, session, credentials.SessionSecret, h.currentTime(), true)
 	if len(errorsList) > 0 {
 		h.recordCatalogWrite(metricEntityProduct, metricOperationCreate, metricOutcomeValidationError)
 		return h.productFormResponse(ctx, csrfValue, cookies, newProductFormViewModel(csrfValue, errorsList).withProduct(product, imageToken), http.StatusBadRequest)
@@ -187,7 +188,8 @@ func (h *Handler) updateProduct(ctx context.Context, request events.APIGatewayV2
 		vm := editProductFormViewModel(csrfValue, previous, []string{"This product changed while you were editing. Reload and try again."}, "")
 		return h.productFormResponse(ctx, csrfValue, cookies, vm, http.StatusConflict)
 	}
-	product, imageToken, errorsList := productFromForm(values, previous, session, h.credentials.SessionSecret, h.currentTime(), false)
+	credentials := h.credentialsForRequest(ctx)
+	product, imageToken, errorsList := productFromForm(values, previous, session, credentials.SessionSecret, h.currentTime(), false)
 	if len(errorsList) > 0 {
 		h.recordCatalogWrite(metricEntityProduct, metricOperationUpdate, metricOutcomeValidationError)
 		vm := editProductFormViewModel(csrfValue, product, errorsList, "")

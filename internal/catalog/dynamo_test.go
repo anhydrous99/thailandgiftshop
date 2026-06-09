@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anhydrous99/thailandgiftshop/internal/appenv"
 	"github.com/anhydrous99/thailandgiftshop/internal/observability"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -319,6 +320,66 @@ func TestDynamoConfigFromEnvDefaultsEntityIndexName(t *testing.T) {
 	}
 	if config.EntityIndexName != DefaultEntityIndexName {
 		t.Fatalf("EntityIndexName = %q, want %q", config.EntityIndexName, DefaultEntityIndexName)
+	}
+}
+
+func TestProductionCatalogStoreEnvironmentMissingCatalogTableFailsClosed(t *testing.T) {
+	setMissingCatalogTableEnvironment(t, appenv.EnvironmentProduction)
+
+	store, usedDynamo, err := NewStoreFromEnvWithRecorder(context.Background(), nil)
+	if !errors.Is(err, ErrCatalogStoreNotConfigured) {
+		t.Fatalf("NewStoreFromEnvWithRecorder err = %v, want ErrCatalogStoreNotConfigured", err)
+	}
+	if store != nil {
+		t.Fatalf("store = %#v, want nil", store)
+	}
+	if usedDynamo {
+		t.Fatal("usedDynamo = true, want false")
+	}
+}
+
+func TestProductionCatalogAdminStoreEnvironmentMissingCatalogTableFailsClosed(t *testing.T) {
+	setMissingCatalogTableEnvironment(t, appenv.EnvironmentProduction)
+
+	store, usedDynamo, err := NewAdminStoreFromEnvWithRecorder(context.Background(), nil)
+	if !errors.Is(err, ErrCatalogStoreNotConfigured) {
+		t.Fatalf("NewAdminStoreFromEnvWithRecorder err = %v, want ErrCatalogStoreNotConfigured", err)
+	}
+	if store != nil {
+		t.Fatalf("store = %#v, want nil", store)
+	}
+	if usedDynamo {
+		t.Fatal("usedDynamo = true, want false")
+	}
+}
+
+func TestLocalCatalogStoreEnvironmentMissingCatalogTableUsesEmptyStore(t *testing.T) {
+	setMissingCatalogTableEnvironment(t, "development")
+
+	store, usedDynamo, err := NewStoreFromEnvWithRecorder(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("NewStoreFromEnvWithRecorder returned error: %v", err)
+	}
+	if _, ok := store.(EmptyStore); !ok {
+		t.Fatalf("store = %T, want EmptyStore", store)
+	}
+	if usedDynamo {
+		t.Fatal("usedDynamo = true, want false")
+	}
+}
+
+func TestLocalCatalogAdminStoreEnvironmentMissingCatalogTableUsesMemoryStore(t *testing.T) {
+	setMissingCatalogTableEnvironment(t, "development")
+
+	store, usedDynamo, err := NewAdminStoreFromEnvWithRecorder(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("NewAdminStoreFromEnvWithRecorder returned error: %v", err)
+	}
+	if _, ok := store.(*MemoryStore); !ok {
+		t.Fatalf("store = %T, want *MemoryStore", store)
+	}
+	if usedDynamo {
+		t.Fatal("usedDynamo = true, want false")
 	}
 }
 
@@ -848,6 +909,17 @@ func TestDynamoAdminStoreDuplicateCategorySlugReturnsSlugConflict(t *testing.T) 
 	if _, err := store.CreateCategory(context.Background(), category); !errors.Is(err, ErrSlugConflict) {
 		t.Fatalf("CreateCategory duplicate err = %v, want ErrSlugConflict", err)
 	}
+}
+
+func setMissingCatalogTableEnvironment(t *testing.T, appEnvironment string) {
+	t.Helper()
+
+	t.Setenv(appenv.EnvAppEnvironment, appEnvironment)
+	t.Setenv(EnvTableName, "")
+	t.Setenv(EnvSlugIndexName, "")
+	t.Setenv(EnvPublicIndexName, "")
+	t.Setenv(EnvRecentIndexName, "")
+	t.Setenv(EnvEntityIndexName, "")
 }
 
 func stringAttribute(t *testing.T, attributes map[string]types.AttributeValue, key string) string {

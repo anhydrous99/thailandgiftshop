@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anhydrous99/thailandgiftshop/internal/appenv"
 	"github.com/aws/aws-lambda-go/events"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -367,6 +368,36 @@ func TestAdminOriginSecretBlocksDirectAdminRequestsWhenConfigured(t *testing.T) 
 	}
 }
 
+func TestProductionAdminOriginSecretMissingBlocksDirectAdminRequests(t *testing.T) {
+	handler, _ := newAuthTestHandler(t)
+	t.Setenv(appenv.EnvAppEnvironment, appenv.EnvironmentProduction)
+	t.Setenv(EnvAdminOriginHeaderSecret, "")
+
+	response, err := handler.Handle(context.Background(), adminRequest(http.MethodGet, "/admin/login"))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusForbidden)
+	}
+	assertNoStore(t, response)
+}
+
+func TestLocalAdminOriginSecretMissingAllowsDirectAdminRequests(t *testing.T) {
+	handler, _ := newAuthTestHandler(t)
+	t.Setenv(appenv.EnvAppEnvironment, "development")
+	t.Setenv(EnvAdminOriginHeaderSecret, "")
+
+	response, err := handler.Handle(context.Background(), adminRequest(http.MethodGet, "/admin/login"))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	assertNoStore(t, response)
+}
+
 func TestDashboardServesAuthenticatedShellFromRequestCookies(t *testing.T) {
 	handler, _ := newAuthTestHandler(t)
 	login := loginResponse(t, handler)
@@ -653,6 +684,21 @@ func TestCredentialsLoadFromSecretsManagerJSONShape(t *testing.T) {
 	}
 	if credentials.SessionSecret != testSessionSecret {
 		t.Fatalf("SessionSecret = %q, want configured secret", credentials.SessionSecret)
+	}
+}
+
+func TestNewHandlerFromEnvironmentProductionFailsWithoutLoginThrottleTable(t *testing.T) {
+	t.Setenv(appenv.EnvAppEnvironment, appenv.EnvironmentProduction)
+	t.Setenv(EnvAdminPasswordHash, testPasswordHash(t))
+	t.Setenv(EnvAdminSessionSecret, testSessionSecret)
+	t.Setenv(EnvAdminLoginAttemptsTableName, "")
+	t.Setenv("AWS_EC2_METADATA_DISABLED", "true")
+	t.Setenv("AWS_REGION", "us-east-1")
+	t.Setenv("CATALOG_TABLE_NAME", "catalog-table")
+
+	_, err := NewHandlerFromEnvironment(context.Background())
+	if !errors.Is(err, ErrAdminLoginThrottleNotConfigured) {
+		t.Fatalf("NewHandlerFromEnvironment error = %v, want %v", err, ErrAdminLoginThrottleNotConfigured)
 	}
 }
 

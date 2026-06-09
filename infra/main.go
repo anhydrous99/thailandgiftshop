@@ -4,6 +4,7 @@ import (
 	"os"
 
 	adminauth "github.com/anhydrous99/thailandgiftshop/internal/admin"
+	appenv "github.com/anhydrous99/thailandgiftshop/internal/appenv"
 	cartsession "github.com/anhydrous99/thailandgiftshop/internal/cart"
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
 	appobservability "github.com/anhydrous99/thailandgiftshop/internal/observability"
@@ -14,6 +15,7 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfront"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfrontorigins"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudwatch"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudwatchactions"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsdynamodb"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsiam"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awslambda"
@@ -23,6 +25,8 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awss3"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awss3deployment"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssecretsmanager"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awssns"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awssnssubscriptions"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awswafv2"
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
@@ -54,7 +58,8 @@ const (
 
 	ssrOriginRequestPolicyName = "thailandgiftshop-ssr-origin"
 
-	operationsDashboardName = "ThailandGiftshop-Operations"
+	operationsDashboardName  = "ThailandGiftshop-Operations"
+	operationsAlarmTopicName = "thailandgiftshop-operations-alarms"
 
 	ssrLambdaBuildCommand   = "mkdir -p cdk.out/ssr-lambda && GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -tags lambda.norpc -ldflags \"-s -w\" -o cdk.out/ssr-lambda/bootstrap ../cmd/ssr"
 	adminLambdaBuildCommand = "mkdir -p cdk.out/admin-lambda && GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -tags lambda.norpc -ldflags \"-s -w\" -o cdk.out/admin-lambda/bootstrap ../cmd/admin"
@@ -271,6 +276,7 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, productImagesBu
 			catalog.EnvRecentIndexName:            jsii.String(catalog.DefaultRecentIndexName),
 			catalog.EnvEntityIndexName:            jsii.String(catalog.DefaultEntityIndexName),
 			catalog.EnvProductImagePlaceholderURL: jsii.String(catalog.DefaultProductImagePlaceholderURL),
+			appenv.EnvAppEnvironment:              jsii.String(appenv.EnvironmentProduction),
 			cartsession.EnvCookieSecret:           cartCookieSecretReference(cartCookieSecret),
 		},
 		FunctionName: jsii.String("thailandgiftshop-ssr"),
@@ -358,6 +364,7 @@ func addAdmin(stack awscdk.Stack, catalogTable awsdynamodb.ITable, productImages
 			adminauth.EnvProductImagesBucketName:     productImagesBucket.BucketName(),
 			adminauth.EnvProductImagesKeyPrefix:      jsii.String(productImagesKeyPrefix),
 			catalog.EnvProductImagePlaceholderURL:    jsii.String(catalog.DefaultProductImagePlaceholderURL),
+			appenv.EnvAppEnvironment:                 jsii.String(appenv.EnvironmentProduction),
 			adminauth.EnvAdminCredentialsSecretJSON:  adminCredentialsSecretReference(adminCredentialsSecret(stack)),
 			adminauth.EnvAdminLoginAttemptsTableName: adminLoginAttemptsTable.TableName(),
 			adminauth.EnvAdminOriginHeaderSecret:     adminOriginHeaderSecretReference(adminOriginHeaderSecret),
@@ -744,6 +751,7 @@ func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi, productImagesB
 func addObservability(stack awscdk.Stack, resources observabilityResources) {
 	period5m := awscdk.Duration_Minutes(jsii.Number(5))
 	period1d := awscdk.Duration_Days(jsii.Number(1))
+	operationsAlarmTopic := addOperationsAlarmTopic(stack)
 
 	apiRequests := resources.httpAPI.MetricCount(sumMetric("HTTP API requests", period5m, awscloudwatch.Unit_COUNT))
 	api5xx := resources.httpAPI.MetricServerError(sumMetric("HTTP API 5xx", period5m, awscloudwatch.Unit_COUNT))
@@ -802,21 +810,21 @@ func addObservability(stack awscdk.Stack, resources observabilityResources) {
 	productImagesObjectCount := s3StorageMetric(resources.productImagesBucket, "NumberOfObjects", "Product image objects", period1d, awscloudwatch.Unit_COUNT, "AllStorageTypes")
 
 	alarms := []awscloudwatch.Alarm{
-		addAlarm(stack, "CloudFront5xxRateAlarm", "ThailandGiftshop-CloudFront-5xxRate-High", cf5xxRate, 5, 2, "CloudFront 5xx error rate is above 5%."),
-		addAlarm(stack, "HttpApi5xxAlarm", "ThailandGiftshop-HttpApi-5xx-High", api5xx, 5, 2, "HTTP API is returning elevated 5xx responses."),
+		addCriticalAlarm(stack, operationsAlarmTopic, "CloudFront5xxRateAlarm", "ThailandGiftshop-CloudFront-5xxRate-High", cf5xxRate, 5, 2, "CloudFront 5xx error rate is above 5%."),
+		addCriticalAlarm(stack, operationsAlarmTopic, "HttpApi5xxAlarm", "ThailandGiftshop-HttpApi-5xx-High", api5xx, 5, 2, "HTTP API is returning elevated 5xx responses."),
 		addAlarm(stack, "HttpApiLatencyAlarm", "ThailandGiftshop-HttpApi-LatencyP95-High", apiLatencyP95, 3000, 3, "HTTP API p95 latency is above 3 seconds."),
-		addAlarm(stack, "SsrLambdaErrorsAlarm", "ThailandGiftshop-SsrLambda-Errors", ssrErrors, 0, 2, "SSR Lambda has errors."),
-		addAlarm(stack, "AdminLambdaErrorsAlarm", "ThailandGiftshop-AdminLambda-Errors", adminErrors, 0, 2, "Admin Lambda has errors."),
+		addCriticalAlarm(stack, operationsAlarmTopic, "SsrLambdaErrorsAlarm", "ThailandGiftshop-SsrLambda-Errors", ssrErrors, 0, 2, "SSR Lambda has errors."),
+		addCriticalAlarm(stack, operationsAlarmTopic, "AdminLambdaErrorsAlarm", "ThailandGiftshop-AdminLambda-Errors", adminErrors, 0, 2, "Admin Lambda has errors."),
 		addAlarm(stack, "SsrLambdaThrottlesAlarm", "ThailandGiftshop-SsrLambda-Throttles", ssrThrottles, 0, 1, "SSR Lambda is throttling."),
 		addAlarm(stack, "AdminLambdaThrottlesAlarm", "ThailandGiftshop-AdminLambda-Throttles", adminThrottles, 0, 1, "Admin Lambda is throttling."),
 		addAlarm(stack, "CatalogThrottlesAlarm", "ThailandGiftshop-CatalogTable-Throttles", catalogThrottles, 0, 1, "Catalog DynamoDB table is throttling."),
 		addAlarm(stack, "CatalogSystemErrorsAlarm", "ThailandGiftshop-CatalogTable-SystemErrors", catalogSystemErrors, 0, 1, "Catalog DynamoDB table has system errors."),
 		addAlarm(stack, "WafAdminBlocksAlarm", "ThailandGiftshop-WAF-AdminBlocks", wafBlocked, 10, 1, "Admin WAF blocks exceeded the normal operating threshold."),
-		addAlarm(stack, "AdminOriginRejectedAlarm", "ThailandGiftshop-Admin-OriginRejected", adminOriginRejected, 0, 1, "Admin origin header rejections were observed."),
+		addCriticalAlarm(stack, operationsAlarmTopic, "AdminOriginRejectedAlarm", "ThailandGiftshop-Admin-OriginRejected", adminOriginRejected, 0, 1, "Admin origin header rejections were observed."),
 		addAlarm(stack, "AdminLoginInvalidAlarm", "ThailandGiftshop-Admin-InvalidLogins", adminLoginInvalid, 10, 1, "Admin invalid login attempts exceeded the normal operating threshold."),
 		addAlarm(stack, "AdminLoginThrottledAlarm", "ThailandGiftshop-Admin-ThrottledLogins", adminLoginThrottled, 0, 1, "Admin login throttling occurred."),
-		addAlarm(stack, "CatalogWriteErrorsAlarm", "ThailandGiftshop-CatalogWrite-Errors", catalogWriteErrors, 0, 1, "Admin catalog write errors occurred."),
-		addAlarm(stack, "ImageUploadErrorsAlarm", "ThailandGiftshop-ProductImageUpload-Errors", imageUploadErrors, 0, 1, "Product image upload errors occurred."),
+		addCriticalAlarm(stack, operationsAlarmTopic, "CatalogWriteErrorsAlarm", "ThailandGiftshop-CatalogWrite-Errors", catalogWriteErrors, 0, 1, "Admin catalog write errors occurred."),
+		addCriticalAlarm(stack, operationsAlarmTopic, "ImageUploadErrorsAlarm", "ThailandGiftshop-ProductImageUpload-Errors", imageUploadErrors, 0, 1, "Product image upload errors occurred."),
 		addAlarm(stack, "AdminLoginThrottleTableThrottlesAlarm", "ThailandGiftshop-AdminLoginThrottleTable-Throttles", adminLoginThrottleTableThrottles, 0, 1, "Admin login throttle DynamoDB table is throttling."),
 	}
 
@@ -825,7 +833,7 @@ func addObservability(stack awscdk.Stack, resources observabilityResources) {
 		DefaultInterval: awscdk.Duration_Hours(jsii.Number(6)),
 	})
 	dashboard.AddWidgets(awscloudwatch.NewTextWidget(&awscloudwatch.TextWidgetProps{
-		Markdown: jsii.String("# Thailand Gift Shop operations\nProduction service metrics for https://" + siteDomainName + " in us-east-1. Alarm actions are intentionally disabled."),
+		Markdown: jsii.String("# Thailand Gift Shop operations\nProduction service metrics for https://" + siteDomainName + " in us-east-1. Critical alarm actions publish to SNS; watchlist alarms remain dashboard-only."),
 		Width:    jsii.Number(24),
 		Height:   jsii.Number(2),
 	}))
@@ -884,6 +892,19 @@ func addObservability(stack awscdk.Stack, resources observabilityResources) {
 			Metrics: cwMetrics(alarmMetrics(alarms...)...),
 		}),
 	)
+}
+
+func addOperationsAlarmTopic(stack awscdk.Stack) awssns.Topic {
+	alarmNotificationEmail := awscdk.NewCfnParameter(stack, jsii.String("AlarmNotificationEmail"), &awscdk.CfnParameterProps{
+		Description: jsii.String("Email address subscribed to critical operations alarms"),
+		Type:        jsii.String("String"),
+	})
+	topic := awssns.NewTopic(stack, jsii.String("OperationsAlarmTopic"), &awssns.TopicProps{
+		TopicName: jsii.String(operationsAlarmTopicName),
+	})
+	topic.AddSubscription(awssnssubscriptions.NewEmailSubscription(alarmNotificationEmail.ValueAsString(), nil))
+
+	return topic
 }
 
 func sumMetric(label string, period awscdk.Duration, unit awscloudwatch.Unit) *awscloudwatch.MetricOptions {
@@ -983,8 +1004,19 @@ func s3StorageMetric(bucket awss3.IBucket, metricName string, label string, peri
 }
 
 func addAlarm(stack awscdk.Stack, id string, name string, metric awscloudwatch.IMetric, threshold float64, evaluationPeriods float64, description string) awscloudwatch.Alarm {
+	return newAlarm(stack, id, name, metric, threshold, evaluationPeriods, description, false)
+}
+
+func addCriticalAlarm(stack awscdk.Stack, operationsAlarmTopic awssns.ITopic, id string, name string, metric awscloudwatch.IMetric, threshold float64, evaluationPeriods float64, description string) awscloudwatch.Alarm {
+	alarm := newAlarm(stack, id, name, metric, threshold, evaluationPeriods, description, true)
+	alarm.AddAlarmAction(awscloudwatchactions.NewSnsAction(operationsAlarmTopic))
+
+	return alarm
+}
+
+func newAlarm(stack awscdk.Stack, id string, name string, metric awscloudwatch.IMetric, threshold float64, evaluationPeriods float64, description string, actionsEnabled bool) awscloudwatch.Alarm {
 	return awscloudwatch.NewAlarm(stack, jsii.String(id), &awscloudwatch.AlarmProps{
-		ActionsEnabled:     jsii.Bool(false),
+		ActionsEnabled:     jsii.Bool(actionsEnabled),
 		AlarmDescription:   jsii.String(description),
 		AlarmName:          jsii.String(name),
 		ComparisonOperator: awscloudwatch.ComparisonOperator_GREATER_THAN_THRESHOLD,

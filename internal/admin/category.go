@@ -50,7 +50,7 @@ func isAdminCategoryPath(path string) bool {
 
 func (h *Handler) handleAdminCategories(ctx context.Context, path string, request events.APIGatewayV2HTTPRequest, session adminSession) events.APIGatewayV2HTTPResponse {
 	method := requestMethod(request)
-	csrfValue, cookies, err := h.csrfForProtectedResponse(request, session)
+	csrfValue, cookies, err := h.csrfForProtectedResponse(ctx, request, session)
 	if err != nil {
 		return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 	}

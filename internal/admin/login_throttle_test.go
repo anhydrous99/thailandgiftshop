@@ -2,15 +2,43 @@ package admin
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/anhydrous99/thailandgiftshop/internal/appenv"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
+
+func TestProductionAdminLoginThrottleFromEnvironmentReturnsErrorWhenTableMissing(t *testing.T) {
+	t.Setenv(appenv.EnvAppEnvironment, appenv.EnvironmentProduction)
+	t.Setenv(EnvAdminLoginAttemptsTableName, "")
+
+	throttle, err := adminLoginThrottleFromEnvironment(context.Background(), testSessionSecret)
+	if !errors.Is(err, ErrAdminLoginThrottleNotConfigured) {
+		t.Fatalf("adminLoginThrottleFromEnvironment error = %v, want %v", err, ErrAdminLoginThrottleNotConfigured)
+	}
+	if throttle != nil {
+		t.Fatalf("throttle = %#v, want nil", throttle)
+	}
+}
+
+func TestLocalAdminLoginThrottleFromEnvironmentReturnsNoopWhenTableMissing(t *testing.T) {
+	t.Setenv(appenv.EnvAppEnvironment, "development")
+	t.Setenv(EnvAdminLoginAttemptsTableName, "")
+
+	throttle, err := adminLoginThrottleFromEnvironment(context.Background(), testSessionSecret)
+	if err != nil {
+		t.Fatalf("adminLoginThrottleFromEnvironment returned error: %v", err)
+	}
+	if _, ok := throttle.(noopAdminLoginThrottle); !ok {
+		t.Fatalf("throttle = %T, want noopAdminLoginThrottle", throttle)
+	}
+}
 
 func TestDynamoAdminLoginThrottleReserveWritesHashedClientKeyAndTTL(t *testing.T) {
 	now := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)

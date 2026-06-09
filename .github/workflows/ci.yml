@@ -78,8 +78,14 @@ jobs:
       - name: Install infra Node dependencies
         run: npm --prefix infra ci
 
+      - name: Audit infra production dependencies
+        run: npm --prefix infra audit --omit=dev --audit-level=high
+
       - name: Install web Node dependencies
         run: npm --prefix web ci
+
+      - name: Audit web production dependencies
+        run: npm --prefix web audit --omit=dev --audit-level=high
 
       - name: Download Go dependencies
         run: go mod download
@@ -124,6 +130,11 @@ jobs:
         run: |
           packages="$(sh scripts/go-packages.sh)"
           go test $packages
+
+      - name: Run Go vet
+        run: |
+          packages="$(sh scripts/go-packages.sh)"
+          go vet $packages
 
       - name: Synthesize CDK app
         run: npm --prefix infra run synth

@@ -8,6 +8,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/anhydrous99/thailandgiftshop/internal/appenv"
 	"github.com/anhydrous99/thailandgiftshop/internal/observability"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -33,8 +34,9 @@ const (
 )
 
 var (
-	ErrSlugConflict    = errors.New("catalog slug already exists")
-	ErrVersionConflict = errors.New("catalog version conflict")
+	ErrSlugConflict              = errors.New("catalog slug already exists")
+	ErrVersionConflict           = errors.New("catalog version conflict")
+	ErrCatalogStoreNotConfigured = errors.New("catalog store not configured")
 )
 
 type DynamoConfig struct {
@@ -81,6 +83,9 @@ func NewStoreFromEnv(ctx context.Context) (Store, bool, error) {
 func NewStoreFromEnvWithRecorder(ctx context.Context, metrics observability.Recorder) (Store, bool, error) {
 	dynamoConfig, ok := DynamoConfigFromEnv()
 	if !ok {
+		if appenv.IsProduction() {
+			return nil, false, ErrCatalogStoreNotConfigured
+		}
 		return EmptyStore{}, false, nil
 	}
 
@@ -152,6 +157,9 @@ func NewAdminStoreFromEnv(ctx context.Context) (AdminStore, bool, error) {
 func NewAdminStoreFromEnvWithRecorder(ctx context.Context, metrics observability.Recorder) (AdminStore, bool, error) {
 	dynamoConfig, ok := DynamoConfigFromEnv()
 	if !ok {
+		if appenv.IsProduction() {
+			return nil, false, ErrCatalogStoreNotConfigured
+		}
 		return NewMemoryStore(nil, nil), false, nil
 	}
 	awsConfig, err := config.LoadDefaultConfig(ctx)

@@ -13,9 +13,11 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/anhydrous99/thailandgiftshop/internal/appenv"
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
 	"github.com/anhydrous99/thailandgiftshop/internal/observability"
 	"github.com/aws/aws-lambda-go/events"
@@ -40,6 +42,7 @@ const csrfFieldName = "csrf_token"
 const dummyBcryptHash = "$2a$04$Vn0nSllZrX4bNwFaMifZAuS4xCZ9oE4DngJ02k8pYDz7zlXzpOfgK"
 
 type Handler struct {
+	stateMu       sync.RWMutex
 	credentials   Credentials
 	now           func() time.Time
 	catalog       catalog.AdminStore
@@ -242,7 +245,7 @@ func (h *Handler) handleLogout(ctx context.Context, request events.APIGatewayV2H
 	if !authenticated {
 		return adminRedirectResponse(http.StatusSeeOther, "/admin/login", nil)
 	}
-	if !h.validCSRF(request, session) {
+	if !h.validCSRF(ctx, request, session) {
 		return adminHTMLResponse(http.StatusForbidden, "Forbidden", nil, nil)
 	}
 
@@ -260,7 +263,7 @@ func (h *Handler) handleProtectedAdmin(ctx context.Context, request events.APIGa
 
 	path := requestPath(request)
 	method := requestMethod(request)
-	if method == http.MethodPost && !h.validCSRF(request, session) {
+	if method == http.MethodPost && !h.validCSRF(ctx, request, session) {
 		return adminHTMLResponse(http.StatusForbidden, "Forbidden", nil, nil)
 	}
 	if isAdminProductPath(path) {
@@ -279,7 +282,7 @@ func (h *Handler) handleProtectedAdmin(ctx context.Context, request events.APIGa
 		return adminHTMLResponse(http.StatusMethodNotAllowed, "Method not allowed", map[string]string{"Allow": adminAllowedMethods}, nil)
 	}
 
-	csrfValue, cookies, err := h.csrfForProtectedResponse(request, session)
+	csrfValue, cookies, err := h.csrfForProtectedResponse(ctx, request, session)
 	if err != nil {
 		return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 	}
@@ -294,22 +297,40 @@ func (h *Handler) handleProtectedAdmin(ctx context.Context, request events.APIGa
 	return adminHTMLResponse(http.StatusOK, body, nil, cookies)
 }
 
-func (h *Handler) validPassword(ctx context.Context, password string) bool {
-	return h.validPasswordWithCredentials(h.credentialsForRequest(ctx), password)
+func (h *Handler) credentialsForRequest(ctx context.Context) Credentials {
+	credentials := h.cachedCredentials()
+	if credentials.PasswordHash != "" && credentials.SessionSecret != "" {
+		return credentials
+	}
+
+	loadedCredentials, err := CredentialsFromEnvironment(ctx)
+	if err != nil {
+		return credentials
+	}
+
+	h.stateMu.Lock()
+	defer h.stateMu.Unlock()
+	credentials = h.credentials
+	if credentials.PasswordHash != "" && credentials.SessionSecret != "" {
+		return credentials
+	}
+	h.credentials = loadedCredentials
+	return loadedCredentials
 }
 
-func (h *Handler) credentialsForRequest(ctx context.Context) Credentials {
-	credentials := h.credentials
-	if credentials.PasswordHash == "" || credentials.SessionSecret == "" {
-		loadedCredentials, err := CredentialsFromEnvironment(ctx)
-		if err == nil {
-			credentials = loadedCredentials
-		}
+func (h *Handler) cachedCredentials() Credentials {
+	h.stateMu.RLock()
+	defer h.stateMu.RUnlock()
+	return h.credentials
+}
+
+func (h *Handler) cacheCredentials(credentials Credentials) {
+	if credentials.PasswordHash == "" && credentials.SessionSecret == "" {
+		return
 	}
-	if credentials.PasswordHash != "" || credentials.SessionSecret != "" {
-		h.credentials = credentials
-	}
-	return credentials
+	h.stateMu.Lock()
+	defer h.stateMu.Unlock()
+	h.credentials = credentials
 }
 
 func (h *Handler) validPasswordWithCredentials(credentials Credentials, password string) bool {
@@ -324,19 +345,12 @@ func (h *Handler) validPasswordWithCredentials(credentials Credentials, password
 		return false
 	}
 
-	h.credentials = credentials
+	h.cacheCredentials(credentials)
 	return true
 }
 
 func (h *Handler) authenticatedSession(ctx context.Context, request events.APIGatewayV2HTTPRequest) (adminSession, bool) {
-	credentials := h.credentials
-	if credentials.SessionSecret == "" {
-		loadedCredentials, err := CredentialsFromEnvironment(ctx)
-		if err == nil {
-			credentials = loadedCredentials
-			h.credentials = loadedCredentials
-		}
-	}
+	credentials := h.credentialsForRequest(ctx)
 	if credentials.SessionSecret == "" {
 		return adminSession{}, false
 	}
@@ -349,7 +363,11 @@ func (h *Handler) authenticatedSession(ctx context.Context, request events.APIGa
 	return decodeAdminSession(value, credentials.SessionSecret, h.currentTime())
 }
 
-func (h *Handler) validCSRF(request events.APIGatewayV2HTTPRequest, session adminSession) bool {
+func (h *Handler) validCSRF(ctx context.Context, request events.APIGatewayV2HTTPRequest, session adminSession) bool {
+	credentials := h.credentialsForRequest(ctx)
+	if credentials.SessionSecret == "" {
+		return false
+	}
 	cookieValue, found := requestCookieValue(request, adminCSRFCookieName)
 	if !found {
 		return false
@@ -366,17 +384,18 @@ func (h *Handler) validCSRF(request events.APIGatewayV2HTTPRequest, session admi
 		return false
 	}
 
-	return validateAdminCSRFToken(submittedValue, session, h.credentials.SessionSecret, h.currentTime())
+	return validateAdminCSRFToken(submittedValue, session, credentials.SessionSecret, h.currentTime())
 }
 
-func (h *Handler) csrfForProtectedResponse(request events.APIGatewayV2HTTPRequest, session adminSession) (string, []string, error) {
+func (h *Handler) csrfForProtectedResponse(ctx context.Context, request events.APIGatewayV2HTTPRequest, session adminSession) (string, []string, error) {
+	credentials := h.credentialsForRequest(ctx)
 	if csrfValue, found := requestCookieValue(request, adminCSRFCookieName); found {
-		if validateAdminCSRFToken(csrfValue, session, h.credentials.SessionSecret, h.currentTime()) {
+		if validateAdminCSRFToken(csrfValue, session, credentials.SessionSecret, h.currentTime()) {
 			return csrfValue, nil, nil
 		}
 	}
 
-	csrfValue, err := newAdminCSRFToken(session, h.credentials.SessionSecret)
+	csrfValue, err := newAdminCSRFToken(session, credentials.SessionSecret)
 	if err != nil {
 		return "", nil, err
 	}
@@ -439,7 +458,8 @@ func (h *Handler) handleProductImageUpload(ctx context.Context, path string, req
 			h.recordProductImageUpload(step, metricOutcomeError)
 			return adminJSONErrorResponse(http.StatusInternalServerError, "upload service unavailable")
 		}
-		token, err := newConfirmedProductImageToken(url, session, h.credentials.SessionSecret, h.currentTime())
+		credentials := h.credentialsForRequest(ctx)
+		token, err := newConfirmedProductImageToken(url, session, credentials.SessionSecret, h.currentTime())
 		if err != nil {
 			h.recordProductImageUpload(step, metricOutcomeError)
 			return adminJSONErrorResponse(http.StatusInternalServerError, "upload service unavailable")
@@ -453,12 +473,22 @@ func (h *Handler) handleProductImageUpload(ctx context.Context, path string, req
 }
 
 func (h *Handler) productImageUploads(ctx context.Context) (productImageUploads, error) {
-	if h.uploads != nil {
-		return h.uploads, nil
+	h.stateMu.RLock()
+	uploads := h.uploads
+	h.stateMu.RUnlock()
+	if uploads != nil {
+		return uploads, nil
 	}
+
 	uploads, err := productImageUploadServiceFromEnvironment(ctx)
 	if err != nil {
 		return nil, err
+	}
+
+	h.stateMu.Lock()
+	defer h.stateMu.Unlock()
+	if h.uploads != nil {
+		return h.uploads, nil
 	}
 	h.uploads = uploads
 	return uploads, nil
@@ -549,7 +579,7 @@ func headerValue(headers map[string]string, name string) string {
 func validAdminOrigin(request events.APIGatewayV2HTTPRequest) bool {
 	secret := strings.TrimSpace(os.Getenv(EnvAdminOriginHeaderSecret))
 	if secret == "" {
-		return true
+		return !appenv.IsProduction()
 	}
 	provided := headerValue(request.Headers, adminOriginHeaderName)
 	providedDigest := sha256.Sum256([]byte(provided))
