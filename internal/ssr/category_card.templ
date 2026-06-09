@@ -3,8 +3,10 @@ package ssr
 import "github.com/anhydrous99/thailandgiftshop/internal/catalog"
 
 templ categoryCard(category catalog.Category) {
-	<a data-testid="category-card" href={ "/categories/" + category.Slug } class="rounded-lg border border-[#2D2A4A]/15 bg-white p-5 shadow-sm transition hover:border-[#A51931]/30 hover:shadow-md">
-		<p class="text-base font-black text-[#2D2A4A]">{ category.Name }</p>
-		<p class="mt-2 text-sm leading-6 text-[#4C4A62]">{ category.Description }</p>
+	<a data-testid="category-card" href={ "/categories/" + category.Slug } class="block border border-flag-blue/15 bg-paper p-5 transition hover:border-flag-blue hover:shadow-lift">
+		<span class="block border-l-2 border-flag-red pl-4">
+			<span class="block font-display text-base font-medium text-flag-blue">{ category.Name }</span>
+			<span class="mt-2 block text-sm leading-6 text-muted">{ category.Description }</span>
+		</span>
 	</a>
 }

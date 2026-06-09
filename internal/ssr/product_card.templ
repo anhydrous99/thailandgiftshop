@@ -3,21 +3,24 @@ package ssr
 import "github.com/anhydrous99/thailandgiftshop/internal/catalog"
 
 templ productCard(product catalog.Product, productImagePlaceholderURL string) {
-	<a data-testid="product-card" href={ "/products/" + product.Slug } class="group block overflow-hidden rounded-lg border border-[#2D2A4A]/15 bg-white shadow-sm transition hover:-translate-y-1 hover:border-[#A51931]/30 hover:shadow-lg">
-		<img class="aspect-[4/3] w-full bg-[#F4F5F8] object-cover transition duration-300 group-hover:scale-105" src={ product.DisplayImageURL(productImagePlaceholderURL) } alt={ product.Name } loading="lazy"/>
-		<div class="p-5">
+	<a data-testid="product-card" href={ "/products/" + product.Slug } class="group flex flex-col border border-flag-blue/15 bg-paper transition hover:border-flag-blue hover:shadow-lift">
+		<span aria-hidden="true" class="block h-1 w-full bg-flag-red opacity-0 transition group-hover:opacity-100"></span>
+		<span class="block overflow-hidden">
+			<img class="aspect-[4/3] w-full bg-flag-white object-cover transition duration-300 group-hover:scale-[1.02]" src={ product.DisplayImageURL(productImagePlaceholderURL) } alt={ product.Name } loading="lazy"/>
+		</span>
+		<div class="flex grow flex-col p-5">
 			<div class="flex items-start justify-between gap-4">
-				<h3 class="text-lg font-black leading-6 text-[#2D2A4A]">{ product.Name }</h3>
-				<p class="shrink-0 rounded-full bg-[#F4F5F8] px-3 py-1 text-sm font-black text-[#A51931]">{ formatPrice(product.PriceCents) }</p>
+				<h3 class="font-display text-lg font-medium leading-6 text-flag-blue">{ product.Name }</h3>
+				<p class="shrink-0 font-display text-lg font-bold leading-6 tabular-nums text-flag-red">{ formatPrice(product.PriceCents) }</p>
 			</div>
-			<p class="mt-3 line-clamp-3 text-sm leading-6 text-[#4C4A62]">{ product.Description }</p>
-			<div class="mt-4 flex items-center justify-between gap-3">
+			<p class="mt-3 line-clamp-3 text-sm leading-6 text-muted">{ product.Description }</p>
+			<div class="mt-4 flex grow items-end justify-between gap-3">
 				if product.OutOfStock() {
-					<p class="inline-flex rounded-full bg-[#A51931]/10 px-3 py-1 text-xs font-black text-[#A51931]">Out of stock</p>
+					<p class="inline-flex items-center gap-1.5 border border-flag-red/25 bg-flag-red/10 px-2.5 py-1 text-xs font-semibold text-flag-red"><span aria-hidden="true" class="h-1.5 w-1.5 bg-flag-red"></span>Out of stock</p>
 				} else {
-					<p class="inline-flex rounded-full bg-[#2D2A4A]/10 px-3 py-1 text-xs font-black text-[#2D2A4A]">In stock</p>
+					<p class="inline-flex items-center gap-1.5 border border-flag-blue/20 bg-flag-white px-2.5 py-1 text-xs font-semibold text-flag-blue"><span aria-hidden="true" class="h-1.5 w-1.5 bg-flag-blue"></span>In stock</p>
 				}
-				<span class="text-sm font-black text-[#A51931] transition group-hover:text-[#831426]">View details</span>
+				<span class="text-sm font-bold text-flag-red transition group-hover:text-flag-red-deep">View details <span aria-hidden="true">→</span></span>
 			</div>
 		</div>
 	</a>
