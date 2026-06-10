@@ -164,32 +164,39 @@ npx cdk bootstrap aws://ACCOUNT_ID/us-east-1
 
 Replace `ACCOUNT_ID` as needed. Production deploys intentionally fail outside `us-east-1`.
 
-Bootstrap the production admin credentials as a manually managed Secrets Manager JSON secret named `thailandgiftshop/admin/credentials` before deploying the admin Lambda wiring:
+Bootstrap (and later rotate) the production admin credentials — a manually managed Secrets Manager JSON secret named `thailandgiftshop/admin/credentials` — in one step. The same command creates the secret on first run and rotates it afterwards; just give it the password:
+
+```sh
+printf '%s' 'YOUR_ADMIN_PASSWORD' | \
+  go run ./scripts/generate-admin-secret.go -push -password-stdin -yes
+```
+
+`-region` defaults to `us-east-1` and `-secret-id` to `thailandgiftshop/admin/credentials`. Supply the password via stdin (`-password-stdin`) or the `ADMIN_PASSWORD` env var rather than `-password`, which is visible in shell history. Omit both and a strong password is generated and printed once as `ADMIN_PASSWORD=…`. Drop `-yes` to confirm interactively, or add `-dry-run` to preview the action without writing.
+
+> **Each rotation regenerates the session secret**, so it logs out all active admin sessions and invalidates outstanding CSRF tokens.
+
+The secret JSON shape:
+
+```json
+{"password_hash": "<bcrypt-hash>", "session_secret": "<session-secret>"}
+```
+
+**Manual fallback.** Write the JSON to a file with `-out` (now optional) and push it with the AWS CLI yourself:
 
 ```sh
 go run ./scripts/generate-admin-secret.go -out /tmp/thailandgiftshop-admin-secret.json
-```
 
-```sh
+# First time:
 aws secretsmanager create-secret \
   --region us-east-1 \
   --name thailandgiftshop/admin/credentials \
   --secret-string file:///tmp/thailandgiftshop-admin-secret.json
-```
 
-Rotate the same named secret by writing a new JSON value with the same fields:
-
-```sh
+# Rotation:
 aws secretsmanager put-secret-value \
   --region us-east-1 \
   --secret-id thailandgiftshop/admin/credentials \
   --secret-string file:///tmp/thailandgiftshop-admin-secret.json
-```
-
-The generator prints the admin password once and writes this JSON shape:
-
-```json
-{"password_hash": "<bcrypt-hash>", "session_secret": "<session-secret>"}
 ```
 
 The CDK stack imports that name and passes the secret string to the admin Lambda through the `ADMIN_CREDENTIALS_SECRET_JSON` dynamic reference.
