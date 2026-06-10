@@ -3,3 +3,74 @@
 @source "../../../internal/admin/**/*.go";
 @source "../../../internal/ssr/**/*.templ";
 @source "../../../internal/ssr/**/*.go";
+
+/* Self-hosted webfonts (OFL) — files in web/static/fonts/, see OFL.txt */
+@font-face {
+	font-family: "Space Grotesk";
+	font-style: normal;
+	font-weight: 500;
+	font-display: swap;
+	src: url("/static/fonts/space-grotesk-latin-500.woff2") format("woff2");
+}
+@font-face {
+	font-family: "Space Grotesk";
+	font-style: normal;
+	font-weight: 700;
+	font-display: swap;
+	src: url("/static/fonts/space-grotesk-latin-700.woff2") format("woff2");
+}
+@font-face {
+	font-family: "Inter";
+	font-style: normal;
+	font-weight: 400;
+	font-display: swap;
+	src: url("/static/fonts/inter-latin-400.woff2") format("woff2");
+}
+@font-face {
+	font-family: "Inter";
+	font-style: normal;
+	font-weight: 500;
+	font-display: swap;
+	src: url("/static/fonts/inter-latin-500.woff2") format("woff2");
+}
+@font-face {
+	font-family: "Inter";
+	font-style: normal;
+	font-weight: 700;
+	font-display: swap;
+	src: url("/static/fonts/inter-latin-700.woff2") format("woff2");
+}
+
+@theme {
+	/* Thai-flag palette — single source of truth */
+	--color-flag-red: #a51931;
+	--color-flag-red-deep: #831426; /* hover red */
+	--color-flag-blue: #2d2a4a;
+	--color-flag-white: #f4f5f8; /* the flag's white stripe; doubles as tint/input bg */
+	--color-ink: #17172a; /* near-black text / footer */
+	--color-muted: #4c4a62; /* secondary text */
+	--color-gold: #d8ae5e; /* sparing accent only */
+	--color-paper: #ffffff;
+
+	--font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+	--font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+
+	--tracking-eyebrow: 0.16em;
+
+	--shadow-lift: 0 10px 30px -12px rgb(23 23 42 / 0.18);
+}
+
+@layer base {
+	body {
+		background-color: var(--color-paper);
+		color: var(--color-ink);
+	}
+	::selection {
+		background-color: var(--color-flag-red);
+		color: #fff;
+	}
+	:focus-visible {
+		outline: 2px solid var(--color-flag-blue);
+		outline-offset: 2px;
+	}
+}

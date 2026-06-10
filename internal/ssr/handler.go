@@ -150,7 +150,7 @@ func (h *Handler) handle(ctx context.Context, request events.APIGatewayV2HTTPReq
 		body, found, err = h.renderProductDetail(ctx, route.slug, headerCartLabel)
 		if !found {
 			statusCode = http.StatusNotFound
-			body = "Not found"
+			body = notFoundBody(ctx, headerCartLabel)
 		}
 	case pageCategories:
 		body, err = h.renderCategoryIndex(ctx, headerCartLabel)
@@ -159,7 +159,7 @@ func (h *Handler) handle(ctx context.Context, request events.APIGatewayV2HTTPReq
 		body, found, err = h.renderCategoryDetail(ctx, route.slug, headerCartLabel)
 		if !found {
 			statusCode = http.StatusNotFound
-			body = "Not found"
+			body = notFoundBody(ctx, headerCartLabel)
 		}
 	case pageStory:
 		body, err = h.renderStory(ctx, headerCartLabel)
@@ -186,7 +186,7 @@ func (h *Handler) handle(ctx context.Context, request events.APIGatewayV2HTTPReq
 		})
 	default:
 		statusCode = http.StatusNotFound
-		body = "Not found"
+		body = notFoundBody(ctx, headerCartLabel)
 	}
 	if err != nil {
 		logHandlerError(route.kind, method, path, err)
@@ -454,6 +454,17 @@ func (h *Handler) renderCategoryDetail(ctx context.Context, slug string, headerC
 	}
 
 	return body.String(), true, nil
+}
+
+// notFoundBody renders the styled 404 page; on render failure it falls back
+// to the plain string so error paths never depend on template rendering.
+func notFoundBody(ctx context.Context, headerCartLabel string) string {
+	var body bytes.Buffer
+	if err := notFoundPage(headerCartLabel).Render(ctx, &body); err != nil {
+		return "Not found"
+	}
+
+	return body.String()
 }
 
 func (h *Handler) renderStory(ctx context.Context, headerCartLabel string) (string, error) {

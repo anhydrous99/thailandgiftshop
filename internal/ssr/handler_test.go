@@ -199,8 +199,8 @@ func TestRouteForPathRejectsExtraSegments(t *testing.T) {
 			if response.StatusCode != http.StatusNotFound {
 				t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusNotFound)
 			}
-			if response.Body != "Not found" {
-				t.Fatalf("body = %q, want %q", response.Body, "Not found")
+			if !strings.Contains(response.Body, "Not found") {
+				t.Fatalf("body does not contain %q: %q", "Not found", response.Body)
 			}
 			if got := response.Headers["Location"]; got != "" {
 				t.Fatalf("Location = %q, want empty", got)
@@ -1012,8 +1012,8 @@ func TestHandle(t *testing.T) {
 					},
 				},
 			},
-			statusCode: http.StatusNotFound,
-			body:       "Not found",
+			statusCode:   http.StatusNotFound,
+			bodyContains: []string{"Not found"},
 			headers: map[string]string{
 				"Content-Type": htmlContentType,
 			},
@@ -2060,7 +2060,7 @@ func TestProductListingRendersActiveProductsAndCategoryLinks(t *testing.T) {
 		t.Fatalf("ListActiveProducts limits = %v, want [0]", store.activeProductLimits)
 	}
 	assertBodyContains(t, response.Body, []string{
-		`<h1 class="mt-3 text-5xl font-black leading-none text-[#2D2A4A] sm:text-6xl">Products</h1>`,
+		`<h1 class="mt-3 font-display text-5xl font-bold leading-none tracking-tight text-flag-blue sm:text-6xl">Products</h1>`,
 		`Browse Thai snacks, souvenirs, textiles, pantry items, decor, wellness, and small keepsakes.`,
 		`href="/products/mango-sticky-rice-kit"`,
 		`src="/images/products/mango-sticky-rice-kit.jpg"`,
@@ -2137,7 +2137,7 @@ func TestProductDetailRendersExactActiveProduct(t *testing.T) {
 	assertBodyContains(t, response.Body, []string{
 		`href="/products"`,
 		`Back to products`,
-		`<h1 class="mt-5 text-5xl font-black leading-none text-[#2D2A4A] sm:text-6xl">Mango Sticky Rice Treats</h1>`,
+		`<h1 class="mt-5 font-display text-5xl font-bold leading-none tracking-tight text-flag-blue sm:text-6xl">Mango Sticky Rice Treats</h1>`,
 		`src="/images/products/mango-sticky-rice-kit.jpg"`,
 		`alt="Mango Sticky Rice Treats"`,
 		`$28.99`,
@@ -2435,8 +2435,8 @@ func TestProductDetailMissingDraftAndInactiveSlugsReturn404(t *testing.T) {
 			if response.StatusCode != http.StatusNotFound {
 				t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusNotFound)
 			}
-			if response.Body != "Not found" {
-				t.Fatalf("body = %q, want Not found", response.Body)
+			if !strings.Contains(response.Body, "Not found") {
+				t.Fatalf("body does not contain %q: %q", "Not found", response.Body)
 			}
 		})
 	}
@@ -2567,7 +2567,7 @@ func TestCategoriesIndexRendersActiveCategoriesAndDataDrivenLinks(t *testing.T) 
 		t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
 	}
 	assertBodyContains(t, response.Body, []string{
-		`<h1 class="mt-3 text-5xl font-black leading-none text-[#2D2A4A] sm:text-6xl">Categories</h1>`,
+		`<h1 class="mt-3 font-display text-5xl font-bold leading-none tracking-tight text-flag-blue sm:text-6xl">Categories</h1>`,
 		`Shop Thai gift-shop finds by aisle.`,
 		`data-testid="category-card"`,
 		`href="/categories/temple-bells"`,
@@ -2663,7 +2663,7 @@ func TestCategoryDetailRendersCategoryAndActiveProducts(t *testing.T) {
 	assertBodyContains(t, response.Body, []string{
 		`href="/categories"`,
 		`Back to categories`,
-		`<h1 class="mt-5 text-5xl font-black leading-none text-[#2D2A4A] sm:text-6xl">Thai Snacks</h1>`,
+		`<h1 class="mt-5 font-display text-5xl font-bold leading-none tracking-tight text-flag-blue sm:text-6xl">Thai Snacks</h1>`,
 		`Crunchy, sweet, and pantry-friendly finds.`,
 		`href="/products/thai-tea-sampler"`,
 		`Thai Tea Selection`,
@@ -2759,8 +2759,8 @@ func TestCategoryDetailMissingInactiveAndUnlistedSlugsReturn404(t *testing.T) {
 			if response.StatusCode != http.StatusNotFound {
 				t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusNotFound)
 			}
-			if response.Body != "Not found" {
-				t.Fatalf("body = %q, want Not found", response.Body)
+			if !strings.Contains(response.Body, "Not found") {
+				t.Fatalf("body does not contain %q: %q", "Not found", response.Body)
 			}
 		})
 	}
@@ -2874,7 +2874,7 @@ func TestStoryReturnsStaticPageWithoutCatalogQuery(t *testing.T) {
 		`href="/categories"`,
 		`href="/story"`,
 		`href="/cart"`,
-		`<h1 class="mt-3 text-5xl font-black leading-none text-[#2D2A4A] sm:text-6xl">Our Story</h1>`,
+		`<h1 class="mt-3 font-display text-5xl font-bold leading-none tracking-tight text-flag-blue sm:text-6xl">Our Story</h1>`,
 		`Bangkok gift shop online`,
 		`Thai snacks, souvenirs, textiles, pantry items, decor, wellness, and small keepsakes`,
 		`Thailand Gift Shop is a Bangkok gift shop online for Thai snacks, souvenirs, textiles, pantry items, decor, wellness, and small keepsakes.`,
