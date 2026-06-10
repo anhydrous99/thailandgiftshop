@@ -3,22 +3,22 @@ package admin
 import "strconv"
 
 templ adminProductHeader(csrfValue string, current string) {
-	<header class="sticky top-0 z-30 border-b border-[#2D2A4A]/10 bg-white/95 shadow-sm backdrop-blur">
-		<div aria-hidden="true" class="grid h-1 grid-cols-[1fr_1fr_2fr_1fr_1fr]"><span class="bg-[#A51931]"></span><span class="bg-[#F4F5F8]"></span><span class="bg-[#2D2A4A]"></span><span class="bg-[#F4F5F8]"></span><span class="bg-[#A51931]"></span></div>
+	<header class="sticky top-0 z-30 border-b-2 border-ink bg-paper">
+		@adminFlagBand("h-1.5")
 		<div class="mx-auto flex min-h-16 w-full max-w-7xl flex-col gap-4 px-5 py-4 sm:px-8 md:flex-row md:items-center md:justify-between">
 			<a href="/admin" aria-label="Thailand Gift Shop admin dashboard" class="flex min-w-0 items-center gap-3">
 				<img class="h-10 w-auto max-w-[52vw] sm:h-12 sm:max-w-[240px]" src="/static/logo.svg" alt="Thailand Gift Shop"/>
-				<span class="hidden rounded-full bg-[#2D2A4A]/10 px-3 py-1 text-xs font-black uppercase tracking-wide text-[#2D2A4A] sm:inline">Admin</span>
+				<span class="hidden border border-flag-blue/20 bg-flag-white px-2 py-0.5 text-xs font-semibold uppercase tracking-eyebrow text-flag-blue sm:inline">Admin</span>
 			</a>
 			<div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-				<nav data-testid="admin-nav" aria-label="Admin navigation" class="flex flex-wrap gap-2 text-sm font-black text-[#2D2A4A]">
-					<a data-testid="admin-nav-dashboard" href="/admin" class="inline-flex h-10 items-center justify-center rounded-full border border-[#2D2A4A]/15 bg-white px-4 shadow-sm transition hover:border-[#A51931]/30 hover:text-[#A51931] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2D2A4A]">Dashboard</a>
-					<a data-testid="admin-nav-products" aria-current="page" href="/admin/products" class="inline-flex h-10 items-center justify-center rounded-full bg-[#2D2A4A] px-4 text-white shadow-sm transition hover:bg-[#17172A] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#A51931]">Products</a>
-					<a data-testid="admin-nav-categories" href="/admin/categories" class="inline-flex h-10 items-center justify-center rounded-full border border-[#2D2A4A]/15 bg-white px-4 shadow-sm transition hover:border-[#A51931]/30 hover:text-[#A51931] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2D2A4A]">Categories</a>
+				<nav data-testid="admin-nav" aria-label="Admin navigation" class="flex flex-wrap gap-2 text-sm font-medium text-flag-blue">
+					<a data-testid="admin-nav-dashboard" href="/admin" class="inline-flex h-10 items-center justify-center border border-flag-blue/20 bg-paper px-4 transition hover:border-flag-red hover:text-flag-red">Dashboard</a>
+					<a data-testid="admin-nav-products" aria-current="page" href="/admin/products" class="inline-flex h-10 items-center justify-center bg-flag-blue px-4 text-white transition hover:bg-ink">Products</a>
+					<a data-testid="admin-nav-categories" href="/admin/categories" class="inline-flex h-10 items-center justify-center border border-flag-blue/20 bg-paper px-4 transition hover:border-flag-red hover:text-flag-red">Categories</a>
 				</nav>
 				<form method="post" action="/admin/logout" class="flex">
 					<input type="hidden" name="csrf_token" value={ csrfValue }/>
-					<button data-testid="admin-logout-button" type="submit" class="inline-flex h-10 items-center justify-center rounded-full bg-[#A51931] px-4 text-sm font-black text-white shadow-sm transition hover:bg-[#831426] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2D2A4A]">Logout</button>
+					<button data-testid="admin-logout-button" type="submit" class="inline-flex h-10 items-center justify-center bg-flag-red px-4 text-sm font-bold text-white transition hover:bg-flag-red-deep">Logout</button>
 				</form>
 			</div>
 		</div>
@@ -29,43 +29,44 @@ templ adminProductListPage(vm adminProductListViewModel) {
 	<!DOCTYPE html>
 	<html lang="en" class="scroll-smooth">
 		@adminHead("Products | Thailand Gift Shop Admin")
-		<body class="min-h-screen bg-[#F8F4EE] text-[#17172A] antialiased">
+		<body class="min-h-screen bg-paper text-ink antialiased">
 			<div data-testid="admin-shell" class="min-h-screen">
 				@adminProductHeader(vm.CSRFValue, "products")
 				<main id="admin-main" class="mx-auto w-full max-w-7xl px-5 py-10 sm:px-8 lg:py-14">
-					<section class="overflow-hidden rounded-lg border border-[#2D2A4A]/10 bg-[#2D2A4A] text-white shadow-sm">
+					<section class="border border-flag-blue bg-flag-blue text-white">
+						@adminFlagBand("h-1.5")
 						<div class="grid gap-6 p-6 sm:p-8 lg:grid-cols-[1fr_auto] lg:items-end">
 							<div>
-								<p class="text-sm font-black uppercase tracking-wide text-[#F4F5F8]">Catalog workbench</p>
-								<h1 class="mt-3 text-5xl font-black leading-none text-white sm:text-6xl">Products</h1>
+								<p class="text-xs font-semibold uppercase tracking-eyebrow text-flag-white">Catalog workbench</p>
+								<h1 class="mt-3 font-display text-5xl font-bold leading-none tracking-tight text-white sm:text-6xl">Products</h1>
 								<p class="mt-5 max-w-3xl text-lg leading-8 text-white/80">Create, publish, and archive product records with verified uploads and variant stock.</p>
 							</div>
-							<a data-testid="new-product-link" href="/admin/products/new" class="inline-flex h-12 items-center justify-center rounded-full bg-[#A51931] px-6 text-sm font-black text-white shadow-sm transition hover:bg-[#831426] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">New product</a>
+							<a data-testid="new-product-link" href="/admin/products/new" class="inline-flex h-12 items-center justify-center bg-flag-red px-6 text-sm font-bold text-white transition hover:bg-flag-red-deep focus-visible:outline-white">New product</a>
 						</div>
 					</section>
 					if vm.Flash != "" {
-						<p data-testid="admin-flash" role="alert" class="mt-6 rounded-lg border border-[#2D2A4A]/15 bg-white px-5 py-4 text-sm font-black text-[#2D2A4A] shadow-sm">Product { vm.Flash }.</p>
+						<p data-testid="admin-flash" role="alert" class="mt-6 border-l-4 border-flag-red bg-flag-white px-5 py-4 text-sm font-semibold text-flag-blue">Product { vm.Flash }.</p>
 					}
-					<form data-testid="admin-products-filter-form" method="get" action="/admin/products" class="mt-6 grid gap-3 rounded-lg border border-[#2D2A4A]/15 bg-white p-5 shadow-sm md:grid-cols-[1fr_auto_auto_auto] md:items-end">
-						<label class="grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]">Search <input data-testid="admin-products-search-input" name="q" value={ vm.Filters.Search } class="h-11 rounded-full border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-sm font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none"/></label>
-						<label class="grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]">Status <select data-testid="admin-products-status-filter" name="status" class="h-11 rounded-full border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-sm font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none"><option value="">All</option><option value="active" selected?={ vm.Filters.Status == "active" }>Active</option><option value="draft" selected?={ vm.Filters.Status == "draft" }>Draft</option><option value="archived" selected?={ vm.Filters.Status == "archived" }>Archived</option></select></label>
-						<label class="grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]">Category <input data-testid="admin-products-category-filter" name="category" value={ vm.Filters.Category } class="h-11 rounded-full border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-sm font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none"/></label>
-						<button data-testid="admin-products-filter-button" type="submit" class="inline-flex h-11 items-center justify-center rounded-full border border-[#2D2A4A]/20 bg-white px-5 text-sm font-black text-[#2D2A4A] transition hover:border-[#A51931]/40 hover:text-[#A51931]">Filter</button>
+					<form data-testid="admin-products-filter-form" method="get" action="/admin/products" class="mt-6 grid gap-3 border border-flag-blue/15 bg-paper p-5 md:grid-cols-[1fr_auto_auto_auto] md:items-end">
+						<label class="grid gap-2 text-xs font-medium text-muted">Search <input data-testid="admin-products-search-input" name="q" value={ vm.Filters.Search } class="h-11 border border-flag-blue/25 bg-flag-white px-4 text-sm font-medium text-ink transition focus:border-flag-blue focus:bg-paper"/></label>
+						<label class="grid gap-2 text-xs font-medium text-muted">Status <select data-testid="admin-products-status-filter" name="status" class="h-11 border border-flag-blue/25 bg-flag-white px-4 text-sm font-medium text-ink transition focus:border-flag-blue focus:bg-paper"><option value="">All</option><option value="active" selected?={ vm.Filters.Status == "active" }>Active</option><option value="draft" selected?={ vm.Filters.Status == "draft" }>Draft</option><option value="archived" selected?={ vm.Filters.Status == "archived" }>Archived</option></select></label>
+						<label class="grid gap-2 text-xs font-medium text-muted">Category <input data-testid="admin-products-category-filter" name="category" value={ vm.Filters.Category } class="h-11 border border-flag-blue/25 bg-flag-white px-4 text-sm font-medium text-ink transition focus:border-flag-blue focus:bg-paper"/></label>
+						<button data-testid="admin-products-filter-button" type="submit" class="inline-flex h-11 items-center justify-center border-2 border-flag-blue px-5 text-sm font-bold text-flag-blue transition hover:bg-flag-blue hover:text-white">Filter</button>
 					</form>
-					<section class="mt-6 overflow-hidden rounded-lg border border-[#2D2A4A]/15 bg-white shadow-sm">
+					<section class="mt-6 border border-flag-blue/15 bg-paper">
 						if len(vm.Products) == 0 {
-							<div data-testid="admin-products-empty" role="status" class="p-8 text-center"><h2 class="text-xl font-black text-[#2D2A4A]">No products match these filters.</h2><p class="mt-2 text-sm leading-6 text-[#4C4A62]">Create a product or adjust the status, category, or search filter.</p></div>
+							<div data-testid="admin-products-empty" role="status" class="p-8 text-center"><h2 class="font-display text-xl font-bold text-flag-blue">No products match these filters.</h2><p class="mt-2 text-sm leading-6 text-muted">Create a product or adjust the status, category, or search filter.</p></div>
 						} else {
-							<div class="divide-y divide-[#2D2A4A]/10">
+							<div class="divide-y divide-flag-blue/10">
 								for _, product := range vm.Products {
 									<article data-testid="admin-product-row" class="grid gap-4 p-5 md:grid-cols-[5rem_1fr_auto] md:items-center">
-										<img class="aspect-[4/3] w-full rounded-md bg-[#F4F5F8] object-cover" src={ product.DisplayImageURL("/images/placeholder-product.jpg") } alt={ product.Name }/>
+										<img class="aspect-[4/3] w-full bg-flag-white object-cover" src={ product.DisplayImageURL("/images/placeholder-product.jpg") } alt={ product.Name }/>
 										<div>
-											<a href={ "/admin/products/" + product.ID + "/edit" } class="text-xl font-black text-[#2D2A4A] transition hover:text-[#A51931]">{ product.Name }</a>
-											<p class="mt-1 text-sm font-bold text-[#4C4A62]">/products/{ product.Slug } · { formatAdminPrice(product.PriceCents) } · Stock { strconv.Itoa(product.TotalAvailableStock()) }</p>
-											<p class="mt-2 inline-flex rounded-full bg-[#F4F5F8] px-3 py-1 text-xs font-black uppercase tracking-wide text-[#2D2A4A]">{ string(product.Status) }</p>
+											<a href={ "/admin/products/" + product.ID + "/edit" } class="font-display text-xl font-medium text-flag-blue transition hover:text-flag-red">{ product.Name }</a>
+											<p class="mt-1 text-sm leading-6 text-muted">/products/{ product.Slug } · { formatAdminPrice(product.PriceCents) } · Stock { strconv.Itoa(product.TotalAvailableStock()) }</p>
+											<p class="mt-2 inline-flex bg-flag-white px-2.5 py-1 text-xs font-semibold uppercase tracking-eyebrow text-flag-blue">{ string(product.Status) }</p>
 										</div>
-										<a href={ "/admin/products/" + product.ID + "/edit" } class="inline-flex h-11 items-center justify-center rounded-full bg-[#2D2A4A] px-5 text-sm font-black text-white shadow-sm transition hover:bg-[#17172A]">Edit</a>
+										<a href={ "/admin/products/" + product.ID + "/edit" } class="inline-flex h-11 items-center justify-center bg-flag-blue px-5 text-sm font-bold text-white transition hover:bg-ink">Edit</a>
 									</article>
 								}
 							</div>
@@ -81,28 +82,29 @@ templ adminProductFormPage(vm adminProductFormViewModel) {
 	<!DOCTYPE html>
 	<html lang="en" class="scroll-smooth">
 		@adminHead(vm.Title + " | Thailand Gift Shop Admin")
-		<body class="min-h-screen bg-[#F8F4EE] text-[#17172A] antialiased">
+		<body class="min-h-screen bg-paper text-ink antialiased">
 			<div data-testid="admin-shell" class="min-h-screen">
 				@adminProductHeader(vm.CSRFValue, "products")
 				<main id="admin-main" class="mx-auto w-full max-w-7xl px-5 py-10 sm:px-8 lg:py-14">
-					<a href="/admin/products" class="text-sm font-black text-[#A51931] transition hover:text-[#831426]">Back to products</a>
+					<a href="/admin/products" class="text-sm font-bold text-flag-red transition hover:text-flag-red-deep hover:underline hover:underline-offset-4">Back to products</a>
 					<div class="mt-5 grid gap-8 lg:grid-cols-[0.8fr_1.2fr] lg:items-start">
-						<section class="overflow-hidden rounded-lg border border-[#2D2A4A]/10 bg-[#2D2A4A] text-white shadow-sm">
+						<section class="border border-flag-blue bg-flag-blue text-white">
+							@adminFlagBand("h-1.5")
 							<div class="p-6 sm:p-8">
-								<p class="text-sm font-black uppercase tracking-wide text-[#F4F5F8]">Product editor</p>
-								<h1 class="mt-3 text-5xl font-black leading-none text-white sm:text-6xl">{ vm.Title }</h1>
+								<p class="text-xs font-semibold uppercase tracking-eyebrow text-flag-white">Product editor</p>
+								<h1 class="mt-3 font-display text-5xl font-bold leading-none tracking-tight text-white sm:text-6xl">{ vm.Title }</h1>
 								<p class="mt-5 text-lg leading-8 text-white/80">Use confirmed image uploads, category checkboxes, and free-form size variants with explicit stock.</p>
 								if vm.Mode == "edit" {
-									<p class="mt-5 rounded-lg border border-white/20 bg-white/10 p-4 text-sm font-bold text-white/90">Stable product ID: { vm.Product.ID } · version { strconv.Itoa(vm.Product.Version) }</p>
+									<p class="mt-5 border border-white/20 bg-white/10 p-4 text-sm font-medium text-white/90">Stable product ID: { vm.Product.ID } · version { strconv.Itoa(vm.Product.Version) }</p>
 								}
 							</div>
 						</section>
-						<section class="rounded-lg border border-[#2D2A4A]/15 bg-white p-5 shadow-sm sm:p-6">
+						<section class="border border-flag-blue/15 bg-paper p-5 sm:p-6">
 							if vm.Flash != "" {
-								<p data-testid="admin-flash" role="alert" class="mb-5 rounded-lg border border-[#2D2A4A]/15 bg-[#F8F4EE] px-4 py-3 text-sm font-black text-[#2D2A4A]">Product { vm.Flash }.</p>
+								<p data-testid="admin-flash" role="alert" class="mb-5 border-l-4 border-flag-red bg-flag-white px-4 py-3 text-sm font-semibold text-flag-blue">Product { vm.Flash }.</p>
 							}
 							if len(vm.Errors) > 0 {
-								<div data-testid="product-validation-summary" role="alert" class="mb-5 rounded-lg border border-[#A51931]/25 bg-[#A51931]/10 p-4 text-sm font-black leading-6 text-[#A51931]">
+								<div data-testid="product-validation-summary" role="alert" class="mb-5 border-l-4 border-flag-red bg-flag-red/10 p-4 text-sm font-semibold leading-6 text-flag-red">
 									<p>Fix these product details:</p>
 									<ul class="mt-2 list-disc pl-5">
 										for _, err := range vm.Errors {
@@ -117,42 +119,42 @@ templ adminProductFormPage(vm adminProductFormViewModel) {
 								<input data-testid="product-image-url" type="hidden" name="image_url" value={ vm.Product.ImageURL }/>
 								<input data-testid="product-image-token" type="hidden" name="image_token" value={ vm.ImageToken }/>
 								<div class="grid gap-4 md:grid-cols-2">
-									<label class="grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]">Name <input data-testid="product-name-input" required name="name" value={ vm.Product.Name } class="h-12 rounded-lg border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-base font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none"/></label>
-									<label class="grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]">Slug <input data-testid="product-slug-input" required name="slug" value={ vm.Product.Slug } readonly?={ vm.Mode == "edit" } class="h-12 rounded-lg border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-base font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none read-only:text-[#4C4A62]"/></label>
+									<label class="grid gap-2 text-xs font-medium text-muted">Name <input data-testid="product-name-input" required name="name" value={ vm.Product.Name } class="h-12 border border-flag-blue/25 bg-flag-white px-4 text-base font-medium text-ink transition focus:border-flag-blue focus:bg-paper"/></label>
+									<label class="grid gap-2 text-xs font-medium text-muted">Slug <input data-testid="product-slug-input" required name="slug" value={ vm.Product.Slug } readonly?={ vm.Mode == "edit" } class="h-12 border border-flag-blue/25 bg-flag-white px-4 text-base font-medium text-ink transition focus:border-flag-blue focus:bg-paper read-only:text-muted"/></label>
 								</div>
-								<label class="grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]">Description <textarea data-testid="product-description-input" required name="description" class="min-h-28 rounded-lg border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 py-3 text-base font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none">{ vm.Product.Description }</textarea></label>
+								<label class="grid gap-2 text-xs font-medium text-muted">Description <textarea data-testid="product-description-input" required name="description" class="min-h-28 border border-flag-blue/25 bg-flag-white px-4 py-3 text-base font-medium text-ink transition focus:border-flag-blue focus:bg-paper">{ vm.Product.Description }</textarea></label>
 								<div class="grid gap-4 md:grid-cols-4">
-									<label class="grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]">Price <input data-testid="product-price-input" required name="price" inputmode="decimal" value={ priceInputValue(vm.Product.PriceCents) } class="h-12 rounded-lg border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-base font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none"/></label>
-									<label class="grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]">Sort <input name="sort_order" type="number" value={ strconv.Itoa(vm.Product.SortOrder) } class="h-12 rounded-lg border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-base font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none"/></label>
-									<label class="grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]">Fallback stock <input name="stock_quantity" type="number" value={ strconv.Itoa(vm.Product.StockQuantity) } class="h-12 rounded-lg border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-base font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none"/></label>
-									<label class="grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]">Status <select data-testid="product-status-select" name="status" class="h-12 rounded-lg border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-base font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none"><option value="draft" selected?={ statusSelected(vm.Product.Status, "draft") }>Draft</option><option value="active" selected?={ statusSelected(vm.Product.Status, "active") }>Active</option><option value="archived" selected?={ statusSelected(vm.Product.Status, "archived") }>Archived</option></select></label>
+									<label class="grid gap-2 text-xs font-medium text-muted">Price <input data-testid="product-price-input" required name="price" inputmode="decimal" value={ priceInputValue(vm.Product.PriceCents) } class="h-12 border border-flag-blue/25 bg-flag-white px-4 text-base font-medium text-ink transition focus:border-flag-blue focus:bg-paper"/></label>
+									<label class="grid gap-2 text-xs font-medium text-muted">Sort <input name="sort_order" type="number" value={ strconv.Itoa(vm.Product.SortOrder) } class="h-12 border border-flag-blue/25 bg-flag-white px-4 text-base font-medium text-ink transition focus:border-flag-blue focus:bg-paper"/></label>
+									<label class="grid gap-2 text-xs font-medium text-muted">Fallback stock <input name="stock_quantity" type="number" value={ strconv.Itoa(vm.Product.StockQuantity) } class="h-12 border border-flag-blue/25 bg-flag-white px-4 text-base font-medium text-ink transition focus:border-flag-blue focus:bg-paper"/></label>
+									<label class="grid gap-2 text-xs font-medium text-muted">Status <select data-testid="product-status-select" name="status" class="h-12 border border-flag-blue/25 bg-flag-white px-4 text-base font-medium text-ink transition focus:border-flag-blue focus:bg-paper"><option value="draft" selected?={ statusSelected(vm.Product.Status, "draft") }>Draft</option><option value="active" selected?={ statusSelected(vm.Product.Status, "active") }>Active</option><option value="archived" selected?={ statusSelected(vm.Product.Status, "archived") }>Archived</option></select></label>
 								</div>
-								<section class="rounded-lg border border-[#2D2A4A]/10 bg-[#F8F4EE] p-4">
-									<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><p class="text-sm font-black uppercase tracking-wide text-[#A51931]">Confirmed image</p><p data-testid="product-image-status" role="status" aria-live="polite" class="mt-1 text-sm font-bold text-[#4C4A62]">Upload a JPEG, PNG, or WebP. The saved URL must be site-relative.</p></div><input data-testid="product-image-input" type="file" accept="image/jpeg,image/png,image/webp" class="text-sm font-bold text-[#2D2A4A]"/></div>
+								<section class="border border-flag-blue/10 bg-flag-white p-4">
+									<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><p class="text-xs font-semibold uppercase tracking-eyebrow text-flag-red">Confirmed image</p><p data-testid="product-image-status" role="status" aria-live="polite" class="mt-1 text-sm leading-6 text-muted">Upload a JPEG, PNG, or WebP. The saved URL must be site-relative.</p></div><input data-testid="product-image-input" type="file" accept="image/jpeg,image/png,image/webp" class="text-sm font-medium text-flag-blue"/></div>
 									if vm.Product.ImageURL != "" {
-										<img data-testid="product-image-preview" class="mt-4 aspect-[4/3] w-full max-w-xs rounded-md bg-white object-cover shadow-sm" src={ vm.Product.ImageURL } alt="Product image preview"/>
+										<img data-testid="product-image-preview" class="mt-4 aspect-[4/3] w-full max-w-xs bg-paper object-cover" src={ vm.Product.ImageURL } alt="Product image preview"/>
 									}
 								</section>
-								<section class="rounded-lg border border-[#2D2A4A]/10 bg-white p-4">
-									<p class="text-sm font-black uppercase tracking-wide text-[#A51931]">Categories</p>
+								<section class="border border-flag-blue/10 bg-flag-white p-4">
+									<p class="text-xs font-semibold uppercase tracking-eyebrow text-flag-red">Categories</p>
 									<div class="mt-3 grid gap-2 sm:grid-cols-2">
 										for _, category := range vm.Categories {
-											<label class="flex items-center gap-2 rounded-md border border-[#2D2A4A]/10 bg-[#F8F4EE] px-3 py-2 text-sm font-bold text-[#2D2A4A]"><input data-testid="product-category-checkbox" type="checkbox" name="category_slugs" value={ category.Slug } checked?={ categoryChecked(vm.Product, category.Slug) }/> { category.Name }</label>
+											<label class="flex items-center gap-2 border border-flag-blue/10 bg-paper px-3 py-2 text-sm font-medium text-ink"><input data-testid="product-category-checkbox" type="checkbox" name="category_slugs" value={ category.Slug } checked?={ categoryChecked(vm.Product, category.Slug) }/> { category.Name }</label>
 										}
 									</div>
 								</section>
-								<section class="rounded-lg border border-[#2D2A4A]/10 bg-white p-4">
-									<div class="flex items-end justify-between gap-4"><div><p class="text-sm font-black uppercase tracking-wide text-[#A51931]">Variants</p><p class="mt-1 text-sm font-bold text-[#4C4A62]">Active labels must be unique. Total active stock: { strconv.Itoa(vm.Product.TotalAvailableStock()) }</p></div></div>
+								<section class="border border-flag-blue/10 bg-flag-white p-4">
+									<div class="flex items-end justify-between gap-4"><div><p class="text-xs font-semibold uppercase tracking-eyebrow text-flag-red">Variants</p><p class="mt-1 text-sm leading-6 text-muted">Active labels must be unique. Total active stock: { strconv.Itoa(vm.Product.TotalAvailableStock()) }</p></div></div>
 									<div data-testid="variant-editor" class="mt-4 grid gap-3">
 										for _, variant := range vm.Product.Variants {
-											<div data-testid="variant-row" class="grid gap-3 rounded-md border border-[#2D2A4A]/10 bg-[#F8F4EE] p-3 md:grid-cols-[1fr_8rem_10rem]"><input type="hidden" name="variant_id" value={ variant.ID }/><label class="grid gap-1 text-xs font-black uppercase tracking-wide text-[#4C4A62]">Size label <input data-testid="variant-label-input" name="variant_label" value={ variant.Label } class="h-11 rounded-lg border border-[#2D2A4A]/20 bg-white px-3 text-sm font-bold normal-case tracking-normal text-[#17172A]"/></label><label class="grid gap-1 text-xs font-black uppercase tracking-wide text-[#4C4A62]">Stock <input data-testid="variant-stock-input" name="variant_stock" type="number" value={ strconv.Itoa(variant.StockQuantity) } class="h-11 rounded-lg border border-[#2D2A4A]/20 bg-white px-3 text-sm font-bold normal-case tracking-normal text-[#17172A]"/></label><label class="grid gap-1 text-xs font-black uppercase tracking-wide text-[#4C4A62]">Status <select name="variant_status" class="h-11 rounded-lg border border-[#2D2A4A]/20 bg-white px-3 text-sm font-bold normal-case tracking-normal text-[#17172A]"><option value="active" selected?={ statusSelected(variant.Status, "active") }>Active</option><option value="draft" selected?={ statusSelected(variant.Status, "draft") }>Draft</option><option value="archived" selected?={ statusSelected(variant.Status, "archived") }>Archived</option></select></label></div>
+											<div data-testid="variant-row" class="grid gap-3 border border-flag-blue/10 bg-paper p-3 md:grid-cols-[1fr_8rem_10rem]"><input type="hidden" name="variant_id" value={ variant.ID }/><label class="grid gap-1 text-xs font-medium text-muted">Size label <input data-testid="variant-label-input" name="variant_label" value={ variant.Label } class="h-11 border border-flag-blue/25 bg-flag-white px-3 text-sm font-medium text-ink"/></label><label class="grid gap-1 text-xs font-medium text-muted">Stock <input data-testid="variant-stock-input" name="variant_stock" type="number" value={ strconv.Itoa(variant.StockQuantity) } class="h-11 border border-flag-blue/25 bg-flag-white px-3 text-sm font-medium text-ink"/></label><label class="grid gap-1 text-xs font-medium text-muted">Status <select name="variant_status" class="h-11 border border-flag-blue/25 bg-flag-white px-3 text-sm font-medium text-ink"><option value="active" selected?={ statusSelected(variant.Status, "active") }>Active</option><option value="draft" selected?={ statusSelected(variant.Status, "draft") }>Draft</option><option value="archived" selected?={ statusSelected(variant.Status, "archived") }>Archived</option></select></label></div>
 										}
 									</div>
 								</section>
 								<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-									<button data-testid="product-save-button" type="submit" class="inline-flex h-12 items-center justify-center rounded-full bg-[#A51931] px-6 text-sm font-black text-white shadow-sm transition hover:bg-[#831426] disabled:cursor-not-allowed disabled:bg-[#4C4A62] disabled:opacity-70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2D2A4A]">{ vm.SubmitText }</button>
+									<button data-testid="product-save-button" type="submit" class="inline-flex h-12 items-center justify-center bg-flag-red px-6 text-sm font-bold text-white transition hover:bg-flag-red-deep disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-70">{ vm.SubmitText }</button>
 									if vm.Mode == "edit" && string(vm.Product.Status) != "archived" {
-										<button data-testid="product-archive-button" form="archive-product-form" type="submit" class="inline-flex h-12 items-center justify-center rounded-full border border-[#A51931]/30 bg-white px-6 text-sm font-black text-[#A51931] transition hover:bg-[#A51931]/10">Archive product</button>
+										<button data-testid="product-archive-button" form="archive-product-form" type="submit" class="inline-flex h-12 items-center justify-center border border-flag-red/40 bg-paper px-6 text-sm font-bold text-flag-red transition hover:bg-flag-red/10">Archive product</button>
 									}
 								</div>
 							</form>

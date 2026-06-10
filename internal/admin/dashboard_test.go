@@ -46,7 +46,7 @@ func TestDashboardMetricsCountsCatalogOperationalState(t *testing.T) {
 			t.Fatalf("dashboard missing %q: %q", want, response.Body)
 		}
 	}
-	if !strings.Contains(response.Body, `data-testid="admin-metric-low-stock" class="mt-3 text-4xl font-black leading-none text-[#2D2A4A]">3</p>`) {
+	if !strings.Contains(response.Body, `data-testid="admin-metric-low-stock" class="mt-3 font-display text-4xl font-bold leading-none text-flag-blue">3</p>`) {
 		t.Fatalf("dashboard low-stock metric did not exclude archived product/variant as expected: %q", response.Body)
 	}
 	assertNoStore(t, response)

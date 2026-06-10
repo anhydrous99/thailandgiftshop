@@ -31,7 +31,15 @@ func adminCategoryHeader(csrfValue string) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<header class=\"sticky top-0 z-30 border-b border-[#2D2A4A]/10 bg-white/95 shadow-sm backdrop-blur\"><div aria-hidden=\"true\" class=\"grid h-1 grid-cols-[1fr_1fr_2fr_1fr_1fr]\"><span class=\"bg-[#A51931]\"></span><span class=\"bg-[#F4F5F8]\"></span><span class=\"bg-[#2D2A4A]\"></span><span class=\"bg-[#F4F5F8]\"></span><span class=\"bg-[#A51931]\"></span></div><div class=\"mx-auto flex min-h-16 w-full max-w-7xl flex-col gap-4 px-5 py-4 sm:px-8 md:flex-row md:items-center md:justify-between\"><a href=\"/admin\" aria-label=\"Thailand Gift Shop admin dashboard\" class=\"flex min-w-0 items-center gap-3\"><img class=\"h-10 w-auto max-w-[52vw] sm:h-12 sm:max-w-[240px]\" src=\"/static/logo.svg\" alt=\"Thailand Gift Shop\"> <span class=\"hidden rounded-full bg-[#2D2A4A]/10 px-3 py-1 text-xs font-black uppercase tracking-wide text-[#2D2A4A] sm:inline\">Admin</span></a><div class=\"flex flex-col gap-3 sm:flex-row sm:items-center\"><nav data-testid=\"admin-nav\" aria-label=\"Admin navigation\" class=\"flex flex-wrap gap-2 text-sm font-black text-[#2D2A4A]\"><a data-testid=\"admin-nav-dashboard\" href=\"/admin\" class=\"inline-flex h-10 items-center justify-center rounded-full border border-[#2D2A4A]/15 bg-white px-4 shadow-sm transition hover:border-[#A51931]/30 hover:text-[#A51931] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2D2A4A]\">Dashboard</a> <a data-testid=\"admin-nav-products\" href=\"/admin/products\" class=\"inline-flex h-10 items-center justify-center rounded-full border border-[#2D2A4A]/15 bg-white px-4 shadow-sm transition hover:border-[#A51931]/30 hover:text-[#A51931] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2D2A4A]\">Products</a> <a data-testid=\"admin-nav-categories\" aria-current=\"page\" href=\"/admin/categories\" class=\"inline-flex h-10 items-center justify-center rounded-full bg-[#2D2A4A] px-4 text-white shadow-sm transition hover:bg-[#17172A] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#A51931]\">Categories</a></nav><form method=\"post\" action=\"/admin/logout\" class=\"flex\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<header class=\"sticky top-0 z-30 border-b-2 border-ink bg-paper\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = adminFlagBand("h-1.5").Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<div class=\"mx-auto flex min-h-16 w-full max-w-7xl flex-col gap-4 px-5 py-4 sm:px-8 md:flex-row md:items-center md:justify-between\"><a href=\"/admin\" aria-label=\"Thailand Gift Shop admin dashboard\" class=\"flex min-w-0 items-center gap-3\"><img class=\"h-10 w-auto max-w-[52vw] sm:h-12 sm:max-w-[240px]\" src=\"/static/logo.svg\" alt=\"Thailand Gift Shop\"> <span class=\"hidden border border-flag-blue/20 bg-flag-white px-2 py-0.5 text-xs font-semibold uppercase tracking-eyebrow text-flag-blue sm:inline\">Admin</span></a><div class=\"flex flex-col gap-3 sm:flex-row sm:items-center\"><nav data-testid=\"admin-nav\" aria-label=\"Admin navigation\" class=\"flex flex-wrap gap-2 text-sm font-medium text-flag-blue\"><a data-testid=\"admin-nav-dashboard\" href=\"/admin\" class=\"inline-flex h-10 items-center justify-center border border-flag-blue/20 bg-paper px-4 transition hover:border-flag-red hover:text-flag-red\">Dashboard</a> <a data-testid=\"admin-nav-products\" href=\"/admin/products\" class=\"inline-flex h-10 items-center justify-center border border-flag-blue/20 bg-paper px-4 transition hover:border-flag-red hover:text-flag-red\">Products</a> <a data-testid=\"admin-nav-categories\" aria-current=\"page\" href=\"/admin/categories\" class=\"inline-flex h-10 items-center justify-center bg-flag-blue px-4 text-white transition hover:bg-ink\">Categories</a></nav><form method=\"post\" action=\"/admin/logout\" class=\"flex\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -44,7 +52,7 @@ func adminCategoryHeader(csrfValue string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\"> <button data-testid=\"admin-logout-button\" type=\"submit\" class=\"inline-flex h-10 items-center justify-center rounded-full bg-[#A51931] px-4 text-sm font-black text-white shadow-sm transition hover:bg-[#831426] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2D2A4A]\">Logout</button></form></div></div></header>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"> <button data-testid=\"admin-logout-button\" type=\"submit\" class=\"inline-flex h-10 items-center justify-center bg-flag-red px-4 text-sm font-bold text-white transition hover:bg-flag-red-deep\">Logout</button></form></div></div></header>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -73,7 +81,7 @@ func adminCategoryListPage(vm adminCategoryListViewModel) templ.Component {
 			templ_7745c5c3_Var3 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<!doctype html><html lang=\"en\" class=\"scroll-smooth\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<!doctype html><html lang=\"en\" class=\"scroll-smooth\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -81,7 +89,7 @@ func adminCategoryListPage(vm adminCategoryListViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<body class=\"min-h-screen bg-[#F8F4EE] text-[#17172A] antialiased\"><div data-testid=\"admin-shell\" class=\"min-h-screen\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<body class=\"min-h-screen bg-paper text-ink antialiased\"><div data-testid=\"admin-shell\" class=\"min-h-screen\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -89,189 +97,197 @@ func adminCategoryListPage(vm adminCategoryListViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<main id=\"admin-main\" class=\"mx-auto w-full max-w-7xl px-5 py-10 sm:px-8 lg:py-14\"><section class=\"overflow-hidden rounded-lg border border-[#2D2A4A]/10 bg-[#2D2A4A] text-white shadow-sm\"><div class=\"grid gap-6 p-6 sm:p-8 lg:grid-cols-[1fr_auto] lg:items-end\"><div><p class=\"text-sm font-black uppercase tracking-wide text-[#F4F5F8]\">Aisle workbench</p><h1 class=\"mt-3 text-5xl font-black leading-none text-white sm:text-6xl\">Categories</h1><p class=\"mt-5 max-w-3xl text-lg leading-8 text-white/80\">Shape public shop aisles, status, sort order, and product membership without deleting catalog history.</p></div><a data-testid=\"new-category-link\" href=\"/admin/categories/new\" class=\"inline-flex h-12 items-center justify-center rounded-full bg-[#A51931] px-6 text-sm font-black text-white shadow-sm transition hover:bg-[#831426] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white\">New category</a></div></section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<main id=\"admin-main\" class=\"mx-auto w-full max-w-7xl px-5 py-10 sm:px-8 lg:py-14\"><section class=\"border border-flag-blue bg-flag-blue text-white\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = adminFlagBand("h-1.5").Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<div class=\"grid gap-6 p-6 sm:p-8 lg:grid-cols-[1fr_auto] lg:items-end\"><div><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-white\">Aisle workbench</p><h1 class=\"mt-3 font-display text-5xl font-bold leading-none tracking-tight text-white sm:text-6xl\">Categories</h1><p class=\"mt-5 max-w-3xl text-lg leading-8 text-white/80\">Shape public shop aisles, status, sort order, and product membership without deleting catalog history.</p></div><a data-testid=\"new-category-link\" href=\"/admin/categories/new\" class=\"inline-flex h-12 items-center justify-center bg-flag-red px-6 text-sm font-bold text-white transition hover:bg-flag-red-deep focus-visible:outline-white\">New category</a></div></section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if vm.Flash != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<p data-testid=\"admin-flash\" role=\"alert\" class=\"mt-6 rounded-lg border border-[#2D2A4A]/15 bg-white px-5 py-4 text-sm font-black text-[#2D2A4A] shadow-sm\">Category ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<p data-testid=\"admin-flash\" role=\"alert\" class=\"mt-6 border-l-4 border-flag-red bg-flag-white px-5 py-4 text-sm font-semibold text-flag-blue\">Category ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(vm.Flash)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 47, Col: 181}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 48, Col: 168}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, ".</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, ".</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<form data-testid=\"admin-categories-filter-form\" method=\"get\" action=\"/admin/categories\" class=\"mt-6 grid gap-3 rounded-lg border border-[#2D2A4A]/15 bg-white p-5 shadow-sm md:grid-cols-[1fr_auto_auto] md:items-end\"><label class=\"grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]\">Search <input data-testid=\"admin-categories-search-input\" name=\"q\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<form data-testid=\"admin-categories-filter-form\" method=\"get\" action=\"/admin/categories\" class=\"mt-6 grid gap-3 border border-flag-blue/15 bg-paper p-5 md:grid-cols-[1fr_auto_auto] md:items-end\"><label class=\"grid gap-2 text-xs font-medium text-muted\">Search <input data-testid=\"admin-categories-search-input\" name=\"q\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue(vm.Filters.Search)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 50, Col: 182}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 51, Col: 155}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "\" class=\"h-11 rounded-full border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-sm font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none\"></label> <label class=\"grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]\">Status <select data-testid=\"admin-categories-status-filter\" name=\"status\" class=\"h-11 rounded-full border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-sm font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none\"><option value=\"\">All</option><option value=\"active\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\" class=\"h-11 border border-flag-blue/25 bg-flag-white px-4 text-sm font-medium text-ink transition focus:border-flag-blue focus:bg-paper\"></label> <label class=\"grid gap-2 text-xs font-medium text-muted\">Status <select data-testid=\"admin-categories-status-filter\" name=\"status\" class=\"h-11 border border-flag-blue/25 bg-flag-white px-4 text-sm font-medium text-ink transition focus:border-flag-blue focus:bg-paper\"><option value=\"\">All</option><option value=\"active\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if vm.Filters.Status == "active" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, " selected")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, ">Active</option><option value=\"draft\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if vm.Filters.Status == "draft" {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, " selected")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, ">Draft</option><option value=\"archived\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, ">Active</option><option value=\"draft\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if vm.Filters.Status == "archived" {
+		if vm.Filters.Status == "draft" {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, " selected")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, ">Archived</option></select></label> <button data-testid=\"admin-categories-filter-button\" type=\"submit\" class=\"inline-flex h-11 items-center justify-center rounded-full border border-[#2D2A4A]/20 bg-white px-5 text-sm font-black text-[#2D2A4A] transition hover:border-[#A51931]/40 hover:text-[#A51931]\">Filter</button></form><section class=\"mt-6 overflow-hidden rounded-lg border border-[#2D2A4A]/15 bg-white shadow-sm\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, ">Draft</option><option value=\"archived\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if vm.Filters.Status == "archived" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, " selected")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, ">Archived</option></select></label> <button data-testid=\"admin-categories-filter-button\" type=\"submit\" class=\"inline-flex h-11 items-center justify-center border-2 border-flag-blue px-5 text-sm font-bold text-flag-blue transition hover:bg-flag-blue hover:text-white\">Filter</button></form><section class=\"mt-6 border border-flag-blue/15 bg-paper\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if len(vm.Categories) == 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<div data-testid=\"admin-categories-empty\" role=\"status\" class=\"p-8 text-center\"><h2 class=\"text-xl font-black text-[#2D2A4A]\">No categories match these filters.</h2><p class=\"mt-2 text-sm leading-6 text-[#4C4A62]\">Create a category or adjust the status or search filter.</p></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<div data-testid=\"admin-categories-empty\" role=\"status\" class=\"p-8 text-center\"><h2 class=\"font-display text-xl font-bold text-flag-blue\">No categories match these filters.</h2><p class=\"mt-2 text-sm leading-6 text-muted\">Create a category or adjust the status or search filter.</p></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<div class=\"divide-y divide-[#2D2A4A]/10\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<div class=\"divide-y divide-flag-blue/10\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			for _, category := range vm.Categories {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<article data-testid=\"admin-category-row\" class=\"grid gap-4 p-5 md:grid-cols-[1fr_auto] md:items-center\"><div><a href=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<article data-testid=\"admin-category-row\" class=\"grid gap-4 p-5 md:grid-cols-[1fr_auto] md:items-center\"><div><a href=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var6 templ.SafeURL
 				templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinURLErrs("/admin/categories/" + category.Slug + "/edit")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 62, Col: 67}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 63, Col: 67}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "\" class=\"text-xl font-black text-[#2D2A4A] transition hover:text-[#A51931]\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\" class=\"font-display text-xl font-medium text-flag-blue transition hover:text-flag-red\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var7 string
 				templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(category.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 62, Col: 159}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 63, Col: 172}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "</a><p class=\"mt-1 text-sm font-bold text-[#4C4A62]\">/categories/")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "</a><p class=\"mt-1 text-sm leading-6 text-muted\">/categories/")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var8 string
 				templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(category.Slug)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 63, Col: 87}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 64, Col: 83}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, " · Sort ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, " · Sort ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var9 string
 				templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(category.SortOrder))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 63, Col: 132}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 64, Col: 128}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, " · version ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, " · version ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var10 string
 				templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(category.Version))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 63, Col: 178}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 64, Col: 174}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "</p><p class=\"mt-2 inline-flex rounded-full bg-[#F4F5F8] px-3 py-1 text-xs font-black uppercase tracking-wide text-[#2D2A4A]\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "</p><p class=\"mt-2 inline-flex bg-flag-white px-2.5 py-1 text-xs font-semibold uppercase tracking-eyebrow text-flag-blue\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var11 string
 				templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(string(category.Status))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 64, Col: 158}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 65, Col: 154}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</p></div><a href=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "</p></div><a href=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var12 templ.SafeURL
 				templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinURLErrs("/admin/categories/" + category.Slug + "/edit")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 66, Col: 66}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 67, Col: 66}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "\" class=\"inline-flex h-11 items-center justify-center rounded-full bg-[#2D2A4A] px-5 text-sm font-black text-white shadow-sm transition hover:bg-[#17172A]\">Edit</a></article>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "\" class=\"inline-flex h-11 items-center justify-center bg-flag-blue px-5 text-sm font-bold text-white transition hover:bg-ink\">Edit</a></article>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "</section></main></div></body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "</section></main></div></body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -300,7 +316,7 @@ func adminCategoryFormPage(vm adminCategoryFormViewModel) templ.Component {
 			templ_7745c5c3_Var13 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "<!doctype html><html lang=\"en\" class=\"scroll-smooth\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "<!doctype html><html lang=\"en\" class=\"scroll-smooth\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -308,7 +324,7 @@ func adminCategoryFormPage(vm adminCategoryFormViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "<body class=\"min-h-screen bg-[#F8F4EE] text-[#17172A] antialiased\"><div data-testid=\"admin-shell\" class=\"min-h-screen\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<body class=\"min-h-screen bg-paper text-ink antialiased\"><div data-testid=\"admin-shell\" class=\"min-h-screen\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -316,344 +332,352 @@ func adminCategoryFormPage(vm adminCategoryFormViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "<main id=\"admin-main\" class=\"mx-auto w-full max-w-7xl px-5 py-10 sm:px-8 lg:py-14\"><a href=\"/admin/categories\" class=\"text-sm font-black text-[#A51931] transition hover:text-[#831426]\">Back to categories</a><div class=\"mt-5 grid gap-8 lg:grid-cols-[0.8fr_1.2fr] lg:items-start\"><section class=\"overflow-hidden rounded-lg border border-[#2D2A4A]/10 bg-[#2D2A4A] text-white shadow-sm\"><div class=\"p-6 sm:p-8\"><p class=\"text-sm font-black uppercase tracking-wide text-[#F4F5F8]\">Category editor</p><h1 class=\"mt-3 text-5xl font-black leading-none text-white sm:text-6xl\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "<main id=\"admin-main\" class=\"mx-auto w-full max-w-7xl px-5 py-10 sm:px-8 lg:py-14\"><a href=\"/admin/categories\" class=\"text-sm font-bold text-flag-red transition hover:text-flag-red-deep hover:underline hover:underline-offset-4\">Back to categories</a><div class=\"mt-5 grid gap-8 lg:grid-cols-[0.8fr_1.2fr] lg:items-start\"><section class=\"border border-flag-blue bg-flag-blue text-white\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = adminFlagBand("h-1.5").Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "<div class=\"p-6 sm:p-8\"><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-white\">Category editor</p><h1 class=\"mt-3 font-display text-5xl font-bold leading-none tracking-tight text-white sm:text-6xl\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var14 string
 		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(vm.Title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 91, Col: 91}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 93, Col: 118}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "</h1><p class=\"mt-5 text-lg leading-8 text-white/80\">Manage status, public sort order, and the product set that appears on this aisle.</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "</h1><p class=\"mt-5 text-lg leading-8 text-white/80\">Manage status, public sort order, and the product set that appears on this aisle.</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if vm.Mode == "edit" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "<p class=\"mt-5 rounded-lg border border-white/20 bg-white/10 p-4 text-sm font-bold text-white/90\">Stable category slug: ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "<p class=\"mt-5 border border-white/20 bg-white/10 p-4 text-sm font-medium text-white/90\">Stable category slug: ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var15 string
 			templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(vm.Category.Slug)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 94, Col: 147}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 96, Col: 138}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, " · version ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, " · version ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var16 string
 			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(vm.Category.Version))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 94, Col: 196}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 96, Col: 187}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "</div></section><section class=\"rounded-lg border border-[#2D2A4A]/15 bg-white p-5 shadow-sm sm:p-6\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "</div></section><section class=\"border border-flag-blue/15 bg-paper p-5 sm:p-6\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if vm.Flash != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "<p data-testid=\"admin-flash\" role=\"alert\" class=\"mb-5 rounded-lg border border-[#2D2A4A]/15 bg-[#F8F4EE] px-4 py-3 text-sm font-black text-[#2D2A4A]\">Category ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "<p data-testid=\"admin-flash\" role=\"alert\" class=\"mb-5 border-l-4 border-flag-red bg-flag-white px-4 py-3 text-sm font-semibold text-flag-blue\">Category ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var17 string
 			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(vm.Flash)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 100, Col: 177}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 102, Col: 170}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, ".</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, ".</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
 		if len(vm.Errors) > 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "<div data-testid=\"category-validation-summary\" role=\"alert\" class=\"mb-5 rounded-lg border border-[#A51931]/25 bg-[#A51931]/10 p-4 text-sm font-black leading-6 text-[#A51931]\"><p>Fix these category details:</p><ul class=\"mt-2 list-disc pl-5\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "<div data-testid=\"category-validation-summary\" role=\"alert\" class=\"mb-5 border-l-4 border-flag-red bg-flag-red/10 p-4 text-sm font-semibold leading-6 text-flag-red\"><p>Fix these category details:</p><ul class=\"mt-2 list-disc pl-5\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			for _, err := range vm.Errors {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "<li>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "<li>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var18 string
 				templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(err)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 107, Col: 20}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 109, Col: 20}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "</li>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "</li>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "</ul></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "</ul></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "<form data-testid=\"category-form\" method=\"post\" action=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "<form data-testid=\"category-form\" method=\"post\" action=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var19 templ.SafeURL
 		templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinURLErrs(vm.Action)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 112, Col: 73}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 114, Col: 73}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "\" class=\"grid gap-5\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "\" class=\"grid gap-5\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var20 string
 		templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.ResolveAttributeValue(vm.CSRFValue)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 113, Col: 67}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 115, Col: 67}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var20)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "\"> <input type=\"hidden\" name=\"version\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "\"> <input type=\"hidden\" name=\"version\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var21 string
 		templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.ResolveAttributeValue(strconv.Itoa(vm.Category.Version))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 114, Col: 85}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 116, Col: 85}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var21)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "\"><div class=\"grid gap-4 md:grid-cols-2\"><label class=\"grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]\">Name <input data-testid=\"category-name-input\" required name=\"name\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "\"><div class=\"grid gap-4 md:grid-cols-2\"><label class=\"grid gap-2 text-xs font-medium text-muted\">Name <input data-testid=\"category-name-input\" required name=\"name\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var22 string
 		templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.ResolveAttributeValue(vm.Category.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 116, Col: 184}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 118, Col: 157}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var22)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "\" class=\"h-12 rounded-lg border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-base font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none\"></label> <label class=\"grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]\">Slug <input data-testid=\"category-slug-input\" required name=\"slug\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "\" class=\"h-12 border border-flag-blue/25 bg-flag-white px-4 text-base font-medium text-ink transition focus:border-flag-blue focus:bg-paper\"></label> <label class=\"grid gap-2 text-xs font-medium text-muted\">Slug <input data-testid=\"category-slug-input\" required name=\"slug\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var23 string
 		templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.ResolveAttributeValue(vm.Category.Slug)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 117, Col: 184}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 119, Col: 157}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var23)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if vm.Mode == "edit" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, " readonly")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, " readonly")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, " class=\"h-12 rounded-lg border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-base font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none read-only:text-[#4C4A62]\"></label></div><label class=\"grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]\">Description <textarea data-testid=\"category-description-input\" required name=\"description\" class=\"min-h-28 rounded-lg border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 py-3 text-base font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, " class=\"h-12 border border-flag-blue/25 bg-flag-white px-4 text-base font-medium text-ink transition focus:border-flag-blue focus:bg-paper read-only:text-muted\"></label></div><label class=\"grid gap-2 text-xs font-medium text-muted\">Description <textarea data-testid=\"category-description-input\" required name=\"description\" class=\"min-h-28 border border-flag-blue/25 bg-flag-white px-4 py-3 text-base font-medium text-ink transition focus:border-flag-blue focus:bg-paper\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var24 string
 		templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(vm.Category.Description)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 119, Col: 391}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 121, Col: 329}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "</textarea></label><div class=\"grid gap-4 md:grid-cols-2\"><label class=\"grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]\">Sort order <input data-testid=\"category-sort-order-input\" name=\"sort_order\" type=\"number\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "</textarea></label><div class=\"grid gap-4 md:grid-cols-2\"><label class=\"grid gap-2 text-xs font-medium text-muted\">Sort order <input data-testid=\"category-sort-order-input\" name=\"sort_order\" type=\"number\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var25 string
 		templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.ResolveAttributeValue(strconv.Itoa(vm.Category.SortOrder))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 121, Col: 226}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 123, Col: 199}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var25)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "\" class=\"h-12 rounded-lg border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-base font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none\"></label> <label class=\"grid gap-2 text-xs font-black uppercase tracking-wide text-[#4C4A62]\">Status <select data-testid=\"category-status-select\" name=\"status\" class=\"h-12 rounded-lg border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-base font-bold normal-case tracking-normal text-[#17172A] focus:border-[#A51931] focus:outline-none\"><option value=\"draft\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "\" class=\"h-12 border border-flag-blue/25 bg-flag-white px-4 text-base font-medium text-ink transition focus:border-flag-blue focus:bg-paper\"></label> <label class=\"grid gap-2 text-xs font-medium text-muted\">Status <select data-testid=\"category-status-select\" name=\"status\" class=\"h-12 border border-flag-blue/25 bg-flag-white px-4 text-base font-medium text-ink transition focus:border-flag-blue focus:bg-paper\"><option value=\"draft\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if statusSelected(vm.Category.Status, "draft") {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, " selected")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, " selected")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, ">Draft</option><option value=\"active\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, ">Draft</option><option value=\"active\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if statusSelected(vm.Category.Status, "active") {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, " selected")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, " selected")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, ">Active</option><option value=\"archived\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, ">Active</option><option value=\"archived\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if statusSelected(vm.Category.Status, "archived") {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, " selected")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 59, " selected")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, ">Archived</option></select></label></div><section class=\"rounded-lg border border-[#2D2A4A]/10 bg-white p-4\"><p class=\"text-sm font-black uppercase tracking-wide text-[#A51931]\">Product membership</p><p class=\"mt-1 text-sm font-bold text-[#4C4A62]\">Checked products appear on this public category page while the category and product are active.</p><div class=\"mt-3 grid gap-2 sm:grid-cols-2\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, ">Archived</option></select></label></div><section class=\"border border-flag-blue/10 bg-flag-white p-4\"><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Product membership</p><p class=\"mt-1 text-sm leading-6 text-muted\">Checked products appear on this public category page while the category and product are active.</p><div class=\"mt-3 grid gap-2 sm:grid-cols-2\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		for _, product := range vm.Products {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "<label class=\"flex items-center gap-2 rounded-md border border-[#2D2A4A]/10 bg-[#F8F4EE] px-3 py-2 text-sm font-bold text-[#2D2A4A]\"><input data-testid=\"category-product-checkbox\" type=\"checkbox\" name=\"product_ids\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, "<label class=\"flex items-center gap-2 border border-flag-blue/10 bg-paper px-3 py-2 text-sm font-medium text-ink\"><input data-testid=\"category-product-checkbox\" type=\"checkbox\" name=\"product_ids\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var26 string
 			templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.ResolveAttributeValue(product.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 129, Col: 244}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 131, Col: 225}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var26)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 59, "\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if categoryProductChecked(vm, product.ID) {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, " checked")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, " checked")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, "> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var27 string
 			templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(product.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 129, Col: 315}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 131, Col: 296}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "</label>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "</label>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "</div></section><div class=\"flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between\"><button data-testid=\"category-save-button\" type=\"submit\" class=\"inline-flex h-12 items-center justify-center rounded-full bg-[#A51931] px-6 text-sm font-black text-white shadow-sm transition hover:bg-[#831426] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2D2A4A]\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "</div></section><div class=\"flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between\"><button data-testid=\"category-save-button\" type=\"submit\" class=\"inline-flex h-12 items-center justify-center bg-flag-red px-6 text-sm font-bold text-white transition hover:bg-flag-red-deep disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-70\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var28 string
 		templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(vm.SubmitText)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 134, Col: 344}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 136, Col: 280}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "</button> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "</button> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if vm.Mode == "edit" && string(vm.Category.Status) != "archived" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "<button data-testid=\"category-archive-button\" form=\"archive-category-form\" type=\"submit\" class=\"inline-flex h-12 items-center justify-center rounded-full border border-[#A51931]/30 bg-white px-6 text-sm font-black text-[#A51931] transition hover:bg-[#A51931]/10\">Archive category</button>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "<button data-testid=\"category-archive-button\" form=\"archive-category-form\" type=\"submit\" class=\"inline-flex h-12 items-center justify-center border border-flag-red/40 bg-paper px-6 text-sm font-bold text-flag-red transition hover:bg-flag-red/10\">Archive category</button>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "</div></form>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "</div></form>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if vm.Mode == "edit" && string(vm.Category.Status) != "archived" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "<form id=\"archive-category-form\" method=\"post\" action=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "<form id=\"archive-category-form\" method=\"post\" action=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var29 templ.SafeURL
 			templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinURLErrs("/admin/categories/" + vm.Category.Slug + "/archive")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 141, Col: 116}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 143, Col: 116}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var30 string
 			templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.ResolveAttributeValue(vm.CSRFValue)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 141, Col: 178}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/category.templ`, Line: 143, Col: 178}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var30)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "\"></form>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, "\"></form>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "</section></div></main></div></body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, "</section></div></main></div></body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

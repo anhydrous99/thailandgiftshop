@@ -52,7 +52,9 @@ func adminHead(title string) templ.Component {
 	})
 }
 
-func adminDashboardPage(vm adminDashboardViewModel) templ.Component {
+// adminFlagBand mirrors the public site's flag band: the Thai flag's five
+// horizontal stripes at 1:1:2:1:1. Pass the height as a literal class.
+func adminFlagBand(heightClass string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -73,7 +75,54 @@ func adminDashboardPage(vm adminDashboardViewModel) templ.Component {
 			templ_7745c5c3_Var3 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<!doctype html><html lang=\"en\" class=\"scroll-smooth\">")
+		var templ_7745c5c3_Var4 = []any{"grid w-full grid-rows-[1fr_1fr_2fr_1fr_1fr] " + heightClass}
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var4...)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div aria-hidden=\"true\" class=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var5 string
+		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var4).String())
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/dashboard.templ`, Line: 1, Col: 0}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\"><span class=\"bg-flag-red\"></span> <span class=\"bg-flag-white\"></span> <span class=\"bg-flag-blue\"></span> <span class=\"bg-flag-white\"></span> <span class=\"bg-flag-red\"></span></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+func adminDashboardPage(vm adminDashboardViewModel) templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var6 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var6 == nil {
+			templ_7745c5c3_Var6 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<!doctype html><html lang=\"en\" class=\"scroll-smooth\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -81,111 +130,127 @@ func adminDashboardPage(vm adminDashboardViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<body class=\"min-h-screen bg-[#F8F4EE] text-[#17172A] antialiased\"><div data-testid=\"admin-shell\" class=\"min-h-screen\"><header class=\"sticky top-0 z-30 border-b border-[#2D2A4A]/10 bg-white/95 shadow-sm backdrop-blur\"><div aria-hidden=\"true\" class=\"grid h-1 grid-cols-[1fr_1fr_2fr_1fr_1fr]\"><span class=\"bg-[#A51931]\"></span> <span class=\"bg-[#F4F5F8]\"></span> <span class=\"bg-[#2D2A4A]\"></span> <span class=\"bg-[#F4F5F8]\"></span> <span class=\"bg-[#A51931]\"></span></div><div class=\"mx-auto flex min-h-16 w-full max-w-7xl flex-col gap-4 px-5 pb-4 pt-7 sm:px-8 md:flex-row md:items-center md:justify-between\"><a href=\"/admin\" aria-label=\"Thailand Gift Shop admin dashboard\" class=\"flex min-w-0 items-center gap-3\"><img class=\"h-10 w-auto max-w-[52vw] sm:h-12 sm:max-w-[240px]\" src=\"/static/logo.svg\" alt=\"Thailand Gift Shop\"> <span class=\"hidden rounded-full bg-[#2D2A4A]/10 px-3 py-1 text-xs font-black uppercase tracking-wide text-[#2D2A4A] sm:inline\">Admin</span></a><div class=\"flex flex-col gap-3 sm:flex-row sm:items-center\"><nav data-testid=\"admin-nav\" aria-label=\"Admin navigation\" class=\"flex flex-wrap gap-2 text-sm font-black text-[#2D2A4A]\"><a data-testid=\"admin-nav-dashboard\" aria-current=\"page\" href=\"/admin\" class=\"inline-flex h-10 items-center justify-center rounded-full bg-[#2D2A4A] px-4 text-white shadow-sm transition hover:bg-[#17172A] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#A51931]\">Dashboard</a> <a data-testid=\"admin-nav-products\" href=\"/admin/products\" class=\"inline-flex h-10 items-center justify-center rounded-full border border-[#2D2A4A]/15 bg-white px-4 shadow-sm transition hover:border-[#A51931]/30 hover:text-[#A51931] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2D2A4A]\">Products</a> <a data-testid=\"admin-nav-categories\" href=\"/admin/categories\" class=\"inline-flex h-10 items-center justify-center rounded-full border border-[#2D2A4A]/15 bg-white px-4 shadow-sm transition hover:border-[#A51931]/30 hover:text-[#A51931] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2D2A4A]\">Categories</a></nav><form method=\"post\" action=\"/admin/logout\" class=\"flex\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<body class=\"min-h-screen bg-paper text-ink antialiased\"><div data-testid=\"admin-shell\" class=\"min-h-screen\"><header class=\"sticky top-0 z-30 border-b-2 border-ink bg-paper\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var4 string
-		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.ResolveAttributeValue(vm.CSRFValue)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/dashboard.templ`, Line: 47, Col: 67}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4)
+		templ_7745c5c3_Err = adminFlagBand("h-1.5").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\"> <button data-testid=\"admin-logout-button\" type=\"submit\" class=\"inline-flex h-10 items-center justify-center rounded-full bg-[#A51931] px-4 text-sm font-black text-white shadow-sm transition hover:bg-[#831426] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2D2A4A]\">Logout</button></form></div></div></header><main id=\"admin-main\" class=\"mx-auto w-full max-w-7xl px-5 py-10 sm:px-8 lg:py-14\"><section aria-labelledby=\"admin-dashboard-title\" class=\"overflow-hidden rounded-lg border border-[#2D2A4A]/10 bg-[#2D2A4A] text-white shadow-sm\"><div class=\"grid gap-8 p-6 sm:p-8 lg:grid-cols-[1fr_0.9fr] lg:items-center\"><div><p class=\"text-sm font-black uppercase tracking-wide text-[#F4F5F8]\">Back office</p><h1 id=\"admin-dashboard-title\" class=\"mt-3 text-5xl font-black leading-none text-white sm:text-6xl\">Admin dashboard</h1><p class=\"mt-5 max-w-3xl text-lg leading-8 text-white/80\">A focused workspace for live catalog operations: publish readiness, category coverage, and low-stock variant attention.</p></div><div class=\"rounded-lg border border-white/25 bg-white/10 p-5 shadow-sm backdrop-blur\"><p class=\"text-sm font-black uppercase tracking-wide text-[#F4F5F8]\">Operational pulse</p><p class=\"mt-3 text-base leading-7 text-white/90\">Counts refresh from the admin catalog store on each no-store request, so filters and lists stay grounded in the same mutable data.</p></div></div></section><section aria-label=\"Catalog metrics\" class=\"mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-6\"><article class=\"overflow-hidden rounded-lg border border-[#2D2A4A]/15 bg-white shadow-sm lg:col-span-2\"><span aria-hidden=\"true\" class=\"block h-1.5 bg-[#A51931]\"></span><div class=\"p-5\"><p class=\"text-xs font-black uppercase tracking-wide text-[#A51931]\">Total products</p><p data-testid=\"admin-metric-products\" class=\"mt-3 text-4xl font-black leading-none text-[#2D2A4A]\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var5 string
-		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(vm.TotalProducts))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/dashboard.templ`, Line: 72, Col: 139}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</p><p class=\"mt-2 text-sm font-bold text-[#4C4A62]\">All product records, including draft and archived rows.</p></div></article><article class=\"rounded-lg border border-[#2D2A4A]/15 bg-white p-5 shadow-sm\"><p class=\"text-xs font-black uppercase tracking-wide text-[#A51931]\">Active</p><p data-testid=\"admin-metric-products-active\" class=\"mt-3 text-3xl font-black leading-none text-[#2D2A4A]\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var6 string
-		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(vm.ActiveProducts))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/dashboard.templ`, Line: 78, Col: 146}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</p></article><article class=\"rounded-lg border border-[#2D2A4A]/15 bg-white p-5 shadow-sm\"><p class=\"text-xs font-black uppercase tracking-wide text-[#A51931]\">Draft</p><p data-testid=\"admin-metric-products-draft\" class=\"mt-3 text-3xl font-black leading-none text-[#2D2A4A]\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<div class=\"mx-auto flex min-h-16 w-full max-w-7xl flex-col gap-4 px-5 pb-4 pt-7 sm:px-8 md:flex-row md:items-center md:justify-between\"><a href=\"/admin\" aria-label=\"Thailand Gift Shop admin dashboard\" class=\"flex min-w-0 items-center gap-3\"><img class=\"h-10 w-auto max-w-[52vw] sm:h-12 sm:max-w-[240px]\" src=\"/static/logo.svg\" alt=\"Thailand Gift Shop\"> <span class=\"hidden border border-flag-blue/20 bg-flag-white px-2 py-0.5 text-xs font-semibold uppercase tracking-eyebrow text-flag-blue sm:inline\">Admin</span></a><div class=\"flex flex-col gap-3 sm:flex-row sm:items-center\"><nav data-testid=\"admin-nav\" aria-label=\"Admin navigation\" class=\"flex flex-wrap gap-2 text-sm font-medium text-flag-blue\"><a data-testid=\"admin-nav-dashboard\" aria-current=\"page\" href=\"/admin\" class=\"inline-flex h-10 items-center justify-center bg-flag-blue px-4 text-white transition hover:bg-ink\">Dashboard</a> <a data-testid=\"admin-nav-products\" href=\"/admin/products\" class=\"inline-flex h-10 items-center justify-center border border-flag-blue/20 bg-paper px-4 transition hover:border-flag-red hover:text-flag-red\">Products</a> <a data-testid=\"admin-nav-categories\" href=\"/admin/categories\" class=\"inline-flex h-10 items-center justify-center border border-flag-blue/20 bg-paper px-4 transition hover:border-flag-red hover:text-flag-red\">Categories</a></nav><form method=\"post\" action=\"/admin/logout\" class=\"flex\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var7 string
-		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(vm.DraftProducts))
+		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(vm.CSRFValue)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/dashboard.templ`, Line: 82, Col: 144}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/dashboard.templ`, Line: 53, Col: 67}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</p></article><article class=\"rounded-lg border border-[#2D2A4A]/15 bg-white p-5 shadow-sm\"><p class=\"text-xs font-black uppercase tracking-wide text-[#A51931]\">Archived</p><p data-testid=\"admin-metric-products-archived\" class=\"mt-3 text-3xl font-black leading-none text-[#2D2A4A]\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\"> <button data-testid=\"admin-logout-button\" type=\"submit\" class=\"inline-flex h-10 items-center justify-center bg-flag-red px-4 text-sm font-bold text-white transition hover:bg-flag-red-deep\">Logout</button></form></div></div></header><main id=\"admin-main\" class=\"mx-auto w-full max-w-7xl px-5 py-10 sm:px-8 lg:py-14\"><section aria-labelledby=\"admin-dashboard-title\" class=\"border border-flag-blue bg-flag-blue text-white\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = adminFlagBand("h-1.5").Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<div class=\"grid gap-8 p-6 sm:p-8 lg:grid-cols-[1fr_0.9fr] lg:items-center\"><div><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-white\">Back office</p><h1 id=\"admin-dashboard-title\" class=\"mt-3 font-display text-5xl font-bold leading-none tracking-tight text-white sm:text-6xl\">Admin dashboard</h1><p class=\"mt-5 max-w-3xl text-lg leading-8 text-white/80\">A focused workspace for live catalog operations: publish readiness, category coverage, and low-stock variant attention.</p></div><div class=\"border border-white/25 bg-white/10 p-5\"><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-white\">Operational pulse</p><p class=\"mt-3 text-base leading-7 text-white/90\">Counts refresh from the admin catalog store on each no-store request, so filters and lists stay grounded in the same mutable data.</p></div></div></section><section aria-label=\"Catalog metrics\" class=\"mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-6\"><article class=\"border border-flag-blue/15 bg-paper lg:col-span-2\"><span aria-hidden=\"true\" class=\"block h-1.5 bg-flag-red\"></span><div class=\"p-5\"><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Total products</p><p data-testid=\"admin-metric-products\" class=\"mt-3 font-display text-4xl font-bold leading-none text-flag-blue\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var8 string
-		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(vm.ArchivedProducts))
+		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(vm.TotalProducts))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/dashboard.templ`, Line: 86, Col: 150}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/dashboard.templ`, Line: 79, Col: 152}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</p></article><article class=\"rounded-lg border border-[#2D2A4A]/15 bg-white p-5 shadow-sm\"><p class=\"text-xs font-black uppercase tracking-wide text-[#A51931]\">Categories</p><p data-testid=\"admin-metric-categories\" class=\"mt-3 text-3xl font-black leading-none text-[#2D2A4A]\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</p><p class=\"mt-2 text-sm leading-6 text-muted\">All product records, including draft and archived rows.</p></div></article><article class=\"border border-flag-blue/15 bg-paper p-5\"><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Active</p><p data-testid=\"admin-metric-products-active\" class=\"mt-3 font-display text-3xl font-bold leading-none text-flag-blue\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var9 string
-		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(vm.Categories))
+		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(vm.ActiveProducts))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/dashboard.templ`, Line: 90, Col: 137}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/dashboard.templ`, Line: 85, Col: 159}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</p></article><article class=\"overflow-hidden rounded-lg border border-[#A51931]/25 bg-white shadow-sm lg:col-span-3\"><span aria-hidden=\"true\" class=\"block h-1.5 bg-[#D8AE5E]\"></span><div class=\"p-5\"><p class=\"text-xs font-black uppercase tracking-wide text-[#A51931]\">Low-stock active variants</p><p data-testid=\"admin-metric-low-stock\" class=\"mt-3 text-4xl font-black leading-none text-[#2D2A4A]\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</p></article><article class=\"border border-flag-blue/15 bg-paper p-5\"><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Draft</p><p data-testid=\"admin-metric-products-draft\" class=\"mt-3 font-display text-3xl font-bold leading-none text-flag-blue\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var10 string
-		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(vm.LowStockVariants))
+		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(vm.DraftProducts))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/dashboard.templ`, Line: 96, Col: 143}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/dashboard.templ`, Line: 89, Col: 157}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</p><p class=\"mt-2 text-sm font-bold text-[#4C4A62]\">Active variant rows at 2 units or fewer, excluding archived products and archived variants.</p></div></article><article class=\"overflow-hidden rounded-lg border border-[#2D2A4A]/15 bg-white shadow-sm lg:col-span-3\"><span aria-hidden=\"true\" class=\"block h-1.5 bg-[#2D2A4A]\"></span><div class=\"p-5\"><p class=\"text-xs font-black uppercase tracking-wide text-[#A51931]\">Image upload failures</p><p data-testid=\"admin-metric-upload-failures\" class=\"mt-3 text-4xl font-black leading-none text-[#2D2A4A]\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</p></article><article class=\"border border-flag-blue/15 bg-paper p-5\"><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Archived</p><p data-testid=\"admin-metric-products-archived\" class=\"mt-3 font-display text-3xl font-bold leading-none text-flag-blue\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var11 string
-		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(vm.UploadFailures))
+		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(vm.ArchivedProducts))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/dashboard.templ`, Line: 104, Col: 147}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/dashboard.templ`, Line: 93, Col: 163}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</p><p class=\"mt-2 text-sm font-bold text-[#4C4A62]\">Session-only browser failures from the product image confirmation flow.</p></div></article></section><section aria-label=\"Admin workspaces\" class=\"mt-8 grid gap-5 md:grid-cols-3\"><a href=\"/admin\" class=\"group block overflow-hidden rounded-lg border border-[#A51931]/30 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-lg\"><span aria-hidden=\"true\" class=\"block h-1.5 bg-[#A51931]\"></span> <span class=\"block p-5\"><span class=\"block text-sm font-black uppercase tracking-wide text-[#A51931]\">Current</span> <span class=\"mt-3 block text-xl font-black text-[#2D2A4A] transition group-hover:text-[#831426]\">Dashboard</span> <span class=\"mt-3 block text-sm leading-6 text-[#4C4A62]\">Start here for the protected admin shell and future operational summaries.</span></span></a> <a href=\"/admin/products\" class=\"group block overflow-hidden rounded-lg border border-[#2D2A4A]/15 bg-white shadow-sm transition hover:-translate-y-1 hover:border-[#A51931]/30 hover:shadow-lg\"><span aria-hidden=\"true\" class=\"block h-1.5 bg-[#2D2A4A]\"></span> <span class=\"block p-5\"><span class=\"block text-sm font-black uppercase tracking-wide text-[#A51931]\">Catalog</span> <span class=\"mt-3 block text-xl font-black text-[#2D2A4A] transition group-hover:text-[#831426]\">Product workspace</span> <span class=\"mt-3 block text-sm leading-6 text-[#4C4A62]\">Placeholder entry point for product management without adding mutation forms yet.</span></span></a> <a href=\"/admin/categories\" class=\"group block overflow-hidden rounded-lg border border-[#2D2A4A]/15 bg-white shadow-sm transition hover:-translate-y-1 hover:border-[#A51931]/30 hover:shadow-lg\"><span aria-hidden=\"true\" class=\"block h-1.5 bg-[#D8AE5E]\"></span> <span class=\"block p-5\"><span class=\"block text-sm font-black uppercase tracking-wide text-[#A51931]\">Aisles</span> <span class=\"mt-3 block text-xl font-black text-[#2D2A4A] transition group-hover:text-[#831426]\">Category workspace</span> <span class=\"mt-3 block text-sm leading-6 text-[#4C4A62]\">Placeholder entry point for category management without implementing CRUD pages.</span></span></a></section></main></div><script>\n\t\t\t\t(() => {\n\t\t\t\t\tconst uploadFailures = document.querySelector('[data-testid=\"admin-metric-upload-failures\"]');\n\t\t\t\t\tif (!uploadFailures) return;\n\t\t\t\t\tuploadFailures.textContent = window.sessionStorage.getItem('adminProductImageUploadFailures') || uploadFailures.textContent;\n\t\t\t\t})();\n\t\t\t</script></body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</p></article><article class=\"border border-flag-blue/15 bg-paper p-5\"><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Categories</p><p data-testid=\"admin-metric-categories\" class=\"mt-3 font-display text-3xl font-bold leading-none text-flag-blue\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var12 string
+		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(vm.Categories))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/dashboard.templ`, Line: 97, Col: 150}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</p></article><article class=\"border border-flag-red/25 bg-paper lg:col-span-3\"><span aria-hidden=\"true\" class=\"block h-1.5 bg-gold\"></span><div class=\"p-5\"><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Low-stock active variants</p><p data-testid=\"admin-metric-low-stock\" class=\"mt-3 font-display text-4xl font-bold leading-none text-flag-blue\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var13 string
+		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(vm.LowStockVariants))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/dashboard.templ`, Line: 103, Col: 156}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</p><p class=\"mt-2 text-sm leading-6 text-muted\">Active variant rows at 2 units or fewer, excluding archived products and archived variants.</p></div></article><article class=\"border border-flag-blue/15 bg-paper lg:col-span-3\"><span aria-hidden=\"true\" class=\"block h-1.5 bg-flag-blue\"></span><div class=\"p-5\"><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Image upload failures</p><p data-testid=\"admin-metric-upload-failures\" class=\"mt-3 font-display text-4xl font-bold leading-none text-flag-blue\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var14 string
+		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(vm.UploadFailures))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/dashboard.templ`, Line: 111, Col: 160}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</p><p class=\"mt-2 text-sm leading-6 text-muted\">Session-only browser failures from the product image confirmation flow.</p></div></article></section><section aria-label=\"Admin workspaces\" class=\"mt-8 grid gap-5 md:grid-cols-3\"><a href=\"/admin\" class=\"group block border border-flag-red/30 bg-paper transition hover:border-flag-blue hover:shadow-lift\"><span aria-hidden=\"true\" class=\"block h-1.5 bg-flag-red\"></span> <span class=\"block p-5\"><span class=\"block text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Current</span> <span class=\"mt-3 block font-display text-xl font-medium text-flag-blue transition group-hover:text-flag-red\">Dashboard</span> <span class=\"mt-3 block text-sm leading-6 text-muted\">Start here for the protected admin shell and future operational summaries.</span></span></a> <a href=\"/admin/products\" class=\"group block border border-flag-blue/15 bg-paper transition hover:border-flag-blue hover:shadow-lift\"><span aria-hidden=\"true\" class=\"block h-1.5 bg-flag-blue\"></span> <span class=\"block p-5\"><span class=\"block text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Catalog</span> <span class=\"mt-3 block font-display text-xl font-medium text-flag-blue transition group-hover:text-flag-red\">Product workspace</span> <span class=\"mt-3 block text-sm leading-6 text-muted\">Placeholder entry point for product management without adding mutation forms yet.</span></span></a> <a href=\"/admin/categories\" class=\"group block border border-flag-blue/15 bg-paper transition hover:border-flag-blue hover:shadow-lift\"><span aria-hidden=\"true\" class=\"block h-1.5 bg-gold\"></span> <span class=\"block p-5\"><span class=\"block text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Aisles</span> <span class=\"mt-3 block font-display text-xl font-medium text-flag-blue transition group-hover:text-flag-red\">Category workspace</span> <span class=\"mt-3 block text-sm leading-6 text-muted\">Placeholder entry point for category management without implementing CRUD pages.</span></span></a></section></main></div><script>\n\t\t\t\t(() => {\n\t\t\t\t\tconst uploadFailures = document.querySelector('[data-testid=\"admin-metric-upload-failures\"]');\n\t\t\t\t\tif (!uploadFailures) return;\n\t\t\t\t\tuploadFailures.textContent = window.sessionStorage.getItem('adminProductImageUploadFailures') || uploadFailures.textContent;\n\t\t\t\t})();\n\t\t\t</script></body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
