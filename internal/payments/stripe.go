@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	stripe "github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/webhook"
 )
@@ -33,15 +35,46 @@ type stripeSecretCredentials struct {
 	WebhookSigningSecret string `json:"webhook_signing_secret"`
 }
 
-// StripeCredentialsFromEnvironment parses STRIPE_CREDENTIALS_SECRET_JSON,
-// the whole-secret JSON env idiom shared with the admin credentials.
-func StripeCredentialsFromEnvironment() (StripeCredentials, error) {
+type secretsManagerGetValueAPI interface {
+	GetSecretValue(ctx context.Context, params *secretsmanager.GetSecretValueInput, optFns ...func(*secretsmanager.Options)) (*secretsmanager.GetSecretValueOutput, error)
+}
+
+// StripeCredentialsFromEnvironment parses inline credentials for local runs,
+// or loads the named Secrets Manager JSON secret used by production Lambda.
+func StripeCredentialsFromEnvironment(ctx context.Context) (StripeCredentials, error) {
 	secretJSON := strings.TrimSpace(os.Getenv(EnvStripeCredentialsSecretJSON))
-	if secretJSON == "" {
+	if secretJSON != "" {
+		return stripeCredentialsFromSecretString(secretJSON)
+	}
+
+	secretName := strings.TrimSpace(os.Getenv(EnvStripeCredentialsSecretName))
+	if secretName == "" {
 		return StripeCredentials{}, ErrStripeCredentialsNotConfigured
 	}
 
-	return stripeCredentialsFromSecretString(secretJSON)
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		return StripeCredentials{}, fmt.Errorf("load AWS config for Stripe credentials: %w", err)
+	}
+
+	return stripeCredentialsFromSecretManager(ctx, secretsmanager.NewFromConfig(cfg), secretName)
+}
+
+func stripeCredentialsFromSecretManager(ctx context.Context, client secretsManagerGetValueAPI, secretName string) (StripeCredentials, error) {
+	secretName = strings.TrimSpace(secretName)
+	if secretName == "" {
+		return StripeCredentials{}, ErrStripeCredentialsNotConfigured
+	}
+
+	output, err := client.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{SecretId: &secretName})
+	if err != nil {
+		return StripeCredentials{}, fmt.Errorf("get Stripe credentials secret %q: %w", secretName, err)
+	}
+	if output.SecretString == nil {
+		return StripeCredentials{}, ErrStripeCredentialsNotConfigured
+	}
+
+	return stripeCredentialsFromSecretString(*output.SecretString)
 }
 
 func stripeCredentialsFromSecretString(secretString string) (StripeCredentials, error) {
@@ -74,8 +107,8 @@ func NewStripeProvider(credentials StripeCredentials) *StripeProvider {
 	}
 }
 
-func NewStripeProviderFromEnvironment() (*StripeProvider, error) {
-	credentials, err := StripeCredentialsFromEnvironment()
+func NewStripeProviderFromEnvironment(ctx context.Context) (*StripeProvider, error) {
+	credentials, err := StripeCredentialsFromEnvironment(ctx)
 	if err != nil {
 		return nil, err
 	}

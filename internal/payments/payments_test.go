@@ -3,9 +3,11 @@ package payments
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/anhydrous99/thailandgiftshop/internal/appenv"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 )
 
 const testValidStripeCredentialsJSON = `{"secret_key":"sk_test_placeholder","webhook_signing_secret":"whsec_test_placeholder"}`
@@ -162,6 +164,24 @@ func TestNewProviderFromEnvironmentReturnsConcreteTypes(t *testing.T) {
 	}
 }
 
+func TestStripeCredentialsFromSecretManager(t *testing.T) {
+	secretString := testValidStripeCredentialsJSON
+	client := &fakeSecretsManagerClient{
+		output: &secretsmanager.GetSecretValueOutput{SecretString: &secretString},
+	}
+
+	credentials, err := stripeCredentialsFromSecretManager(context.Background(), client, "thailandgiftshop/stripe/credentials")
+	if err != nil {
+		t.Fatalf("stripeCredentialsFromSecretManager returned error: %v", err)
+	}
+	if credentials.SecretKey != "sk_test_placeholder" || credentials.WebhookSigningSecret != "whsec_test_placeholder" {
+		t.Fatalf("credentials = %#v, want parsed secret JSON", credentials)
+	}
+	if client.gotSecretID != "thailandgiftshop/stripe/credentials" {
+		t.Fatalf("SecretId = %q, want stripe secret name", client.gotSecretID)
+	}
+}
+
 func TestPublicBaseURLFromEnvironment(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -183,4 +203,21 @@ func TestPublicBaseURLFromEnvironment(t *testing.T) {
 			}
 		})
 	}
+}
+
+type fakeSecretsManagerClient struct {
+	output      *secretsmanager.GetSecretValueOutput
+	err         error
+	gotSecretID string
+}
+
+func (f *fakeSecretsManagerClient) GetSecretValue(ctx context.Context, input *secretsmanager.GetSecretValueInput, optFns ...func(*secretsmanager.Options)) (*secretsmanager.GetSecretValueOutput, error) {
+	_ = ctx
+	_ = optFns
+
+	if input == nil || input.SecretId == nil {
+		return nil, fmt.Errorf("missing SecretId")
+	}
+	f.gotSecretID = *input.SecretId
+	return f.output, f.err
 }

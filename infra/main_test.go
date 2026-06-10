@@ -970,7 +970,7 @@ func TestStackIncludesCustomerSessionSecret(t *testing.T) {
 	}
 }
 
-func TestStackWiresStripeCredentialsSecretReference(t *testing.T) {
+func TestStackWiresStripeCredentialsSecretName(t *testing.T) {
 	defer jsii.Close()
 
 	app := awscdk.NewApp(nil)
@@ -979,18 +979,31 @@ func TestStackWiresStripeCredentialsSecretReference(t *testing.T) {
 
 	templateJSON := template.ToJSON()
 	ssrVariables := lambdaEnvironmentVariables(t, templateJSON, "thailandgiftshop-ssr")
-	secretReference := templateValueString(t, ssrVariables[payments.EnvStripeCredentialsSecretJSON])
-	if !strings.Contains(secretReference, stripeCredentialsSecretName) || !strings.Contains(secretReference, "SecretString") {
-		t.Fatalf("stripe credentials reference = %q, want dynamic reference to named Secrets Manager JSON secret", secretReference)
+	secretName := templateValueString(t, ssrVariables[payments.EnvStripeCredentialsSecretName])
+	if secretName != `"`+stripeCredentialsSecretName+`"` {
+		t.Fatalf("stripe credentials secret name = %q, want %q", secretName, stripeCredentialsSecretName)
+	}
+	if _, found := ssrVariables[payments.EnvStripeCredentialsSecretJSON]; found {
+		t.Fatalf("ssr lambda must not receive deploy-time %s dynamic reference: %#v", payments.EnvStripeCredentialsSecretJSON, ssrVariables)
 	}
 
 	// The admin lambda needs the same credentials: canceling a pending order
 	// verifies and expires its Stripe checkout session first, and without the
 	// provider that session-expiry guard is silently skipped.
 	adminVariables := lambdaEnvironmentVariables(t, templateJSON, "thailandgiftshop-admin")
-	adminReference := templateValueString(t, adminVariables[payments.EnvStripeCredentialsSecretJSON])
-	if !strings.Contains(adminReference, stripeCredentialsSecretName) || !strings.Contains(adminReference, "SecretString") {
-		t.Fatalf("admin stripe credentials reference = %q, want dynamic reference to named Secrets Manager JSON secret", adminReference)
+	adminSecretName := templateValueString(t, adminVariables[payments.EnvStripeCredentialsSecretName])
+	if adminSecretName != `"`+stripeCredentialsSecretName+`"` {
+		t.Fatalf("admin stripe credentials secret name = %q, want %q", adminSecretName, stripeCredentialsSecretName)
+	}
+	if _, found := adminVariables[payments.EnvStripeCredentialsSecretJSON]; found {
+		t.Fatalf("admin lambda must not receive deploy-time %s dynamic reference: %#v", payments.EnvStripeCredentialsSecretJSON, adminVariables)
+	}
+
+	templateText := templateValueString(t, templateJSON)
+	for _, want := range []string{"secretsmanager:GetSecretValue", stripeCredentialsSecretName} {
+		if !strings.Contains(templateText, want) {
+			t.Fatalf("template missing %q for runtime Stripe secret lookup", want)
+		}
 	}
 }
 

@@ -198,7 +198,7 @@ The stack also creates a DynamoDB table for admin login attempts and passes its 
 
 ### Stripe credentials and webhook
 
-Before deploying the checkout wiring, bootstrap the Stripe credentials as a manually managed Secrets Manager JSON secret named `thailandgiftshop/stripe/credentials` in `us-east-1`. The webhook signing secret is not known until the endpoint is registered, so start with a placeholder value:
+Before enabling checkout, bootstrap the Stripe credentials as a manually managed Secrets Manager JSON secret named `thailandgiftshop/stripe/credentials` in `us-east-1`. The webhook signing secret is not known until the endpoint is registered, so start with a placeholder value:
 
 ```sh
 aws secretsmanager create-secret \
@@ -207,7 +207,7 @@ aws secretsmanager create-secret \
   --secret-string '{"secret_key":"<sk-live-or-test-key>","webhook_signing_secret":"<whsec-placeholder>"}'
 ```
 
-After the first deploy, register the webhook endpoint in the Stripe dashboard as `https://thailandgiftshop.com/webhooks/stripe` — use the apex domain, because the `www` host issues a `308` redirect and Stripe does not follow redirects — subscribed to the four `checkout.session.*` events: `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, and `checkout.session.expired`. Then write the real `whsec_` value into the same secret and redeploy so the Lambda environment picks up the rotated value:
+After the first deploy, register the webhook endpoint in the Stripe dashboard as `https://thailandgiftshop.com/webhooks/stripe` — use the apex domain, because the `www` host issues a `308` redirect and Stripe does not follow redirects — subscribed to the four `checkout.session.*` events: `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, and `checkout.session.expired`. Then write the real `whsec_` value into the same secret:
 
 ```sh
 aws secretsmanager put-secret-value \
@@ -216,7 +216,7 @@ aws secretsmanager put-secret-value \
   --secret-string '{"secret_key":"<sk-live-or-test-key>","webhook_signing_secret":"<whsec>"}'
 ```
 
-The CDK stack imports the secret by name and passes the whole secret string to both the SSR and admin Lambdas through the `STRIPE_CREDENTIALS_SECRET_JSON` dynamic reference — the admin Lambda needs it so canceling a pending order can verify and expire the order's still-open checkout session first. Refunds for canceled paid orders are performed manually in the Stripe dashboard.
+The CDK stack passes the secret name to both the SSR and admin Lambdas as `STRIPE_CREDENTIALS_SECRET_NAME` and grants `secretsmanager:GetSecretValue` on that name. Deployments do not resolve the secret value, so a missing Stripe secret will not roll back CloudFormation; checkout remains unavailable until the secret exists and contains valid JSON. Refunds for canceled paid orders are performed manually in the Stripe dashboard.
 
 CloudFront has an AWS WAF web ACL with rate limits for `POST /admin/login`, `/admin*`, and customer-auth `POST /account/sign-in` and `POST /account/sign-up` requests. Direct API Gateway access through the `SsrHttpApiUrl` output remains useful for public SSR checks, but production admin access must use `https://thailandgiftshop.com/admin` so CloudFront can apply WAF rules and inject the admin origin header.
 

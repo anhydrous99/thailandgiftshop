@@ -376,7 +376,7 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable a
 			commerce.EnvCustomerOrdersIndexName:     jsii.String(commerce.DefaultCustomerOrdersIndexName),
 			commerce.EnvOrdersIndexName:             jsii.String(commerce.DefaultOrdersIndexName),
 			commerce.EnvSessionSecret:               customerSessionSecretReference(customerSessionSecret),
-			payments.EnvStripeCredentialsSecretJSON: stripeCredentialsSecretReference(stripeSecret),
+			payments.EnvStripeCredentialsSecretName: jsii.String(stripeCredentialsSecretName),
 			payments.EnvPublicBaseURL:               jsii.String(payments.DefaultPublicBaseURL),
 		},
 		FunctionName: jsii.String("thailandgiftshop-ssr"),
@@ -400,6 +400,7 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable a
 		},
 	}))
 	commerceTable.GrantReadWriteData(ssrFunction)
+	stripeSecret.GrantRead(ssrFunction, nil)
 	ssrFunction.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
 		Actions: &[]*string{
 			jsii.String("dynamodb:TransactWriteItems"),
@@ -494,7 +495,7 @@ func addAdmin(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable
 			// Admin cancels of pending orders verify (and expire) the order's
 			// Stripe checkout session before releasing stock; without the
 			// credentials the handler skips that session-expiry guard.
-			payments.EnvStripeCredentialsSecretJSON: stripeCredentialsSecretReference(stripeSecret),
+			payments.EnvStripeCredentialsSecretName: jsii.String(stripeCredentialsSecretName),
 		},
 		FunctionName: jsii.String("thailandgiftshop-admin"),
 		Handler:      jsii.String("bootstrap"),
@@ -514,6 +515,7 @@ func addAdmin(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable
 		},
 	}))
 	commerceTable.GrantReadWriteData(adminFunction)
+	stripeSecret.GrantRead(adminFunction, nil)
 	adminFunction.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
 		Actions: &[]*string{
 			jsii.String("dynamodb:TransactWriteItems"),
@@ -785,13 +787,6 @@ func customerSessionSecretReference(secret awssecretsmanager.ISecret) *string {
 // adminCredentialsSecret precedent. It must exist before the first deploy.
 func stripeCredentialsSecret(stack awscdk.Stack) awssecretsmanager.ISecret {
 	return awssecretsmanager.Secret_FromSecretNameV2(stack, jsii.String("StripeCredentialsSecret"), jsii.String(stripeCredentialsSecretName))
-}
-
-func stripeCredentialsSecretReference(secret awssecretsmanager.ISecret) *string {
-	return awscdk.NewCfnDynamicReference(
-		awscdk.CfnDynamicReferenceService_SECRETS_MANAGER,
-		secret.CfnDynamicReferenceKey(nil),
-	).ToString()
 }
 
 func addCanonicalHostRedirectFunction(stack awscdk.Stack) awscloudfront.Function {

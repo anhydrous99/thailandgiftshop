@@ -79,27 +79,26 @@ func NewHandlerFromEnvironment(ctx context.Context) (*Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	paymentsProvider, err := payments.NewProviderFromEnvironment(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	handler := NewHandler(catalogStore)
 	handler.metrics = metrics
 	handler.commerce = commerceStore
-	handler.payments = paymentsProvider
 	// The production catalog DynamoStore implements StockStore; the
 	// EmptyStore fallback (no CATALOG_TABLE_NAME outside production) does
 	// not, which leaves checkout unreachable along with the empty catalog.
 	if stockStore, ok := catalogStore.(catalog.StockStore); ok {
 		handler.stock = stockStore
 	}
-	handler.checkout = &checkout.Service{
-		Commerce: commerceStore,
-		Payments: paymentsProvider,
-		Stock:    handler.stock,
-		Metrics:  metrics,
-		BaseURL:  payments.PublicBaseURLFromEnvironment(),
+	if paymentsProvider, providerErr := payments.NewProviderFromEnvironment(ctx); providerErr != nil {
+		logAccountError("checkout: payments provider unavailable", providerErr)
+	} else {
+		handler.payments = paymentsProvider
+		handler.checkout = &checkout.Service{
+			Commerce: commerceStore,
+			Payments: paymentsProvider,
+			Stock:    handler.stock,
+			Metrics:  metrics,
+			BaseURL:  payments.PublicBaseURLFromEnvironment(),
+		}
 	}
 	return handler, nil
 }

@@ -1,6 +1,7 @@
 package payments
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -108,12 +109,12 @@ func TestStripeCredentialsFromSecretString(t *testing.T) {
 
 func TestStripeCredentialsFromEnvironmentRequiresValue(t *testing.T) {
 	t.Setenv(EnvStripeCredentialsSecretJSON, "   ")
-	if _, err := StripeCredentialsFromEnvironment(); !errors.Is(err, ErrStripeCredentialsNotConfigured) {
+	if _, err := StripeCredentialsFromEnvironment(context.Background()); !errors.Is(err, ErrStripeCredentialsNotConfigured) {
 		t.Fatalf("StripeCredentialsFromEnvironment error = %v, want %v", err, ErrStripeCredentialsNotConfigured)
 	}
 
 	t.Setenv(EnvStripeCredentialsSecretJSON, testValidStripeCredentialsJSON)
-	credentials, err := StripeCredentialsFromEnvironment()
+	credentials, err := StripeCredentialsFromEnvironment(context.Background())
 	if err != nil {
 		t.Fatalf("StripeCredentialsFromEnvironment returned error: %v", err)
 	}

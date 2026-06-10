@@ -18,6 +18,7 @@ import (
 
 const (
 	EnvStripeCredentialsSecretJSON = "STRIPE_CREDENTIALS_SECRET_JSON"
+	EnvStripeCredentialsSecretName = "STRIPE_CREDENTIALS_SECRET_NAME"
 	EnvPaymentsProvider            = "PAYMENTS_PROVIDER"
 	EnvPublicBaseURL               = "PUBLIC_BASE_URL"
 
@@ -154,11 +155,9 @@ func PublicBaseURLFromEnvironment() string {
 // otherwise non-production falls back to the fake provider and production
 // fails closed (the catalog-store pattern).
 func NewProviderFromEnvironment(ctx context.Context) (Provider, error) {
-	_ = ctx
-
 	switch explicit := strings.ToLower(strings.TrimSpace(os.Getenv(EnvPaymentsProvider))); explicit {
 	case KindStripe:
-		return stripeProviderFromEnvironment()
+		return stripeProviderFromEnvironment(ctx)
 	case KindFake:
 		if appenv.IsProduction() {
 			return nil, ErrFakeProviderNotAllowedInProduction
@@ -169,8 +168,8 @@ func NewProviderFromEnvironment(ctx context.Context) (Provider, error) {
 		return nil, fmt.Errorf("unsupported %s value %q", EnvPaymentsProvider, explicit)
 	}
 
-	if strings.TrimSpace(os.Getenv(EnvStripeCredentialsSecretJSON)) != "" {
-		return stripeProviderFromEnvironment()
+	if strings.TrimSpace(os.Getenv(EnvStripeCredentialsSecretJSON)) != "" || strings.TrimSpace(os.Getenv(EnvStripeCredentialsSecretName)) != "" {
+		return stripeProviderFromEnvironment(ctx)
 	}
 	if appenv.IsProduction() {
 		return nil, ErrPaymentsProviderNotConfigured
@@ -181,8 +180,8 @@ func NewProviderFromEnvironment(ctx context.Context) (Provider, error) {
 
 // stripeProviderFromEnvironment keeps a failed construction from leaking a
 // typed-nil *StripeProvider into the Provider interface return.
-func stripeProviderFromEnvironment() (Provider, error) {
-	provider, err := NewStripeProviderFromEnvironment()
+func stripeProviderFromEnvironment(ctx context.Context) (Provider, error) {
+	provider, err := NewStripeProviderFromEnvironment(ctx)
 	if err != nil {
 		return nil, err
 	}

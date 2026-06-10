@@ -155,6 +155,7 @@ func TestREADMEAdminBootstrapDocsUsePlaceholdersOnly(t *testing.T) {
 		"CATALOG_DEMO_STORE=1",
 		"without a live AWS account",
 		"STRIPE_CREDENTIALS_SECRET_JSON",
+		"STRIPE_CREDENTIALS_SECRET_NAME",
 		"CUSTOMER_SESSION_SECRET",
 		"thailandgiftshop/stripe/credentials",
 		"\"secret_key\":\"<sk-test-key>\"",
