@@ -199,8 +199,8 @@ func TestRouteForPathRejectsExtraSegments(t *testing.T) {
 			if response.StatusCode != http.StatusNotFound {
 				t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusNotFound)
 			}
-			if response.Body != "Not found" {
-				t.Fatalf("body = %q, want %q", response.Body, "Not found")
+			if !strings.Contains(response.Body, "Not found") {
+				t.Fatalf("body does not contain %q: %q", "Not found", response.Body)
 			}
 			if got := response.Headers["Location"]; got != "" {
 				t.Fatalf("Location = %q, want empty", got)
@@ -1012,8 +1012,8 @@ func TestHandle(t *testing.T) {
 					},
 				},
 			},
-			statusCode: http.StatusNotFound,
-			body:       "Not found",
+			statusCode:   http.StatusNotFound,
+			bodyContains: []string{"Not found"},
 			headers: map[string]string{
 				"Content-Type": htmlContentType,
 			},
@@ -2435,8 +2435,8 @@ func TestProductDetailMissingDraftAndInactiveSlugsReturn404(t *testing.T) {
 			if response.StatusCode != http.StatusNotFound {
 				t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusNotFound)
 			}
-			if response.Body != "Not found" {
-				t.Fatalf("body = %q, want Not found", response.Body)
+			if !strings.Contains(response.Body, "Not found") {
+				t.Fatalf("body does not contain %q: %q", "Not found", response.Body)
 			}
 		})
 	}
@@ -2759,8 +2759,8 @@ func TestCategoryDetailMissingInactiveAndUnlistedSlugsReturn404(t *testing.T) {
 			if response.StatusCode != http.StatusNotFound {
 				t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusNotFound)
 			}
-			if response.Body != "Not found" {
-				t.Fatalf("body = %q, want Not found", response.Body)
+			if !strings.Contains(response.Body, "Not found") {
+				t.Fatalf("body does not contain %q: %q", "Not found", response.Body)
 			}
 		})
 	}

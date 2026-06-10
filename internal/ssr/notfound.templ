@@ -1,0 +1,41 @@
+package ssr
+
+templ notFoundHead() {
+	<head>
+		<meta charset="utf-8"/>
+		<meta name="viewport" content="width=device-width, initial-scale=1"/>
+		<title>Not found | Thailand Gift Shop</title>
+		<meta name="robots" content="noindex, follow"/>
+		<link rel="icon" href="/static/favicon.ico" sizes="any"/>
+		<link rel="icon" href="/static/favicon.svg" type="image/svg+xml"/>
+		<link rel="apple-touch-icon" href="/static/apple-touch-icon.png" sizes="180x180"/>
+		<link rel="manifest" href="/static/site.webmanifest"/>
+		<link rel="preload" href="/static/fonts/space-grotesk-latin-700.woff2" as="font" type="font/woff2" crossorigin/>
+		<link rel="preload" href="/static/fonts/inter-latin-400.woff2" as="font" type="font/woff2" crossorigin/>
+		<link rel="stylesheet" href="/static/assets/app.css"/>
+	</head>
+}
+
+templ notFoundPage(headerCartLabel string) {
+	<!DOCTYPE html>
+	<html lang="en" class="scroll-smooth">
+		@notFoundHead()
+		<body class="min-h-screen bg-paper text-ink antialiased">
+			@siteHeader("page", headerCartLabel)
+			<main>
+				<section class="bg-flag-blue text-white">
+					<div class="mx-auto w-full max-w-7xl px-5 py-20 sm:px-8 lg:py-28">
+						<p class="font-display text-7xl font-bold leading-none tracking-tight text-white/25 sm:text-8xl">404</p>
+						<h1 class="mt-4 font-display text-5xl font-bold leading-none tracking-tight text-white sm:text-6xl">Not found</h1>
+						<p class="mt-5 max-w-2xl text-lg leading-8 text-white/85">This aisle does not exist. Browse the latest Thai gift-shop finds instead.</p>
+						<div class="mt-8 flex flex-wrap gap-3">
+							<a href="/products" class="inline-flex h-12 items-center justify-center bg-flag-red px-6 text-sm font-bold text-white transition hover:bg-flag-red-deep focus-visible:outline-white">Continue shopping</a>
+							<a href="/" class="inline-flex h-12 items-center justify-center border-2 border-white/60 px-6 text-sm font-bold text-white transition hover:bg-white hover:text-flag-blue focus-visible:outline-white">Back to home</a>
+						</div>
+					</div>
+				</section>
+			</main>
+			@siteFooter(headerCartLabel)
+		</body>
+	</html>
+}
