@@ -7,7 +7,9 @@ import (
 	appenv "github.com/anhydrous99/thailandgiftshop/internal/appenv"
 	cartsession "github.com/anhydrous99/thailandgiftshop/internal/cart"
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
+	"github.com/anhydrous99/thailandgiftshop/internal/commerce"
 	appobservability "github.com/anhydrous99/thailandgiftshop/internal/observability"
+	"github.com/anhydrous99/thailandgiftshop/internal/payments"
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsapigatewayv2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsapigatewayv2integrations"
@@ -49,18 +51,34 @@ const (
 	catalogEntityIndexPKName = "gsi4pk"
 	catalogEntityIndexSKName = "gsi4sk"
 
-	staticAssetsKeyPrefix      = "static"
-	productImagesKeyPrefix     = "images"
-	adminCredentialsSecretName = "thailandgiftshop/admin/credentials"
-	adminLambdaLogGroupName    = "/aws/lambda/thailandgiftshop-admin"
-	adminLoginAttemptsPKName   = "client_key"
-	adminLoginAttemptsTTLName  = "expires_at"
+	commerceTableName                 = "thailandgiftshop-commerce"
+	commercePartitionKeyName          = "pk"
+	commerceSortKeyName               = "sk"
+	commerceCustomerOrdersIndexPKName = "gsi1pk"
+	commerceCustomerOrdersIndexSKName = "gsi1sk"
+	commerceOrdersIndexPKName         = "gsi2pk"
+	commerceOrdersIndexSKName         = "gsi2sk"
+	commerceTTLAttributeName          = "expires_at"
+
+	staticAssetsKeyPrefix       = "static"
+	productImagesKeyPrefix      = "images"
+	adminCredentialsSecretName  = "thailandgiftshop/admin/credentials"
+	stripeCredentialsSecretName = "thailandgiftshop/stripe/credentials"
+	adminLambdaLogGroupName     = "/aws/lambda/thailandgiftshop-admin"
+	adminLoginAttemptsPKName    = "client_key"
+	adminLoginAttemptsTTLName   = "expires_at"
 
 	ssrOriginRequestPolicyName = "thailandgiftshop-ssr-origin"
 	ssrCachePolicyName         = "thailandgiftshop-ssr-cache"
 
 	operationsDashboardName  = "ThailandGiftshop-Operations"
 	operationsAlarmTopicName = "thailandgiftshop-operations-alarms"
+
+	// Service dimension values the app emits in EMF; widgets and alarms must
+	// query the same values the emitting packages record.
+	metricServiceSsr      = "ssr"
+	metricServiceCheckout = "checkout"
+	metricServiceCatalog  = "catalog"
 
 	ssrLambdaBuildCommand   = "mkdir -p cdk.out/ssr-lambda && GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -tags lambda.norpc -ldflags \"-s -w\" -o cdk.out/ssr-lambda/bootstrap ../cmd/ssr"
 	adminLambdaBuildCommand = "mkdir -p cdk.out/admin-lambda && GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -tags lambda.norpc -ldflags \"-s -w\" -o cdk.out/admin-lambda/bootstrap ../cmd/admin"
@@ -88,6 +106,7 @@ type siteResources struct {
 
 type observabilityResources struct {
 	catalogTable            awsdynamodb.Table
+	commerceTable           awsdynamodb.Table
 	productImagesBucket     awss3.IBucket
 	adminLoginAttemptsTable awsdynamodb.Table
 	ssrFunction             awslambda.IFunction
@@ -115,13 +134,15 @@ func NewThailandGiftshopStack(scope constructs.Construct, id string, props *Thai
 	awscdk.Tags_Of(stack).Add(jsii.String("ManagedBy"), jsii.String("aws-cdk"), nil)
 
 	catalogTable := addCatalog(stack)
+	commerceTable := addCommerce(stack)
 	productImagesBucket := addProductImagesBucket(stack)
 	adminLoginAttemptsTable := addAdminLoginAttempts(stack)
 	adminOriginHeaderSecret := addAdminOriginHeaderSecret(stack)
-	ssr := addSSR(stack, catalogTable, productImagesBucket, adminLoginAttemptsTable, adminOriginHeaderSecret)
+	ssr := addSSR(stack, catalogTable, commerceTable, productImagesBucket, adminLoginAttemptsTable, adminOriginHeaderSecret)
 	site := addSite(stack, ssr.httpAPI, productImagesBucket, adminOriginHeaderSecret)
 	addObservability(stack, observabilityResources{
 		catalogTable:            catalogTable,
+		commerceTable:           commerceTable,
 		productImagesBucket:     productImagesBucket,
 		adminLoginAttemptsTable: adminLoginAttemptsTable,
 		ssrFunction:             ssr.function,
@@ -214,6 +235,75 @@ func addCatalog(stack awscdk.Stack) awsdynamodb.Table {
 	return catalogTable
 }
 
+// addCommerce provisions the customer/order data home. Customer and order
+// data outlives the stack, so the table is retained (deliberate contrast with
+// the login-attempts table's DESTROY). TTL on expires_at lazily expires
+// session, throttle, and Stripe-event rows.
+func addCommerce(stack awscdk.Stack) awsdynamodb.Table {
+	commerceTable := awsdynamodb.NewTable(stack, jsii.String("CommerceTable"), &awsdynamodb.TableProps{
+		BillingMode: awsdynamodb.BillingMode_PAY_PER_REQUEST,
+		Encryption:  awsdynamodb.TableEncryption_AWS_MANAGED,
+		PartitionKey: &awsdynamodb.Attribute{
+			Name: jsii.String(commercePartitionKeyName),
+			Type: awsdynamodb.AttributeType_STRING,
+		},
+		PointInTimeRecoverySpecification: &awsdynamodb.PointInTimeRecoverySpecification{
+			PointInTimeRecoveryEnabled: jsii.Bool(true),
+		},
+		RemovalPolicy: awscdk.RemovalPolicy_RETAIN,
+		SortKey: &awsdynamodb.Attribute{
+			Name: jsii.String(commerceSortKeyName),
+			Type: awsdynamodb.AttributeType_STRING,
+		},
+		TableName:           jsii.String(commerceTableName),
+		TimeToLiveAttribute: jsii.String(commerceTTLAttributeName),
+	})
+
+	commerceTable.AddGlobalSecondaryIndex(&awsdynamodb.GlobalSecondaryIndexProps{
+		IndexName: jsii.String(commerce.DefaultCustomerOrdersIndexName),
+		PartitionKey: &awsdynamodb.Attribute{
+			Name: jsii.String(commerceCustomerOrdersIndexPKName),
+			Type: awsdynamodb.AttributeType_STRING,
+		},
+		ProjectionType: awsdynamodb.ProjectionType_ALL,
+		SortKey: &awsdynamodb.Attribute{
+			Name: jsii.String(commerceCustomerOrdersIndexSKName),
+			Type: awsdynamodb.AttributeType_STRING,
+		},
+	})
+	commerceTable.AddGlobalSecondaryIndex(&awsdynamodb.GlobalSecondaryIndexProps{
+		IndexName: jsii.String(commerce.DefaultOrdersIndexName),
+		PartitionKey: &awsdynamodb.Attribute{
+			Name: jsii.String(commerceOrdersIndexPKName),
+			Type: awsdynamodb.AttributeType_STRING,
+		},
+		ProjectionType: awsdynamodb.ProjectionType_ALL,
+		SortKey: &awsdynamodb.Attribute{
+			Name: jsii.String(commerceOrdersIndexSKName),
+			Type: awsdynamodb.AttributeType_STRING,
+		},
+	})
+
+	awscdk.NewCfnOutput(stack, jsii.String("CommerceTableName"), &awscdk.CfnOutputProps{
+		Description: jsii.String("DynamoDB table name for customers, carts, addresses, and orders"),
+		Value:       commerceTable.TableName(),
+	})
+	awscdk.NewCfnOutput(stack, jsii.String("CommerceTableArn"), &awscdk.CfnOutputProps{
+		Description: jsii.String("DynamoDB table ARN for customers, carts, addresses, and orders"),
+		Value:       commerceTable.TableArn(),
+	})
+	awscdk.NewCfnOutput(stack, jsii.String("CommerceCustomerOrdersIndexName"), &awscdk.CfnOutputProps{
+		Description: jsii.String("DynamoDB GSI name for a customer's order history"),
+		Value:       jsii.String(commerce.DefaultCustomerOrdersIndexName),
+	})
+	awscdk.NewCfnOutput(stack, jsii.String("CommerceOrdersIndexName"), &awscdk.CfnOutputProps{
+		Description: jsii.String("DynamoDB GSI name for the admin all-orders listing"),
+		Value:       jsii.String(commerce.DefaultOrdersIndexName),
+	})
+
+	return commerceTable
+}
+
 func addProductImagesBucket(stack awscdk.Stack) awss3.Bucket {
 	return awss3.NewBucket(stack, jsii.String("ProductImagesBucket"), &awss3.BucketProps{
 		BlockPublicAccess: awss3.BlockPublicAccess_BLOCK_ALL(),
@@ -252,12 +342,14 @@ func addAdminLoginAttempts(stack awscdk.Stack) awsdynamodb.Table {
 	})
 }
 
-func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, productImagesBucket awss3.IBucket, adminLoginAttemptsTable awsdynamodb.ITable, adminOriginHeaderSecret awssecretsmanager.ISecret) ssrResources {
+func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable awsdynamodb.ITable, productImagesBucket awss3.IBucket, adminLoginAttemptsTable awsdynamodb.ITable, adminOriginHeaderSecret awssecretsmanager.ISecret) ssrResources {
 	lambdaLogGroup := awslogs.NewLogGroup(stack, jsii.String("SsrLambdaLogGroup"), &awslogs.LogGroupProps{
 		LogGroupName: jsii.String("/aws/lambda/thailandgiftshop-ssr"),
 		Retention:    awslogs.RetentionDays_THREE_MONTHS,
 	})
 	cartCookieSecret := addCartCookieSecret(stack)
+	customerSessionSecret := addCustomerSessionSecret(stack)
+	stripeSecret := stripeCredentialsSecret(stack)
 
 	ssrFunction := awslambda.NewFunction(stack, jsii.String("SsrLambda"), &awslambda.FunctionProps{
 		Architecture: awslambda.Architecture_ARM_64(),
@@ -271,15 +363,21 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, productImagesBu
 		}),
 		Description: jsii.String("Server-side HTML renderer for thailandgiftshop.com"),
 		Environment: &map[string]*string{
-			catalog.EnvTableName:                  catalogTable.TableName(),
-			catalog.EnvSlugIndexName:              jsii.String(catalog.DefaultSlugIndexName),
-			catalog.EnvPublicIndexName:            jsii.String(catalog.DefaultPublicIndexName),
-			catalog.EnvRecentIndexName:            jsii.String(catalog.DefaultRecentIndexName),
-			catalog.EnvEntityIndexName:            jsii.String(catalog.DefaultEntityIndexName),
-			catalog.EnvProductImagePlaceholderURL: jsii.String(catalog.DefaultProductImagePlaceholderURL),
-			appenv.EnvAppEnvironment:              jsii.String(appenv.EnvironmentProduction),
-			cartsession.EnvCookieSecret:           cartCookieSecretReference(cartCookieSecret),
-			adminauth.EnvAdminOriginHeaderSecret:  adminOriginHeaderSecretReference(adminOriginHeaderSecret),
+			catalog.EnvTableName:                    catalogTable.TableName(),
+			catalog.EnvSlugIndexName:                jsii.String(catalog.DefaultSlugIndexName),
+			catalog.EnvPublicIndexName:              jsii.String(catalog.DefaultPublicIndexName),
+			catalog.EnvRecentIndexName:              jsii.String(catalog.DefaultRecentIndexName),
+			catalog.EnvEntityIndexName:              jsii.String(catalog.DefaultEntityIndexName),
+			catalog.EnvProductImagePlaceholderURL:   jsii.String(catalog.DefaultProductImagePlaceholderURL),
+			appenv.EnvAppEnvironment:                jsii.String(appenv.EnvironmentProduction),
+			cartsession.EnvCookieSecret:             cartCookieSecretReference(cartCookieSecret),
+			adminauth.EnvAdminOriginHeaderSecret:    adminOriginHeaderSecretReference(adminOriginHeaderSecret),
+			commerce.EnvTableName:                   commerceTable.TableName(),
+			commerce.EnvCustomerOrdersIndexName:     jsii.String(commerce.DefaultCustomerOrdersIndexName),
+			commerce.EnvOrdersIndexName:             jsii.String(commerce.DefaultOrdersIndexName),
+			commerce.EnvSessionSecret:               customerSessionSecretReference(customerSessionSecret),
+			payments.EnvStripeCredentialsSecretJSON: stripeCredentialsSecretReference(stripeSecret),
+			payments.EnvPublicBaseURL:               jsii.String(payments.DefaultPublicBaseURL),
 		},
 		FunctionName: jsii.String("thailandgiftshop-ssr"),
 		Handler:      jsii.String("bootstrap"),
@@ -289,7 +387,27 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, productImagesBu
 		Timeout:      awscdk.Duration_Seconds(jsii.Number(10)),
 		Tracing:      awslambda.Tracing_ACTIVE,
 	})
-	catalogTable.GrantReadData(ssrFunction)
+	// Checkout reserves and releases stock through the catalog store's
+	// versioned UpdateProduct transaction, so the public SSR Lambda needs
+	// write access to the catalog table in addition to its reads.
+	catalogTable.GrantReadWriteData(ssrFunction)
+	ssrFunction.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+		Actions: &[]*string{
+			jsii.String("dynamodb:TransactWriteItems"),
+		},
+		Resources: &[]*string{
+			catalogTable.TableArn(),
+		},
+	}))
+	commerceTable.GrantReadWriteData(ssrFunction)
+	ssrFunction.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+		Actions: &[]*string{
+			jsii.String("dynamodb:TransactWriteItems"),
+		},
+		Resources: &[]*string{
+			commerceTable.TableArn(),
+		},
+	}))
 
 	httpAPI := awsapigatewayv2.NewHttpApi(stack, jsii.String("SsrHttpApi"), &awsapigatewayv2.HttpApiProps{
 		ApiName:            jsii.String("thailandgiftshop-ssr"),
@@ -305,7 +423,7 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, productImagesBu
 			Timeout:              awscdk.Duration_Seconds(jsii.Number(10)),
 		}),
 	})
-	admin := addAdmin(stack, catalogTable, productImagesBucket, adminLoginAttemptsTable, adminOriginHeaderSecret, httpAPI)
+	admin := addAdmin(stack, catalogTable, commerceTable, productImagesBucket, adminLoginAttemptsTable, adminOriginHeaderSecret, stripeSecret, httpAPI)
 
 	accessLogGroup := awslogs.NewLogGroup(stack, jsii.String("SsrHttpApiAccessLogGroup"), &awslogs.LogGroupProps{
 		LogGroupName: jsii.String("/aws/apigateway/thailandgiftshop-ssr"),
@@ -338,7 +456,7 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, productImagesBu
 	return ssrResources{httpAPI: httpAPI, function: ssrFunction, admin: admin}
 }
 
-func addAdmin(stack awscdk.Stack, catalogTable awsdynamodb.ITable, productImagesBucket awss3.IBucket, adminLoginAttemptsTable awsdynamodb.ITable, adminOriginHeaderSecret awssecretsmanager.ISecret, httpAPI awsapigatewayv2.HttpApi) adminResources {
+func addAdmin(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable awsdynamodb.ITable, productImagesBucket awss3.IBucket, adminLoginAttemptsTable awsdynamodb.ITable, adminOriginHeaderSecret awssecretsmanager.ISecret, stripeSecret awssecretsmanager.ISecret, httpAPI awsapigatewayv2.HttpApi) adminResources {
 	lambdaLogGroup := awslogs.LogGroup_FromLogGroupName(stack, jsii.String("AdminLambdaLogGroup"), jsii.String(adminLambdaLogGroupName))
 	awslogs.NewLogRetention(stack, jsii.String("AdminLambdaLogRetention"), &awslogs.LogRetentionProps{
 		LogGroupName:  jsii.String(adminLambdaLogGroupName),
@@ -370,6 +488,13 @@ func addAdmin(stack awscdk.Stack, catalogTable awsdynamodb.ITable, productImages
 			adminauth.EnvAdminCredentialsSecretJSON:  adminCredentialsSecretReference(adminCredentialsSecret(stack)),
 			adminauth.EnvAdminLoginAttemptsTableName: adminLoginAttemptsTable.TableName(),
 			adminauth.EnvAdminOriginHeaderSecret:     adminOriginHeaderSecretReference(adminOriginHeaderSecret),
+			commerce.EnvTableName:                    commerceTable.TableName(),
+			commerce.EnvCustomerOrdersIndexName:      jsii.String(commerce.DefaultCustomerOrdersIndexName),
+			commerce.EnvOrdersIndexName:              jsii.String(commerce.DefaultOrdersIndexName),
+			// Admin cancels of pending orders verify (and expire) the order's
+			// Stripe checkout session before releasing stock; without the
+			// credentials the handler skips that session-expiry guard.
+			payments.EnvStripeCredentialsSecretJSON: stripeCredentialsSecretReference(stripeSecret),
 		},
 		FunctionName: jsii.String("thailandgiftshop-admin"),
 		Handler:      jsii.String("bootstrap"),
@@ -386,6 +511,15 @@ func addAdmin(stack awscdk.Stack, catalogTable awsdynamodb.ITable, productImages
 		},
 		Resources: &[]*string{
 			catalogTable.TableArn(),
+		},
+	}))
+	commerceTable.GrantReadWriteData(adminFunction)
+	adminFunction.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+		Actions: &[]*string{
+			jsii.String("dynamodb:TransactWriteItems"),
+		},
+		Resources: &[]*string{
+			commerceTable.TableArn(),
 		},
 	}))
 	productImagesBucket.GrantRead(adminFunction, jsii.String(productImagesKeyPrefix+"/*"))
@@ -445,6 +579,7 @@ func adminRateLimitWebACL(stack awscdk.Stack, id string, name string, scope stri
 		Rules: []interface{}{
 			adminRateLimitRule("AdminLoginPostRateLimit", 0, 100, loginPostStatement(), metricName+"LoginPost"),
 			adminRateLimitRule("AdminPathRateLimit", 1, 500, adminPathStatement(), metricName+"Path"),
+			adminRateLimitRule("CustomerAuthPostRateLimit", 2, 100, customerAuthPostStatement(), metricName+"CustomerAuthPost"),
 		},
 	})
 }
@@ -476,7 +611,29 @@ func loginPostStatement() *awswafv2.CfnWebACL_StatementProperty {
 	return &awswafv2.CfnWebACL_StatementProperty{
 		AndStatement: &awswafv2.CfnWebACL_AndStatementProperty{
 			Statements: []interface{}{
-				byteMatchStatement(&awswafv2.CfnWebACL_FieldToMatchProperty{UriPath: map[string]interface{}{}}, "/admin/login", "EXACTLY"),
+				urlDecodedPathStatement("/admin/login", "EXACTLY"),
+				byteMatchStatement(&awswafv2.CfnWebACL_FieldToMatchProperty{Method: map[string]interface{}{}}, "POST", "EXACTLY"),
+			},
+		},
+	}
+}
+
+// customerAuthPostStatement scopes the customer sign-in/sign-up rate rule to
+// POSTs against the two pre-session auth endpoints. The Stripe webhook path is
+// deliberately not rate-limited here: Stripe burst-retries, and the origin
+// secret plus webhook signature already gate it.
+func customerAuthPostStatement() *awswafv2.CfnWebACL_StatementProperty {
+	return &awswafv2.CfnWebACL_StatementProperty{
+		AndStatement: &awswafv2.CfnWebACL_AndStatementProperty{
+			Statements: []interface{}{
+				&awswafv2.CfnWebACL_StatementProperty{
+					OrStatement: &awswafv2.CfnWebACL_OrStatementProperty{
+						Statements: []interface{}{
+							urlDecodedPathStatement("/account/sign-in", "EXACTLY"),
+							urlDecodedPathStatement("/account/sign-up", "EXACTLY"),
+						},
+					},
+				},
 				byteMatchStatement(&awswafv2.CfnWebACL_FieldToMatchProperty{Method: map[string]interface{}{}}, "POST", "EXACTLY"),
 			},
 		},
@@ -495,17 +652,33 @@ func adminPathStatement() *awswafv2.CfnWebACL_StatementProperty {
 }
 
 func byteMatchStatement(fieldToMatch interface{}, search string, positionalConstraint string) *awswafv2.CfnWebACL_StatementProperty {
+	return transformedByteMatchStatement(fieldToMatch, search, positionalConstraint, []string{"NONE"})
+}
+
+// urlDecodedPathStatement matches a URI path with URL_DECODE applied before
+// the literal comparison, so percent-encoded spellings of a rate-limited path
+// (for example /account/sign%2Din) still count toward the edge rate rules.
+// WAF applies TextTransformations in priority order and inspects the final
+// value, so decoding leaves canonical paths byte-identical to a NONE match.
+func urlDecodedPathStatement(search string, positionalConstraint string) *awswafv2.CfnWebACL_StatementProperty {
+	return transformedByteMatchStatement(&awswafv2.CfnWebACL_FieldToMatchProperty{UriPath: map[string]interface{}{}}, search, positionalConstraint, []string{"URL_DECODE", "NONE"})
+}
+
+func transformedByteMatchStatement(fieldToMatch interface{}, search string, positionalConstraint string, transformations []string) *awswafv2.CfnWebACL_StatementProperty {
+	textTransformations := make([]interface{}, 0, len(transformations))
+	for priority, transformation := range transformations {
+		textTransformations = append(textTransformations, &awswafv2.CfnWebACL_TextTransformationProperty{
+			Priority: jsii.Number(priority),
+			Type:     jsii.String(transformation),
+		})
+	}
+
 	return &awswafv2.CfnWebACL_StatementProperty{
 		ByteMatchStatement: &awswafv2.CfnWebACL_ByteMatchStatementProperty{
 			FieldToMatch:         fieldToMatch,
 			SearchString:         jsii.String(search),
 			PositionalConstraint: jsii.String(positionalConstraint),
-			TextTransformations: []interface{}{
-				&awswafv2.CfnWebACL_TextTransformationProperty{
-					Priority: jsii.Number(0),
-					Type:     jsii.String("NONE"),
-				},
-			},
+			TextTransformations:  textTransformations,
 		},
 	}
 }
@@ -540,6 +713,7 @@ func ssrOriginRequestPolicy(stack awscdk.Stack) awscloudfront.OriginRequestPolic
 			jsii.String("Content-Type"),
 			jsii.String("HX-Request"),
 			jsii.String("X-CSRF-Token"),
+			jsii.String("Stripe-Signature"),
 		),
 	})
 }
@@ -547,12 +721,14 @@ func ssrOriginRequestPolicy(stack awscdk.Stack) awscloudfront.OriginRequestPolic
 // ssrCachePolicy caches only responses that opt in with an explicit cacheable
 // Cache-Control header (DefaultTtl is zero), keyed on the cart cookie so a
 // signed-in cart's "Cart (N)" header never serves to another visitor. Cart,
-// checkout, and admin responses send no-store and stay uncached.
+// checkout, account, and admin responses send no-store and stay uncached; the
+// customer session cookie joins the cache key as defense-in-depth so an authed
+// response could never serve to another visitor even if a page mis-opted in.
 func ssrCachePolicy(stack awscdk.Stack) awscloudfront.CachePolicy {
 	return awscloudfront.NewCachePolicy(stack, jsii.String("SsrCachePolicy"), &awscloudfront.CachePolicyProps{
 		CachePolicyName:            jsii.String(ssrCachePolicyName),
 		Comment:                    jsii.String("Cache opt-in SSR responses for thailandgiftshop.com keyed on the cart cookie"),
-		CookieBehavior:             awscloudfront.CacheCookieBehavior_AllowList(jsii.String(cartsession.CookieName)),
+		CookieBehavior:             awscloudfront.CacheCookieBehavior_AllowList(jsii.String(cartsession.CookieName), jsii.String(commerce.SessionCookieName)),
 		QueryStringBehavior:        awscloudfront.CacheQueryStringBehavior_All(),
 		HeaderBehavior:             awscloudfront.CacheHeaderBehavior_None(),
 		MinTtl:                     awscdk.Duration_Seconds(jsii.Number(0)),
@@ -581,6 +757,37 @@ func addCartCookieSecret(stack awscdk.Stack) awssecretsmanager.Secret {
 }
 
 func cartCookieSecretReference(secret awssecretsmanager.ISecret) *string {
+	return awscdk.NewCfnDynamicReference(
+		awscdk.CfnDynamicReferenceService_SECRETS_MANAGER,
+		secret.CfnDynamicReferenceKey(nil),
+	).ToString()
+}
+
+func addCustomerSessionSecret(stack awscdk.Stack) awssecretsmanager.Secret {
+	return awssecretsmanager.NewSecret(stack, jsii.String("CustomerSessionSecret"), &awssecretsmanager.SecretProps{
+		Description: jsii.String("Signing secret for thailandgiftshop.com customer session cookies"),
+		GenerateSecretString: &awssecretsmanager.SecretStringGenerator{
+			ExcludePunctuation: jsii.Bool(true),
+			PasswordLength:     jsii.Number(64),
+		},
+	})
+}
+
+func customerSessionSecretReference(secret awssecretsmanager.ISecret) *string {
+	return awscdk.NewCfnDynamicReference(
+		awscdk.CfnDynamicReferenceService_SECRETS_MANAGER,
+		secret.CfnDynamicReferenceKey(nil),
+	).ToString()
+}
+
+// stripeCredentialsSecret references the manually pre-created Stripe secret
+// (JSON {"secret_key","webhook_signing_secret"}) in us-east-1 — the
+// adminCredentialsSecret precedent. It must exist before the first deploy.
+func stripeCredentialsSecret(stack awscdk.Stack) awssecretsmanager.ISecret {
+	return awssecretsmanager.Secret_FromSecretNameV2(stack, jsii.String("StripeCredentialsSecret"), jsii.String(stripeCredentialsSecretName))
+}
+
+func stripeCredentialsSecretReference(secret awssecretsmanager.ISecret) *string {
 	return awscdk.NewCfnDynamicReference(
 		awscdk.CfnDynamicReferenceService_SECRETS_MANAGER,
 		secret.CfnDynamicReferenceKey(nil),
@@ -809,15 +1016,29 @@ func addObservability(stack awscdk.Stack, resources observabilityResources) {
 		{idSuffix: "update", dimension: "UpdateItem"},
 		{idSuffix: "delete", dimension: "DeleteItem"},
 	}
+	commerceDynamoOperations := []dynamoMetricOperation{
+		{idSuffix: "get", dimension: "GetItem"},
+		{idSuffix: "query", dimension: "Query"},
+		{idSuffix: "put", dimension: "PutItem"},
+		{idSuffix: "delete", dimension: "DeleteItem"},
+		{idSuffix: "update", dimension: "UpdateItem"},
+		{idSuffix: "batchwrite", dimension: "BatchWriteItem"},
+		{idSuffix: "transactwrite", dimension: "TransactWriteItems"},
+	}
 	catalogReadCapacity := resources.catalogTable.MetricConsumedReadCapacityUnits(sumMetric("Catalog read capacity", period5m, awscloudwatch.Unit_COUNT))
 	catalogWriteCapacity := resources.catalogTable.MetricConsumedWriteCapacityUnits(sumMetric("Catalog write capacity", period5m, awscloudwatch.Unit_COUNT))
 	catalogThrottles := dynamoOperationSumMetric(resources.catalogTable, "ThrottledRequests", "Catalog throttles", period5m, awscloudwatch.Unit_COUNT, "ct", catalogDynamoOperations)
 	catalogSystemErrors := dynamoOperationSumMetric(resources.catalogTable, "SystemErrors", "Catalog system errors", period5m, awscloudwatch.Unit_COUNT, "cs", catalogDynamoOperations)
 	adminLoginThrottleTableThrottles := dynamoOperationSumMetric(resources.adminLoginAttemptsTable, "ThrottledRequests", "Admin login throttle table throttles", period5m, awscloudwatch.Unit_COUNT, "alt", adminLoginThrottleDynamoOperations)
+	commerceReadCapacity := resources.commerceTable.MetricConsumedReadCapacityUnits(sumMetric("Commerce read capacity", period5m, awscloudwatch.Unit_COUNT))
+	commerceWriteCapacity := resources.commerceTable.MetricConsumedWriteCapacityUnits(sumMetric("Commerce write capacity", period5m, awscloudwatch.Unit_COUNT))
+	commerceThrottles := dynamoOperationSumMetric(resources.commerceTable, "ThrottledRequests", "Commerce throttles", period5m, awscloudwatch.Unit_COUNT, "cmt", commerceDynamoOperations)
+	commerceSystemErrors := dynamoOperationSumMetric(resources.commerceTable, "SystemErrors", "Commerce system errors", period5m, awscloudwatch.Unit_COUNT, "cme", commerceDynamoOperations)
 
 	wafAllowed := wafMetric("AllowedRequests", "ALL", "WAF allowed requests", period5m)
 	wafBlocked := wafMetric("BlockedRequests", "ALL", "WAF blocked requests", period5m)
 	wafLoginBlocked := wafMetric("BlockedRequests", "ThailandGiftshopAdminCloudFrontLoginPost", "WAF login blocks", period5m)
+	wafCustomerAuthBlocked := wafMetric("BlockedRequests", "ThailandGiftshopAdminCloudFrontCustomerAuthPost", "WAF customer auth blocks", period5m)
 
 	adminLoginSuccess := appMetric(appobservability.MetricAdminLoginAttempt, "Admin login success", period5m, map[string]*string{"Service": jsii.String("admin"), "Operation": jsii.String("login"), "Outcome": jsii.String("success")})
 	adminLoginInvalid := appMetric(appobservability.MetricAdminLoginAttempt, "Admin login invalid", period5m, map[string]*string{"Service": jsii.String("admin"), "Operation": jsii.String("login"), "Outcome": jsii.String("invalid")})
@@ -827,6 +1048,36 @@ func addObservability(stack awscdk.Stack, resources observabilityResources) {
 	catalogWriteErrors := appMetric(appobservability.MetricCatalogWrite, "Catalog write errors", period5m, map[string]*string{"Service": jsii.String("admin"), "Outcome": jsii.String("error")})
 	imageUploadSuccess := appMetric(appobservability.MetricProductImageUpload, "Image upload success", period5m, map[string]*string{"Service": jsii.String("admin"), "Outcome": jsii.String("success")})
 	imageUploadErrors := appMetric(appobservability.MetricProductImageUpload, "Image upload errors", period5m, map[string]*string{"Service": jsii.String("admin"), "Outcome": jsii.String("error")})
+
+	// Customer auth, checkout, webhook, and stock metrics query the EMF
+	// {Service, Outcome} rollup dimension set. Service values are part of the
+	// emitting packages' contract: customer auth and webhook handling record
+	// Service=ssr; checkout.Service and its stock adjustments record
+	// Service=checkout.
+	customerAuthSuccess := appMetric(appobservability.MetricCustomerAuth, "Customer auth success", period5m, map[string]*string{"Service": jsii.String(metricServiceSsr), "Outcome": jsii.String("success")})
+	customerAuthInvalid := appMetric(appobservability.MetricCustomerAuth, "Customer auth invalid", period5m, map[string]*string{"Service": jsii.String(metricServiceSsr), "Outcome": jsii.String("invalid")})
+	customerAuthThrottled := appMetric(appobservability.MetricCustomerAuth, "Customer auth throttled", period5m, map[string]*string{"Service": jsii.String(metricServiceSsr), "Outcome": jsii.String("throttled")})
+	customerAuthError := appMetric(appobservability.MetricCustomerAuth, "Customer auth errors", period5m, map[string]*string{"Service": jsii.String(metricServiceSsr), "Outcome": jsii.String("error")})
+	checkoutPaymentSuccess := appMetric(appobservability.MetricCheckoutPayment, "Checkout payment success", period5m, map[string]*string{"Service": jsii.String(metricServiceCheckout), "Outcome": jsii.String("success")})
+	checkoutPaymentInsufficientStock := appMetric(appobservability.MetricCheckoutPayment, "Checkout insufficient stock", period5m, map[string]*string{"Service": jsii.String(metricServiceCheckout), "Outcome": jsii.String("insufficient_stock")})
+	checkoutPaymentProviderError := appMetric(appobservability.MetricCheckoutPayment, "Checkout provider errors", period5m, map[string]*string{"Service": jsii.String(metricServiceCheckout), "Outcome": jsii.String("provider_error")})
+	checkoutPaymentError := appMetric(appobservability.MetricCheckoutPayment, "Checkout errors", period5m, map[string]*string{"Service": jsii.String(metricServiceCheckout), "Outcome": jsii.String("error")})
+	checkoutPaymentErrors := appOutcomeSumMetric(appobservability.MetricCheckoutPayment, "Checkout payment errors", period5m, metricServiceCheckout, "cp", []string{"provider_error", "error"})
+	stripeWebhookProcessed := appMetric(appobservability.MetricStripeWebhook, "Stripe webhook processed", period5m, map[string]*string{"Service": jsii.String(metricServiceSsr), "Outcome": jsii.String("processed")})
+	stripeWebhookIgnored := appMetric(appobservability.MetricStripeWebhook, "Stripe webhook ignored", period5m, map[string]*string{"Service": jsii.String(metricServiceSsr), "Outcome": jsii.String("ignored")})
+	stripeWebhookErrors := appOutcomeSumMetric(appobservability.MetricStripeWebhook, "Stripe webhook errors", period5m, metricServiceSsr, "sw", []string{"invalid_signature", "amount_mismatch", "paid_after_terminal", "error"})
+	// StockAdjust is emitted by internal/catalog's AdjustStock (Service=catalog)
+	// regardless of which Lambda triggered the adjustment.
+	stockAdjustReserve := appMetric(appobservability.MetricStockAdjust, "Stock reservations", period5m, map[string]*string{"Service": jsii.String(metricServiceCatalog), "Outcome": jsii.String("reserve")})
+	stockAdjustRelease := appMetric(appobservability.MetricStockAdjust, "Stock releases", period5m, map[string]*string{"Service": jsii.String(metricServiceCatalog), "Outcome": jsii.String("release")})
+	stockAdjustConflict := appMetric(appobservability.MetricStockAdjust, "Stock adjust conflicts", period5m, map[string]*string{"Service": jsii.String(metricServiceCatalog), "Outcome": jsii.String("conflict")})
+	stockAdjustRollbackErrors := appMetric(appobservability.MetricStockAdjust, "Stock adjust rollback errors", period5m, map[string]*string{"Service": jsii.String(metricServiceCatalog), "Outcome": jsii.String("rollback_error")})
+	// OrderTransition and CommerceOperation carry no Outcome dimension, so
+	// they have no {Service, Outcome} rollup; SEARCH expressions graph every
+	// emitted dimension combination instead.
+	orderTransitions := appSearchMetric(appobservability.MetricOrderTransition, "Order transitions", period5m, []string{"Actor", "From", "Service", "To"}, "Sum")
+	commerceOperations := appSearchMetric(appobservability.MetricCommerceOperation, "Commerce store operations", period5m, []string{"Method", "Operation", "Service"}, "Sum")
+	commerceOperationLatency := appSearchMetric(appobservability.MetricCommerceOperationMs, "Commerce store latency", period5m, []string{"Method", "Operation", "Service"}, "Average")
 
 	productImagesBucketSize := s3StorageMetric(resources.productImagesBucket, "BucketSizeBytes", "Product image bytes", period1d, awscloudwatch.Unit_BYTES, "StandardStorage")
 	productImagesObjectCount := s3StorageMetric(resources.productImagesBucket, "NumberOfObjects", "Product image objects", period1d, awscloudwatch.Unit_COUNT, "AllStorageTypes")
@@ -841,13 +1092,19 @@ func addObservability(stack awscdk.Stack, resources observabilityResources) {
 		addAlarm(stack, "AdminLambdaThrottlesAlarm", "ThailandGiftshop-AdminLambda-Throttles", adminThrottles, 0, 1, "Admin Lambda is throttling."),
 		addAlarm(stack, "CatalogThrottlesAlarm", "ThailandGiftshop-CatalogTable-Throttles", catalogThrottles, 0, 1, "Catalog DynamoDB table is throttling."),
 		addAlarm(stack, "CatalogSystemErrorsAlarm", "ThailandGiftshop-CatalogTable-SystemErrors", catalogSystemErrors, 0, 1, "Catalog DynamoDB table has system errors."),
-		addAlarm(stack, "WafAdminBlocksAlarm", "ThailandGiftshop-WAF-AdminBlocks", wafBlocked, 10, 1, "Admin WAF blocks exceeded the normal operating threshold."),
+		// The alarm ID and name predate the customer-auth rate rule; both are
+		// kept stable so the alarm resource is not replaced on deploy. The
+		// Rule=ALL metric covers every edge rule in the web ACL.
+		addAlarm(stack, "WafAdminBlocksAlarm", "ThailandGiftshop-WAF-AdminBlocks", wafBlocked, 10, 1, "WAF blocked requests across all edge rules (admin login, admin path, and customer auth) exceeded the normal operating threshold."),
 		addCriticalAlarm(stack, operationsAlarmTopic, "AdminOriginRejectedAlarm", "ThailandGiftshop-Admin-OriginRejected", adminOriginRejected, 0, 1, "Admin origin header rejections were observed."),
 		addAlarm(stack, "AdminLoginInvalidAlarm", "ThailandGiftshop-Admin-InvalidLogins", adminLoginInvalid, 10, 1, "Admin invalid login attempts exceeded the normal operating threshold."),
 		addAlarm(stack, "AdminLoginThrottledAlarm", "ThailandGiftshop-Admin-ThrottledLogins", adminLoginThrottled, 0, 1, "Admin login throttling occurred."),
 		addCriticalAlarm(stack, operationsAlarmTopic, "CatalogWriteErrorsAlarm", "ThailandGiftshop-CatalogWrite-Errors", catalogWriteErrors, 0, 1, "Admin catalog write errors occurred."),
 		addCriticalAlarm(stack, operationsAlarmTopic, "ImageUploadErrorsAlarm", "ThailandGiftshop-ProductImageUpload-Errors", imageUploadErrors, 0, 1, "Product image upload errors occurred."),
 		addAlarm(stack, "AdminLoginThrottleTableThrottlesAlarm", "ThailandGiftshop-AdminLoginThrottleTable-Throttles", adminLoginThrottleTableThrottles, 0, 1, "Admin login throttle DynamoDB table is throttling."),
+		addCriticalAlarm(stack, operationsAlarmTopic, "StripeWebhookErrorsAlarm", "ThailandGiftshop-StripeWebhook-Errors", stripeWebhookErrors, 0, 1, "Stripe webhook signature failures, amount mismatches, payments captured for terminal orders (manual-refund runbook), or processing errors occurred."),
+		addCriticalAlarm(stack, operationsAlarmTopic, "CheckoutPaymentErrorsAlarm", "ThailandGiftshop-CheckoutPayment-Errors", checkoutPaymentErrors, 0, 1, "Checkout payment provider or processing errors occurred."),
+		addCriticalAlarm(stack, operationsAlarmTopic, "StockAdjustRollbackErrorsAlarm", "ThailandGiftshop-StockAdjust-RollbackErrors", stockAdjustRollbackErrors, 0, 1, "A stock reservation rollback failed; product stock may need manual correction."),
 	}
 
 	dashboard := awscloudwatch.NewDashboard(stack, jsii.String("OperationsDashboard"), &awscloudwatch.DashboardProps{
@@ -890,7 +1147,7 @@ func addObservability(stack awscdk.Stack, resources observabilityResources) {
 		awscloudwatch.NewGraphWidget(&awscloudwatch.GraphWidgetProps{
 			Title: jsii.String("Admin and WAF security"),
 			Width: jsii.Number(12),
-			Left:  cwMetrics(wafAllowed, wafBlocked, wafLoginBlocked),
+			Left:  cwMetrics(wafAllowed, wafBlocked, wafLoginBlocked, wafCustomerAuthBlocked),
 			Right: cwMetrics(adminLoginSuccess, adminLoginInvalid, adminLoginThrottled, adminOriginRejected),
 		}),
 		awscloudwatch.NewGraphWidget(&awscloudwatch.GraphWidgetProps{
@@ -898,6 +1155,34 @@ func addObservability(stack awscdk.Stack, resources observabilityResources) {
 			Width: jsii.Number(12),
 			Left:  cwMetrics(catalogWriteSuccess, catalogWriteErrors, catalogReadCapacity, catalogWriteCapacity),
 			Right: cwMetrics(catalogThrottles, catalogSystemErrors, adminLoginThrottleTableThrottles),
+		}),
+	)
+	dashboard.AddWidgets(
+		awscloudwatch.NewGraphWidget(&awscloudwatch.GraphWidgetProps{
+			Title: jsii.String("Customer accounts and checkout"),
+			Width: jsii.Number(12),
+			Left:  cwMetrics(customerAuthSuccess, customerAuthInvalid, customerAuthThrottled, customerAuthError),
+			Right: cwMetrics(checkoutPaymentSuccess, checkoutPaymentInsufficientStock, checkoutPaymentProviderError, checkoutPaymentError),
+		}),
+		awscloudwatch.NewGraphWidget(&awscloudwatch.GraphWidgetProps{
+			Title: jsii.String("Stripe webhooks and stock adjustments"),
+			Width: jsii.Number(12),
+			Left:  cwMetrics(stripeWebhookProcessed, stripeWebhookIgnored, stripeWebhookErrors),
+			Right: cwMetrics(stockAdjustReserve, stockAdjustRelease, stockAdjustConflict, stockAdjustRollbackErrors),
+		}),
+	)
+	dashboard.AddWidgets(
+		awscloudwatch.NewGraphWidget(&awscloudwatch.GraphWidgetProps{
+			Title: jsii.String("Commerce table and order activity"),
+			Width: jsii.Number(12),
+			Left:  cwMetrics(commerceReadCapacity, commerceWriteCapacity, commerceThrottles, commerceSystemErrors),
+			Right: cwMetrics(orderTransitions),
+		}),
+		awscloudwatch.NewGraphWidget(&awscloudwatch.GraphWidgetProps{
+			Title: jsii.String("Commerce store operations"),
+			Width: jsii.Number(12),
+			Left:  cwMetrics(commerceOperations),
+			Right: cwMetrics(commerceOperationLatency),
 		}),
 	)
 	dashboard.AddWidgets(
@@ -993,6 +1278,48 @@ func appMetric(metricName string, label string, period awscdk.Duration, dimensio
 	})
 }
 
+// appOutcomeSumMetric sums one app metric across several Outcome dimension
+// values for a single Service — the alarmable equivalent of graphing each
+// outcome separately (CloudWatch metrics cannot OR dimension values).
+func appOutcomeSumMetric(metricName string, label string, period awscdk.Duration, service string, idPrefix string, outcomes []string) awscloudwatch.MathExpression {
+	usingMetrics := make(map[string]awscloudwatch.IMetric, len(outcomes))
+	expression := ""
+	for index, outcome := range outcomes {
+		id := idPrefix + outcome
+		if index > 0 {
+			expression += "+"
+		}
+		expression += id
+		usingMetrics[id] = appMetric(metricName, metricName+" "+outcome, period, map[string]*string{
+			"Service": jsii.String(service),
+			"Outcome": jsii.String(outcome),
+		})
+	}
+
+	return awscloudwatch.NewMathExpression(&awscloudwatch.MathExpressionProps{
+		Expression:   jsii.String(expression),
+		Label:        jsii.String(label),
+		Period:       period,
+		UsingMetrics: &usingMetrics,
+	})
+}
+
+// appSearchMetric graphs every emitted dimension combination of an app metric
+// whose full EMF dimension set carries no {Service, Outcome} rollup. SEARCH
+// expressions are dashboard-only — they cannot back alarms.
+func appSearchMetric(metricName string, label string, period awscdk.Duration, dimensionNames []string, statistic string) awscloudwatch.MathExpression {
+	schema := appobservability.Namespace
+	for _, dimensionName := range dimensionNames {
+		schema += "," + dimensionName
+	}
+
+	return awscloudwatch.NewMathExpression(&awscloudwatch.MathExpressionProps{
+		Expression: jsii.String(`SEARCH('{` + schema + `} MetricName="` + metricName + `"', '` + statistic + `', 300)`),
+		Label:      jsii.String(label),
+		Period:     period,
+	})
+}
+
 func wafMetric(metricName string, rule string, label string, period awscdk.Duration) awscloudwatch.Metric {
 	return awscloudwatch.NewMetric(&awscloudwatch.MetricProps{
 		Namespace:  jsii.String("AWS/WAFV2"),
@@ -1078,7 +1405,7 @@ func siteSecurityHeaders(stack awscdk.Stack) awscloudfront.ResponseHeadersPolicy
 		Comment: jsii.String("Security headers for thailandgiftshop.com"),
 		SecurityHeadersBehavior: &awscloudfront.ResponseSecurityHeadersBehavior{
 			ContentSecurityPolicy: &awscloudfront.ResponseHeadersContentSecurityPolicy{
-				ContentSecurityPolicy: jsii.String("default-src 'self'; base-uri 'self'; connect-src 'self' https://*.s3.amazonaws.com https://*.s3.us-east-1.amazonaws.com; frame-ancestors 'none'; form-action 'self' https://*.s3.amazonaws.com https://*.s3.us-east-1.amazonaws.com; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self'; manifest-src 'self'"),
+				ContentSecurityPolicy: jsii.String("default-src 'self'; base-uri 'self'; connect-src 'self' https://*.s3.amazonaws.com https://*.s3.us-east-1.amazonaws.com; frame-ancestors 'none'; form-action 'self' https://*.s3.amazonaws.com https://*.s3.us-east-1.amazonaws.com https://checkout.stripe.com; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self'; manifest-src 'self'"),
 				Override:              jsii.Bool(true),
 			},
 			ContentTypeOptions: &awscloudfront.ResponseHeadersContentTypeOptions{

@@ -1,0 +1,161 @@
+package admin
+
+import "strconv"
+
+templ adminOrderDetailPage(vm adminOrderDetailViewModel) {
+	<!DOCTYPE html>
+	<html lang="en" class="scroll-smooth">
+		@adminHead("Order " + vm.Order.ID + " | Thailand Gift Shop Admin")
+		<body class="min-h-screen bg-paper text-ink antialiased">
+			<div data-testid="admin-shell" class="min-h-screen">
+				@adminOrdersHeader(vm.CSRFValue)
+				<main id="admin-main" class="mx-auto w-full max-w-7xl px-5 py-10 sm:px-8 lg:py-14">
+					<a href="/admin/orders" class="text-sm font-bold text-flag-red transition hover:text-flag-red-deep hover:underline hover:underline-offset-4">Back to orders</a>
+					if vm.Flash != "" {
+						<p data-testid="admin-flash" role="alert" class="mt-6 border-l-4 border-flag-red bg-flag-white px-5 py-4 text-sm font-semibold text-flag-blue">{ vm.Flash }</p>
+					}
+					if vm.RefundNotice {
+						<p data-testid="admin-order-refund-notice" role="alert" class="mt-4 border-l-4 border-gold bg-flag-white px-5 py-4 text-sm font-semibold text-flag-blue">This order was already paid. Refund the payment manually in the Stripe dashboard; the payment intent ID on this page locates it.</p>
+					}
+					if vm.StockWarning {
+						<p data-testid="admin-order-stock-warning" role="alert" class="mt-4 border-l-4 border-flag-red bg-flag-red/10 px-5 py-4 text-sm font-semibold text-flag-red">Stock release failed for this cancellation. Adjust the affected product stock manually.</p>
+					}
+					if len(vm.Errors) > 0 {
+						<div data-testid="admin-order-errors" role="alert" class="mt-6 border-l-4 border-flag-red bg-flag-red/10 p-4 text-sm font-semibold leading-6 text-flag-red">
+							<p>Fix these order actions:</p>
+							<ul class="mt-2 list-disc pl-5">
+								for _, err := range vm.Errors {
+									<li>{ err }</li>
+								}
+							</ul>
+						</div>
+					}
+					<div class="mt-5 grid gap-8 lg:grid-cols-[0.8fr_1.2fr] lg:items-start">
+						<section class="border border-flag-blue bg-flag-blue text-white">
+							@adminFlagBand("h-1.5")
+							<div class="p-6 sm:p-8">
+								<p class="text-xs font-semibold uppercase tracking-eyebrow text-flag-white">Order desk</p>
+								<h1 class="mt-3 break-all font-display text-3xl font-bold leading-tight tracking-tight text-white sm:text-4xl">Order { vm.Order.ID }</h1>
+								<p class="mt-4 flex flex-wrap gap-2">
+									<span data-testid="admin-order-status" class={ adminOrderStatusChipClass(vm.Order.Status) }>{ adminOrderStatusLabel(vm.Order.Status) }</span>
+									if vm.Overdue {
+										<span data-testid="admin-order-overdue" class="inline-flex bg-flag-red px-2.5 py-1 text-xs font-bold uppercase tracking-eyebrow text-white">Overdue pending</span>
+									}
+								</p>
+								<dl class="mt-6 grid gap-2 text-sm leading-6 text-white/90">
+									<div class="flex justify-between gap-4"><dt class="text-white/70">Customer email</dt><dd class="break-all font-semibold">{ vm.Order.Email }</dd></div>
+									<div class="flex justify-between gap-4"><dt class="text-white/70">Placed</dt><dd class="font-semibold">{ formatAdminOrderTime(vm.Order.CreatedAt) }</dd></div>
+									<div class="flex justify-between gap-4"><dt class="text-white/70">Subtotal</dt><dd class="font-semibold">{ formatAdminPrice(vm.Order.SubtotalCents) }</dd></div>
+									<div class="flex justify-between gap-4"><dt class="text-white/70">Shipping</dt><dd class="font-semibold">{ formatAdminPrice(vm.Order.ShippingCents) }</dd></div>
+									<div class="flex justify-between gap-4"><dt class="text-white/70">Tax</dt><dd class="font-semibold">{ formatAdminPrice(vm.Order.TaxCents) }</dd></div>
+									<div class="flex justify-between gap-4 border-t border-white/20 pt-2"><dt class="text-white/70">Total</dt><dd class="font-display text-lg font-bold text-white">{ formatAdminPrice(vm.Order.TotalCents) }</dd></div>
+									if vm.Order.StripePaymentIntentID != "" {
+										<div class="flex justify-between gap-4"><dt class="text-white/70">Payment intent</dt><dd data-testid="admin-order-payment-intent" class="break-all font-semibold">{ vm.Order.StripePaymentIntentID }</dd></div>
+									}
+									if vm.Order.StripeCheckoutSessionID != "" {
+										<div class="flex justify-between gap-4"><dt class="text-white/70">Checkout session</dt><dd class="break-all font-semibold">{ vm.Order.StripeCheckoutSessionID }</dd></div>
+									}
+									if vm.Order.PaymentCardBrand != "" || vm.Order.PaymentCardLast4 != "" {
+										<div class="flex justify-between gap-4"><dt class="text-white/70">Card</dt><dd class="font-semibold">{ vm.Order.PaymentCardBrand } …{ vm.Order.PaymentCardLast4 }</dd></div>
+									}
+									if vm.Order.TrackingCarrier != "" || vm.Order.TrackingNumber != "" {
+										<div class="flex justify-between gap-4"><dt class="text-white/70">Tracking</dt><dd data-testid="admin-order-tracking-value" class="break-all font-semibold">{ vm.Order.TrackingCarrier } { vm.Order.TrackingNumber }</dd></div>
+									}
+								</dl>
+							</div>
+						</section>
+						<div class="grid gap-6">
+							<section class="border border-flag-blue/15 bg-paper p-5 sm:p-6">
+								<p class="text-xs font-semibold uppercase tracking-eyebrow text-flag-red">Items</p>
+								<div class="mt-3 divide-y divide-flag-blue/10">
+									for _, line := range vm.Order.Lines {
+										<article data-testid="admin-order-line" class="grid gap-3 py-4 md:grid-cols-[1fr_auto] md:items-center">
+											<div>
+												<p class="font-display text-lg font-medium text-flag-blue">{ line.Name }</p>
+												<p class="mt-1 text-sm leading-6 text-muted">
+													/products/{ line.Slug }
+													if line.VariantLabel != "" {
+														· { line.VariantLabel }
+													}
+													· { strconv.Itoa(line.Quantity) } × { formatAdminPrice(line.UnitPriceCents) }
+												</p>
+											</div>
+											<p class="font-display text-lg font-bold text-flag-blue">{ formatAdminPrice(line.LineTotalCents) }</p>
+										</article>
+									}
+								</div>
+							</section>
+							<section class="border border-flag-blue/15 bg-paper p-5 sm:p-6">
+								<p class="text-xs font-semibold uppercase tracking-eyebrow text-flag-red">Shipping address</p>
+								<address data-testid="admin-order-address" class="mt-3 text-sm not-italic leading-6 text-ink">
+									<p class="font-semibold">{ vm.Order.ShippingAddress.FullName }</p>
+									<p>{ vm.Order.ShippingAddress.Line1 }</p>
+									if vm.Order.ShippingAddress.Line2 != "" {
+										<p>{ vm.Order.ShippingAddress.Line2 }</p>
+									}
+									<p>{ vm.Order.ShippingAddress.City }, { vm.Order.ShippingAddress.Region } { vm.Order.ShippingAddress.PostalCode }</p>
+									<p>{ vm.Order.ShippingAddress.Country }</p>
+									if vm.Order.ShippingAddress.Phone != "" {
+										<p>{ vm.Order.ShippingAddress.Phone }</p>
+									}
+								</address>
+							</section>
+							<section class="border border-flag-blue/15 bg-paper p-5 sm:p-6">
+								<p class="text-xs font-semibold uppercase tracking-eyebrow text-flag-red">Status history</p>
+								<ol data-testid="admin-order-history" class="mt-3 grid gap-2">
+									for _, event := range vm.Order.StatusHistory {
+										<li class="flex flex-wrap items-center gap-3 border border-flag-blue/10 bg-flag-white px-4 py-3 text-sm leading-6">
+											<span aria-hidden="true" class="h-2.5 w-2.5 shrink-0 bg-flag-red"></span>
+											<span class="font-semibold text-flag-blue">{ adminOrderStatusLabel(event.Status) }</span>
+											<span class="text-muted">{ formatAdminOrderTime(event.At) } · by { event.Actor }</span>
+										</li>
+									}
+								</ol>
+							</section>
+							if len(vm.AdvanceTargets) > 0 || vm.ShowTrackingForm || vm.ShowCancelForm {
+								<section class="border border-flag-blue/15 bg-paper p-5 sm:p-6">
+									<p class="text-xs font-semibold uppercase tracking-eyebrow text-flag-red">Actions</p>
+									<div class="mt-4 grid gap-4">
+										if len(vm.AdvanceTargets) > 0 {
+											<form data-testid="admin-order-advance" method="post" action={ "/admin/orders/" + vm.Order.ID + "/advance" } class="grid gap-3 border border-flag-blue/10 bg-flag-white p-4 sm:grid-cols-[1fr_auto] sm:items-end">
+												<input type="hidden" name="csrf_token" value={ vm.CSRFValue }/>
+												<label class="grid gap-2 text-xs font-medium text-muted">
+													Next status
+													<select data-testid="admin-order-advance-status" name="to_status" class="h-11 border border-flag-blue/25 bg-paper px-4 text-sm font-medium text-ink transition focus:border-flag-blue">
+														for _, target := range vm.AdvanceTargets {
+															<option value={ string(target) }>{ adminOrderStatusLabel(target) }</option>
+														}
+													</select>
+												</label>
+												<button data-testid="admin-order-advance-button" type="submit" class="inline-flex h-11 items-center justify-center bg-flag-blue px-5 text-sm font-bold text-white transition hover:bg-ink">Advance status</button>
+											</form>
+										}
+										if vm.ShowTrackingForm {
+											<form data-testid="admin-order-tracking" method="post" action={ "/admin/orders/" + vm.Order.ID + "/tracking" } class="grid gap-3 border border-flag-blue/10 bg-flag-white p-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+												<input type="hidden" name="csrf_token" value={ vm.CSRFValue }/>
+												<label class="grid gap-2 text-xs font-medium text-muted">Carrier <input data-testid="admin-order-carrier-input" name="carrier" value={ vm.Order.TrackingCarrier } class="h-11 border border-flag-blue/25 bg-paper px-4 text-sm font-medium text-ink transition focus:border-flag-blue"/></label>
+												<label class="grid gap-2 text-xs font-medium text-muted">Tracking number <input data-testid="admin-order-tracking-input" name="tracking_number" value={ vm.Order.TrackingNumber } class="h-11 border border-flag-blue/25 bg-paper px-4 text-sm font-medium text-ink transition focus:border-flag-blue"/></label>
+												<button data-testid="admin-order-tracking-button" type="submit" class="inline-flex h-11 items-center justify-center bg-flag-red px-5 text-sm font-bold text-white transition hover:bg-flag-red-deep">Save tracking and mark shipped</button>
+											</form>
+										}
+										if vm.ShowCancelForm {
+											<form data-testid="admin-order-cancel" method="post" action={ "/admin/orders/" + vm.Order.ID + "/cancel" } class="grid gap-3 border border-flag-red/25 bg-flag-white p-4">
+												<input type="hidden" name="csrf_token" value={ vm.CSRFValue }/>
+												if vm.CancelFromPaid {
+													<p class="text-sm leading-6 text-muted">Canceling returns the reserved stock to the shop. This order is already paid, so refund the payment manually in the Stripe dashboard.</p>
+												} else {
+													<p class="text-sm leading-6 text-muted">Canceling returns the reserved stock to the shop. No payment has been captured for this order.</p>
+												}
+												<button data-testid="admin-order-cancel-button" type="submit" class="inline-flex h-11 items-center justify-center border border-flag-red/40 bg-paper px-5 text-sm font-bold text-flag-red transition hover:bg-flag-red/10 sm:justify-self-start">Cancel order</button>
+											</form>
+										}
+									</div>
+								</section>
+							}
+						</div>
+					</div>
+				</main>
+			</div>
+		</body>
+	</html>
+}

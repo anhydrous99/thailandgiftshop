@@ -283,7 +283,7 @@ func productDetailPage(vm productDetailPageViewModel) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "\"></label> <button type=\"submit\" class=\"inline-flex h-12 items-center justify-center bg-flag-red px-6 text-sm font-bold text-white transition hover:bg-flag-red-deep\">Add to cart</button></form><p class=\"mt-5 text-sm leading-6 text-muted\">Adding this item starts a cart review. No payment is collected yet, shipping and tax are not included, and Stripe payment processing will be added later.</p></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "\"></label> <button type=\"submit\" class=\"inline-flex h-12 items-center justify-center bg-flag-red px-6 text-sm font-bold text-white transition hover:bg-flag-red-deep\">Add to cart</button></form><p class=\"mt-5 text-sm leading-6 text-muted\">Checkout is handled securely by Stripe. Shipping is free while we launch; tax is not collected yet.</p></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

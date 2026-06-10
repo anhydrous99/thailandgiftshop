@@ -80,6 +80,10 @@ func NewStoreFromEnv(ctx context.Context) (Store, bool, error) {
 	return NewStoreFromEnvWithRecorder(ctx, nil)
 }
 
+// NewStoreFromEnvWithRecorder returns the public read store. When the catalog
+// table is configured, the concrete store is a fully wired *DynamoStore that
+// also implements StockStore, so checkout stock reservations can type-assert
+// the returned Store instead of constructing a second client.
 func NewStoreFromEnvWithRecorder(ctx context.Context, metrics observability.Recorder) (Store, bool, error) {
 	dynamoConfig, ok := DynamoConfigFromEnv()
 	if !ok {
@@ -94,7 +98,7 @@ func NewStoreFromEnvWithRecorder(ctx context.Context, metrics observability.Reco
 		return nil, false, fmt.Errorf("load AWS config for catalog store: %w", err)
 	}
 
-	return NewDynamoStoreWithRecorder(dynamodb.NewFromConfig(awsConfig), dynamoConfig, metrics), true, nil
+	return NewDynamoReadWriteStoreWithRecorder(dynamodb.NewFromConfig(awsConfig), dynamoConfig, metrics), true, nil
 }
 
 type queryClient interface {
@@ -639,6 +643,39 @@ func classifyTransactionError(err error) error {
 	}
 
 	return err
+}
+
+// isRetryableTransactionConflict reports whether a transaction error is
+// transient contention — a transaction-vs-transaction conflict on overlapping
+// items, throttling, or an already-in-progress transaction — that a bounded
+// re-read + retry can resolve. Genuine failures (validation errors, access
+// denied, condition failures already classified by classifyTransactionError)
+// stay non-retryable.
+func isRetryableTransactionConflict(err error) bool {
+	var conflict *types.TransactionConflictException
+	if errors.As(err, &conflict) {
+		return true
+	}
+	var inProgress *types.TransactionInProgressException
+	if errors.As(err, &inProgress) {
+		return true
+	}
+	var canceled *types.TransactionCanceledException
+	if !errors.As(err, &canceled) {
+		return false
+	}
+	retryable := false
+	for _, reason := range canceled.CancellationReasons {
+		switch aws.ToString(reason.Code) {
+		case "", "None":
+		case "TransactionConflict", "ThrottlingError", "ProvisionedThroughputExceeded":
+			retryable = true
+		default:
+			return false
+		}
+	}
+
+	return retryable
 }
 
 func staleCategoryProductDeletes(tableName string, previous Product, product Product) []types.TransactWriteItem {

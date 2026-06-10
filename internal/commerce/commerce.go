@@ -1,0 +1,316 @@
+// Package commerce holds the customer/session/cart/address/order domain and
+// the DynamoDB-backed store for the thailandgiftshop-commerce table.
+package commerce
+
+import (
+	"context"
+	"errors"
+	"strings"
+	"time"
+
+	"github.com/anhydrous99/thailandgiftshop/internal/cart"
+)
+
+const (
+	EnvTableName               = "COMMERCE_TABLE_NAME"
+	EnvCustomerOrdersIndexName = "COMMERCE_CUSTOMER_ORDERS_INDEX_NAME"
+	EnvOrdersIndexName         = "COMMERCE_ORDERS_INDEX_NAME"
+	EnvSessionSecret           = "CUSTOMER_SESSION_SECRET"
+
+	SessionCookieName   = "__Host-tgs_customer"
+	CSRFCookieName      = "__Host-tgs_customer_csrf"
+	GuestCSRFCookieName = "__Host-tgs_guest_csrf"
+
+	DefaultCustomerOrdersIndexName = "customer-orders-index"
+	DefaultOrdersIndexName         = "orders-index"
+)
+
+// MaxAddressesPerCustomer caps how many saved addresses one customer may keep.
+const MaxAddressesPerCustomer = 10
+
+var (
+	ErrEmailTaken                 = errors.New("commerce email already registered")
+	ErrVersionConflict            = errors.New("commerce version conflict")
+	ErrOrderTransitionConflict    = errors.New("commerce order transition conflict")
+	ErrAddressLimit               = errors.New("commerce address limit reached")
+	ErrCommerceStoreNotConfigured = errors.New("commerce store not configured")
+	// ErrTransientConflict marks retryable transaction contention — a
+	// transaction-vs-transaction conflict on overlapping items, throttling, or
+	// an already-in-progress transaction — that a bounded retry can resolve.
+	// Condition failures keep their exact per-item classification (for example
+	// ErrEmailTaken) and are never wrapped in ErrTransientConflict.
+	ErrTransientConflict = errors.New("commerce transient transaction conflict")
+)
+
+// NormalizeEmail lowercases and trims an email address for uniqueness checks
+// and lookups. Display casing is preserved separately on Customer.Email.
+func NormalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
+
+type Customer struct {
+	ID               string
+	Email            string
+	EmailNormalized  string
+	PasswordHash     string
+	EmailVerified    bool
+	StripeCustomerID string
+	DefaultAddressID string
+	Version          int
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
+// Session is a server-side customer session row. TokenHash is the lowercase
+// hex SHA-256 of the raw cookie token; the raw token is never stored. DynamoDB
+// TTL expiry is lazy, so readers must re-check ExpiresAt against the clock.
+type Session struct {
+	CustomerID string
+	TokenHash  string
+	Nonce      string
+	CreatedAt  time.Time
+	ExpiresAt  time.Time
+}
+
+// CartRecord is the authoritative signed-in cart. Lines reuse the exact
+// cart.Line shape so the tgs_cart cookie mirror round-trips losslessly.
+type CartRecord struct {
+	CustomerID         string
+	Lines              []cart.Line
+	PendingOrderID     string
+	PendingFingerprint string
+	Version            int
+	UpdatedAt          time.Time
+}
+
+type Address struct {
+	CustomerID string
+	ID         string
+	FullName   string
+	Line1      string
+	Line2      string
+	City       string
+	Region     string
+	PostalCode string
+	Country    string
+	Phone      string
+	Version    int
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
+type OrderStatus string
+
+const (
+	OrderStatusPendingPayment OrderStatus = "pending_payment"
+	OrderStatusPaid           OrderStatus = "paid"
+	OrderStatusShipped        OrderStatus = "shipped"
+	OrderStatusDelivered      OrderStatus = "delivered"
+	OrderStatusPaymentFailed  OrderStatus = "payment_failed"
+	OrderStatusExpired        OrderStatus = "expired"
+	OrderStatusCanceled       OrderStatus = "canceled"
+)
+
+// OrderTransitions is the single source of truth for the order state machine:
+//
+//	pending_payment -> paid | payment_failed | expired | canceled
+//	paid            -> shipped | canceled
+//	shipped         -> delivered
+//	delivered, payment_failed, expired, canceled are terminal.
+var OrderTransitions = map[OrderStatus][]OrderStatus{
+	OrderStatusPendingPayment: {OrderStatusPaid, OrderStatusPaymentFailed, OrderStatusExpired, OrderStatusCanceled},
+	OrderStatusPaid:           {OrderStatusShipped, OrderStatusCanceled},
+	OrderStatusShipped:        {OrderStatusDelivered},
+	OrderStatusDelivered:      {},
+	OrderStatusPaymentFailed:  {},
+	OrderStatusExpired:        {},
+	OrderStatusCanceled:       {},
+}
+
+func AllowedOrderTransition(from OrderStatus, to OrderStatus) bool {
+	for _, allowed := range OrderTransitions[from] {
+		if allowed == to {
+			return true
+		}
+	}
+	return false
+}
+
+func ValidOrderStatus(status OrderStatus) bool {
+	_, known := OrderTransitions[status]
+	return known
+}
+
+// Actors recorded in an order's status history.
+const (
+	OrderActorCustomer = "customer"
+	OrderActorStripe   = "stripe"
+	OrderActorAdmin    = "admin"
+	OrderActorSystem   = "system"
+)
+
+// OrderLine is a frozen purchase-time snapshot; prices and names never track
+// later catalog edits.
+type OrderLine struct {
+	Slug           string
+	ProductID      string
+	Name           string
+	VariantID      string
+	VariantLabel   string
+	UnitPriceCents int
+	Quantity       int
+	LineTotalCents int
+	ImageURL       string
+}
+
+// OrderAddress is the shipping address snapshot embedded on the order.
+type OrderAddress struct {
+	FullName   string
+	Line1      string
+	Line2      string
+	City       string
+	Region     string
+	PostalCode string
+	Country    string
+	Phone      string
+}
+
+type StatusEvent struct {
+	Status OrderStatus
+	At     time.Time
+	Actor  string
+}
+
+type Order struct {
+	ID                      string
+	CustomerID              string
+	Email                   string
+	Status                  OrderStatus
+	Version                 int
+	Lines                   []OrderLine
+	SubtotalCents           int
+	ShippingCents           int
+	TaxCents                int
+	TotalCents              int
+	Currency                string
+	ShippingAddress         OrderAddress
+	CartFingerprint         string
+	StripeCheckoutSessionID string
+	StripePaymentIntentID   string
+	PaymentCardBrand        string
+	PaymentCardLast4        string
+	TrackingCarrier         string
+	TrackingNumber          string
+	CheckoutAttempt         int
+	StatusHistory           []StatusEvent
+	CreatedAt               time.Time
+	UpdatedAt               time.Time
+	PaidAt                  time.Time
+	ShippedAt               time.Time
+	DeliveredAt             time.Time
+	// StockReleasedAt marks that the reserved stock for this order has been
+	// (or is being) released back to the catalog; the zero value means no
+	// release has been confirmed. The checkout release-claim protocol SETs it
+	// when claiming the release and CLEARs it again if the release fails.
+	StockReleasedAt time.Time
+}
+
+// OrderPatch carries the optional field updates applied alongside
+// TransitionOrder and PatchOrder. Nil pointers leave fields untouched; a
+// pointer to the zero value clears the field. Actor labels the status-history
+// entry appended by TransitionOrder and defaults to "system".
+type OrderPatch struct {
+	Actor                   string
+	StripeCheckoutSessionID *string
+	StripePaymentIntentID   *string
+	PaymentCardBrand        *string
+	PaymentCardLast4        *string
+	TrackingCarrier         *string
+	TrackingNumber          *string
+	CheckoutAttempt         *int
+	PaidAt                  *time.Time
+	ShippedAt               *time.Time
+	DeliveredAt             *time.Time
+	// StockReleasedAt follows the shared pointer convention: nil leaves the
+	// stored marker untouched, a pointer to the zero time clears (REMOVEs) it,
+	// and a pointer to any other time sets it.
+	StockReleasedAt *time.Time
+}
+
+func orderActorOrDefault(actor string) string {
+	if strings.TrimSpace(actor) == "" {
+		return OrderActorSystem
+	}
+	return actor
+}
+
+func applyOrderPatchFields(order *Order, patch OrderPatch) {
+	if patch.StripeCheckoutSessionID != nil {
+		order.StripeCheckoutSessionID = *patch.StripeCheckoutSessionID
+	}
+	if patch.StripePaymentIntentID != nil {
+		order.StripePaymentIntentID = *patch.StripePaymentIntentID
+	}
+	if patch.PaymentCardBrand != nil {
+		order.PaymentCardBrand = *patch.PaymentCardBrand
+	}
+	if patch.PaymentCardLast4 != nil {
+		order.PaymentCardLast4 = *patch.PaymentCardLast4
+	}
+	if patch.TrackingCarrier != nil {
+		order.TrackingCarrier = *patch.TrackingCarrier
+	}
+	if patch.TrackingNumber != nil {
+		order.TrackingNumber = *patch.TrackingNumber
+	}
+	if patch.CheckoutAttempt != nil {
+		order.CheckoutAttempt = *patch.CheckoutAttempt
+	}
+	if patch.PaidAt != nil {
+		order.PaidAt = *patch.PaidAt
+	}
+	if patch.ShippedAt != nil {
+		order.ShippedAt = *patch.ShippedAt
+	}
+	if patch.DeliveredAt != nil {
+		order.DeliveredAt = *patch.DeliveredAt
+	}
+	if patch.StockReleasedAt != nil {
+		order.StockReleasedAt = *patch.StockReleasedAt
+	}
+}
+
+type Store interface {
+	CreateCustomer(ctx context.Context, email string, emailNormalized string, passwordHash string) (Customer, error)
+	GetCustomerByEmail(ctx context.Context, emailNormalized string) (Customer, bool, error)
+	GetCustomerByID(ctx context.Context, id string) (Customer, bool, error)
+	SetStripeCustomerID(ctx context.Context, customerID string, stripeID string) (Customer, error)
+	SetDefaultAddress(ctx context.Context, customerID string, addressID string, expectedVersion int) error
+	UpdatePassword(ctx context.Context, customerID string, newHash string, expectedVersion int) error
+
+	PutSession(ctx context.Context, s Session) error
+	GetSession(ctx context.Context, customerID string, tokenHash string) (Session, bool, error)
+	DeleteSession(ctx context.Context, customerID string, tokenHash string) error
+	DeleteAllSessions(ctx context.Context, customerID string) error
+
+	GetCart(ctx context.Context, customerID string) (CartRecord, bool, error)
+	PutCart(ctx context.Context, c CartRecord) (CartRecord, error)
+
+	CreateAddress(ctx context.Context, a Address) (Address, error)
+	UpdateAddress(ctx context.Context, a Address, expectedVersion int) (Address, error)
+	DeleteAddress(ctx context.Context, customerID string, addressID string) error
+	GetAddress(ctx context.Context, customerID string, addressID string) (Address, bool, error)
+	ListAddresses(ctx context.Context, customerID string) ([]Address, error)
+
+	CreateOrder(ctx context.Context, o Order) (Order, error)
+	GetOrder(ctx context.Context, orderID string) (Order, bool, error)
+	ListOrdersByCustomer(ctx context.Context, customerID string, limit int) ([]Order, error)
+	ListOrders(ctx context.Context, limit int) ([]Order, error)
+	TransitionOrder(ctx context.Context, orderID string, from OrderStatus, to OrderStatus, patch OrderPatch) (Order, error)
+	PatchOrder(ctx context.Context, orderID string, expectedStatus OrderStatus, expectedVersion int, patch OrderPatch) (Order, error)
+
+	MarkStripeEventProcessed(ctx context.Context, eventID string, eventType string, orderID string) (alreadySeen bool, err error)
+
+	ReserveLoginAttempt(ctx context.Context, key string, now time.Time) (ThrottleDecision, error)
+	ClearLoginAttempts(ctx context.Context, keys []string) error
+}

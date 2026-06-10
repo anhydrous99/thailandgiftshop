@@ -295,6 +295,106 @@ func TestCartQuantityAndLineCaps(t *testing.T) {
 	}
 }
 
+func TestMirrorCookieRoundTripSetsMirrorFlag(t *testing.T) {
+	mirrorCart := mustCartFromLines(t, []Line{{Slug: "mango", Quantity: 2}})
+
+	encoded, err := EncodeMirrorCookie(mirrorCart, testSecret)
+	if err != nil {
+		t.Fatalf("EncodeMirrorCookie returned error: %v", err)
+	}
+	decoded := DecodeCookie(encoded, testSecret)
+	if decoded.NeedsClear {
+		t.Fatal("DecodeCookie mirror NeedsClear = true, want false")
+	}
+	if !decoded.Mirror {
+		t.Fatal("DecodeCookie mirror Mirror = false, want true")
+	}
+	if got := decoded.Cart.Lines(); !reflect.DeepEqual(got, []Line{{Slug: "mango", Quantity: 2}}) {
+		t.Fatalf("mirror lines = %#v, want mango 2", got)
+	}
+
+	anonymous, err := EncodeCookie(mirrorCart, testSecret)
+	if err != nil {
+		t.Fatalf("EncodeCookie returned error: %v", err)
+	}
+	if decoded := DecodeCookie(anonymous, testSecret); decoded.Mirror {
+		t.Fatal("anonymous cookie decoded with Mirror = true, want false")
+	}
+}
+
+func TestLegacyCookieWithoutMirrorClaimDecodesAsAnonymous(t *testing.T) {
+	encoded := signedRawTestCookie(t, fmt.Appendf(nil, `{"version":1,"iat":%d,"lines":[{"slug":"mango","quantity":2}]}`, time.Now().Unix()))
+
+	decoded := DecodeCookie(encoded, testSecret)
+	if decoded.NeedsClear {
+		t.Fatal("DecodeCookie legacy NeedsClear = true, want false")
+	}
+	if decoded.Mirror {
+		t.Fatal("legacy cookie decoded with Mirror = true, want false")
+	}
+}
+
+func TestEncodeMirrorCookieTruncatedDropsTrailingLinesUntilItFits(t *testing.T) {
+	oversized := mustCartFromLines(t, oversizedCartLines())
+
+	if _, err := EncodeCookie(oversized, testSecret); !errors.Is(err, ErrCookieTooLarge) {
+		t.Fatalf("EncodeCookie oversized error = %v, want ErrCookieTooLarge (fixture too small)", err)
+	}
+
+	encoded, err := EncodeMirrorCookieTruncated(oversized, testSecret)
+	if err != nil {
+		t.Fatalf("EncodeMirrorCookieTruncated returned error: %v", err)
+	}
+	if len(encoded) > MaxEncodedCookieLength {
+		t.Fatalf("truncated cookie length = %d, want <= %d", len(encoded), MaxEncodedCookieLength)
+	}
+
+	decoded := DecodeCookie(encoded, testSecret)
+	if decoded.NeedsClear {
+		t.Fatal("DecodeCookie truncated mirror NeedsClear = true, want false")
+	}
+	if !decoded.Mirror {
+		t.Fatal("truncated mirror Mirror = false, want true")
+	}
+	got := decoded.Cart.Lines()
+	want := oversized.Lines()
+	if len(got) == 0 || len(got) >= len(want) {
+		t.Fatalf("truncated line count = %d, want a non-empty strict prefix of %d", len(got), len(want))
+	}
+	if !reflect.DeepEqual(got, want[:len(got)]) {
+		t.Fatalf("truncated lines = %#v, want leading prefix of original lines", got)
+	}
+}
+
+func TestEncodeMirrorCookieTruncatedKeepsSmallCartsIntact(t *testing.T) {
+	small := mustCartFromLines(t, []Line{
+		{Slug: "mango", Quantity: 2},
+		{Slug: "tea", Quantity: 1},
+	})
+
+	encoded, err := EncodeMirrorCookieTruncated(small, testSecret)
+	if err != nil {
+		t.Fatalf("EncodeMirrorCookieTruncated returned error: %v", err)
+	}
+	decoded := DecodeCookie(encoded, testSecret)
+	if !decoded.Mirror {
+		t.Fatal("small mirror Mirror = false, want true")
+	}
+	if got := decoded.Cart.Lines(); !reflect.DeepEqual(got, small.Lines()) {
+		t.Fatalf("small mirror lines = %#v, want %#v", got, small.Lines())
+	}
+}
+
+// oversizedCartLines builds a cart that individually-valid lines push past
+// MaxEncodedCookieLength (realistic slug lengths, well under MaxLineItems).
+func oversizedCartLines() []Line {
+	lines := make([]Line, 48)
+	for i := range lines {
+		lines[i] = Line{Slug: fmt.Sprintf("aromatic-jasmine-handmade-%02d", i), Quantity: 1}
+	}
+	return lines
+}
+
 func TestCartCookieRejectsTamper(t *testing.T) {
 	cart, err := New([]Line{{Slug: "mango", Quantity: 2}})
 	if err != nil {
@@ -401,7 +501,7 @@ func TestCartCookieRejectsMissingIssuedAt(t *testing.T) {
 
 func TestCartCookieIssuedAtBounds(t *testing.T) {
 	issued := time.Now()
-	encoded, err := encodeCookieAt(mustCartFromLines(t, []Line{{Slug: "mango", Quantity: 1}}), testSecret, issued)
+	encoded, err := encodeCookieAt(mustCartFromLines(t, []Line{{Slug: "mango", Quantity: 1}}), testSecret, issued, false)
 	if err != nil {
 		t.Fatalf("encodeCookieAt returned error: %v", err)
 	}
@@ -432,6 +532,180 @@ func TestCartCookieIssuedAtBounds(t *testing.T) {
 				t.Fatalf("line count = %d, want %d", got, wantLines)
 			}
 		})
+	}
+}
+
+func TestCartMerge(t *testing.T) {
+	tests := []struct {
+		name   string
+		server Cart
+		cookie Cart
+		want   []Line
+	}{
+		{
+			name:   "both empty",
+			server: Empty(),
+			cookie: Empty(),
+			want:   []Line{},
+		},
+		{
+			name:   "empty server side keeps cookie lines in cookie order",
+			server: Empty(),
+			cookie: Cart{lines: []Line{
+				{Slug: "tea", Quantity: 3},
+				{Slug: "mango", Quantity: 2},
+			}},
+			want: []Line{
+				{Slug: "tea", Quantity: 3},
+				{Slug: "mango", Quantity: 2},
+			},
+		},
+		{
+			name: "empty cookie side keeps server lines in server order",
+			server: Cart{lines: []Line{
+				{Slug: "mango", Quantity: 2},
+				{Slug: "tea", Quantity: 3},
+			}},
+			cookie: Empty(),
+			want: []Line{
+				{Slug: "mango", Quantity: 2},
+				{Slug: "tea", Quantity: 3},
+			},
+		},
+		{
+			name: "max wins per line key in either direction",
+			server: Cart{lines: []Line{
+				{Slug: "mango", Quantity: 5},
+				{Slug: "tea", Quantity: 1},
+			}},
+			cookie: Cart{lines: []Line{
+				{Slug: "mango", Quantity: 2},
+				{Slug: "tea", Quantity: 7},
+			}},
+			want: []Line{
+				{Slug: "mango", Quantity: 5},
+				{Slug: "tea", Quantity: 7},
+			},
+		},
+		{
+			name: "union keeps server order first then cookie-only lines in cookie order",
+			server: Cart{lines: []Line{
+				{Slug: "mango", Quantity: 2},
+				{Slug: "tea", Quantity: 3},
+			}},
+			cookie: Cart{lines: []Line{
+				{Slug: "silk-scarf", Quantity: 1},
+				{Slug: "tea", Quantity: 9},
+				{Slug: "coconut-soap", Quantity: 4},
+			}},
+			want: []Line{
+				{Slug: "mango", Quantity: 2},
+				{Slug: "tea", Quantity: 9},
+				{Slug: "silk-scarf", Quantity: 1},
+				{Slug: "coconut-soap", Quantity: 4},
+			},
+		},
+		{
+			name: "line identity includes variant id",
+			server: Cart{lines: []Line{
+				{Slug: "linen-shirt", VariantID: "var-small", Quantity: 2},
+			}},
+			cookie: Cart{lines: []Line{
+				{Slug: "linen-shirt", VariantID: "var-small", Quantity: 6},
+				{Slug: "linen-shirt", VariantID: "var-large", Quantity: 3},
+			}},
+			want: []Line{
+				{Slug: "linen-shirt", VariantID: "var-small", Quantity: 6},
+				{Slug: "linen-shirt", VariantID: "var-large", Quantity: 3},
+			},
+		},
+		{
+			name: "quantities cap at MaxQuantity",
+			server: Cart{lines: []Line{
+				{Slug: "mango", Quantity: 150},
+				{Slug: "tea", Quantity: 1},
+			}},
+			cookie: Cart{lines: []Line{
+				{Slug: "tea", Quantity: 120},
+				{Slug: "silk-scarf", Quantity: 130},
+			}},
+			want: []Line{
+				{Slug: "mango", Quantity: MaxQuantity},
+				{Slug: "tea", Quantity: MaxQuantity},
+				{Slug: "silk-scarf", Quantity: MaxQuantity},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := Merge(test.server, test.cookie).Lines(); !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("Merge lines = %#v, want %#v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestCartMergeIdempotentRemerge(t *testing.T) {
+	server := mustCartFromLines(t, []Line{
+		{Slug: "mango", Quantity: 5},
+		{Slug: "tea", Quantity: 1},
+	})
+	cookie := mustCartFromLines(t, []Line{
+		{Slug: "tea", Quantity: 7},
+		{Slug: "silk-scarf", Quantity: 2},
+	})
+
+	once := Merge(server, cookie)
+	twice := Merge(once, cookie)
+	if got, want := twice.Lines(), once.Lines(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("re-merged lines = %#v, want %#v", got, want)
+	}
+}
+
+func TestCartMergeTruncatesAtMaxLineItems(t *testing.T) {
+	serverLines := make([]Line, MaxLineItems-2)
+	for i := range serverLines {
+		serverLines[i] = Line{Slug: fmt.Sprintf("server-%02d", i), Quantity: 1}
+	}
+	cookieLines := []Line{
+		{Slug: "server-10", Quantity: 5},
+		{Slug: "cookie-00", Quantity: 2},
+		{Slug: "cookie-01", Quantity: 3},
+		{Slug: "cookie-02", Quantity: 4},
+		{Slug: "cookie-03", Quantity: 6},
+	}
+
+	merged := Merge(mustCartFromLines(t, serverLines), mustCartFromLines(t, cookieLines))
+	if got := merged.LineCount(); got != MaxLineItems {
+		t.Fatalf("merged line count = %d, want %d", got, MaxLineItems)
+	}
+
+	want := make([]Line, 0, MaxLineItems)
+	want = append(want, serverLines...)
+	want[10].Quantity = 5
+	want = append(want, Line{Slug: "cookie-00", Quantity: 2}, Line{Slug: "cookie-01", Quantity: 3})
+	if got := merged.Lines(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("truncated merged lines = %#v, want %#v", got, want)
+	}
+}
+
+func TestCartMergeAppliesMaxToExistingKeysWhenServerCartIsFull(t *testing.T) {
+	serverLines := cartLineCapFixture(MaxLineItems)
+	cookieLines := []Line{
+		{Slug: "fixture-25", Quantity: 8},
+		{Slug: "cookie-only", Quantity: 4},
+	}
+
+	merged := Merge(mustCartFromLines(t, serverLines), mustCartFromLines(t, cookieLines))
+	if got := merged.LineCount(); got != MaxLineItems {
+		t.Fatalf("merged line count = %d, want %d", got, MaxLineItems)
+	}
+
+	want := cartLineCapFixture(MaxLineItems)
+	want[25].Quantity = 8
+	if got := merged.Lines(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("full server merged lines = %#v, want %#v", got, want)
 	}
 }
 

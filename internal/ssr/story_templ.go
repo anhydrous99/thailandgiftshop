@@ -69,7 +69,7 @@ func storyPage(vm storyPageViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</div><p class=\"text-lg leading-8 text-muted\">Each aisle is shaped for calm browsing: clear categories, strong product images, concise details, and slug-based links that work without JavaScript.</p><p class=\"mt-5 text-lg leading-8 text-muted\">The shop point of view is market-bright and practical, rooted in the colors, textures, pantry flavors, and compact keepsakes travelers remember from Bangkok gift shops.</p><p class=\"mt-5 text-lg leading-8 text-muted\">Checkout is review-only for now: no payment is collected yet, and shipping and tax are confirmed later.</p></div></section></main>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</div><p class=\"text-lg leading-8 text-muted\">Each aisle is shaped for calm browsing: clear categories, strong product images, concise details, and slug-based links that work without JavaScript.</p><p class=\"mt-5 text-lg leading-8 text-muted\">The shop point of view is market-bright and practical, rooted in the colors, textures, pantry flavors, and compact keepsakes travelers remember from Bangkok gift shops.</p><p class=\"mt-5 text-lg leading-8 text-muted\">Checkout is handled securely by Stripe — we never see or store card numbers. Shipping is free while we launch; tax is not collected yet.</p></div></section></main>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

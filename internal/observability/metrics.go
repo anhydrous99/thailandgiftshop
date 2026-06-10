@@ -15,9 +15,16 @@ const (
 	MetricCatalogOperation    = "CatalogOperation"
 	MetricCatalogOperationMs  = "CatalogOperationMs"
 	MetricCatalogWrite        = "CatalogWrite"
+	MetricCheckoutPayment     = "CheckoutPayment"
+	MetricCommerceOperation   = "CommerceOperation"
+	MetricCommerceOperationMs = "CommerceOperationMs"
+	MetricCustomerAuth        = "CustomerAuth"
+	MetricOrderTransition     = "OrderTransition"
 	MetricProductImageUpload  = "ProductImageUpload"
 	MetricRouteColdStart      = "RouteColdStart"
 	MetricRouteDurationMs     = "RouteDurationMs"
+	MetricStockAdjust         = "StockAdjust"
+	MetricStripeWebhook       = "StripeWebhook"
 )
 
 const UnitCount = "Count"

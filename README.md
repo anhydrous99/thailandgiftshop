@@ -43,15 +43,27 @@ AWS_PROFILE=default AWS_REGION=us-east-1 CATALOG_TABLE_NAME=thailandgiftshop-cat
 
 `CATALOG_SLUG_INDEX_NAME`, `CATALOG_PUBLIC_INDEX_NAME`, `CATALOG_RECENT_INDEX_NAME`, and `CATALOG_ENTITY_INDEX_NAME` default to `slug-index`, `public-index`, `recent-index`, and `entity-index`, which match the CDK-provisioned table. The Home page displays latest active products from the recent index, admin product/category lists read the entity index, and product cards use `image_url` from DynamoDB, falling back to `PRODUCT_IMAGE_PLACEHOLDER_URL` or `/images/placeholder-product.jpg` when the field is empty.
 
-Set `CART_COOKIE_SECRET` to a stable local-only value when exercising cart cookies locally. Production receives this value from a CDK-managed generated Secrets Manager secret, so no production cookie signing secret is stored in this repository.
+Set `CART_COOKIE_SECRET` to a stable local-only value when exercising cart cookies locally. Set `CUSTOMER_SESSION_SECRET` the same way when exercising customer accounts, sign-in, or checkout locally — it signs the customer session, CSRF, and login-throttle keys. Production receives both values from CDK-managed generated Secrets Manager secrets, so no production signing secret is stored in this repository.
+
+Customer accounts, carts, addresses, and orders live in the `thailandgiftshop-commerce` DynamoDB table. `COMMERCE_TABLE_NAME` selects it; `COMMERCE_CUSTOMER_ORDERS_INDEX_NAME` and `COMMERCE_ORDERS_INDEX_NAME` default to `customer-orders-index` and `orders-index`, which match the CDK-provisioned table. When `COMMERCE_TABLE_NAME` is unset outside production, the devserver uses an in-memory commerce store.
+
+Payments are selected by environment. With Stripe credentials present the Stripe-hosted checkout is used; otherwise non-production runs fall back to the in-memory fake provider and production fails closed:
+
+```sh
+export STRIPE_CREDENTIALS_SECRET_JSON='{"secret_key":"<sk-test-key>","webhook_signing_secret":"<whsec>"}'
+export PAYMENTS_PROVIDER=stripe   # optional; "fake" is rejected in production
+export PUBLIC_BASE_URL=http://127.0.0.1:8080   # success/cancel/webhook URL base; defaults to https://thailandgiftshop.com
+```
+
+Keep real Stripe keys outside the repository. Card entry happens only on Stripe's hosted checkout page; the site never sees or stores card numbers.
 
 Use deterministic demo data for local browser tests or admin/public E2E work by opting into the in-memory catalog store:
 
 ```sh
-CATALOG_DEMO_STORE=1 CART_COOKIE_SECRET=<cart-cookie-secret> go run ./cmd/devserver
+CATALOG_DEMO_STORE=1 CART_COOKIE_SECRET=<cart-cookie-secret> CUSTOMER_SESSION_SECRET=<customer-session-secret> go run ./cmd/devserver
 ```
 
-When `CATALOG_DEMO_STORE=1` is set, the devserver skips DynamoDB and serves the checked-in demo catalog from memory. The demo catalog includes an active variant product, `handwoven-indigo-scarf`, with sizes `S=1`, `M=2`, and `XL=0` for stable admin and public E2E coverage. The default devserver path still uses environment-backed catalog loading, so local Go tests and Playwright tests can run without a live AWS account.
+When `CATALOG_DEMO_STORE=1` is set, the devserver skips DynamoDB and serves the checked-in demo catalog from memory, alongside one shared in-memory commerce store and the fake payment provider for both the storefront and admin handlers. The whole checkout journey then runs on-site with no Stripe keys and no network: placing an order redirects to the `/checkout/fake-pay` demo payment page, whose Pay action drives the real `/checkout/confirm` reconcile path, and orders placed on the storefront appear in the admin order desk at `/admin/orders`. The demo catalog includes an active variant product, `handwoven-indigo-scarf`, with sizes `S=1`, `M=2`, and `XL=0` for stable admin and public E2E coverage. The default devserver path still uses environment-backed catalog loading, so local Go tests and Playwright tests can run without a live AWS account.
 
 For local admin work, set placeholder-only admin environment variables before starting the admin Lambda or any local wrapper that loads admin credentials from the environment:
 
@@ -184,7 +196,29 @@ The CDK stack imports that name and passes the secret string to the admin Lambda
 
 The stack also creates a DynamoDB table for admin login attempts and passes its generated name to the admin Lambda as `ADMIN_LOGIN_ATTEMPTS_TABLE_NAME`. Failed admin logins are tracked per client, locked after 8 failures in 15 minutes, and receive a generic `429` with `Retry-After` during the 15-minute lockout.
 
-CloudFront has an admin-scoped AWS WAF web ACL with rate limits for `POST /admin/login` and `/admin*`. Direct API Gateway access through the `SsrHttpApiUrl` output remains useful for public SSR checks, but production admin access must use `https://thailandgiftshop.com/admin` so CloudFront can apply WAF rules and inject the admin origin header.
+### Stripe credentials and webhook
+
+Before deploying the checkout wiring, bootstrap the Stripe credentials as a manually managed Secrets Manager JSON secret named `thailandgiftshop/stripe/credentials` in `us-east-1`. The webhook signing secret is not known until the endpoint is registered, so start with a placeholder value:
+
+```sh
+aws secretsmanager create-secret \
+  --region us-east-1 \
+  --name thailandgiftshop/stripe/credentials \
+  --secret-string '{"secret_key":"<sk-live-or-test-key>","webhook_signing_secret":"<whsec-placeholder>"}'
+```
+
+After the first deploy, register the webhook endpoint in the Stripe dashboard as `https://thailandgiftshop.com/webhooks/stripe` — use the apex domain, because the `www` host issues a `308` redirect and Stripe does not follow redirects — subscribed to the four `checkout.session.*` events: `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, and `checkout.session.expired`. Then write the real `whsec_` value into the same secret and redeploy so the Lambda environment picks up the rotated value:
+
+```sh
+aws secretsmanager put-secret-value \
+  --region us-east-1 \
+  --secret-id thailandgiftshop/stripe/credentials \
+  --secret-string '{"secret_key":"<sk-live-or-test-key>","webhook_signing_secret":"<whsec>"}'
+```
+
+The CDK stack imports the secret by name and passes the whole secret string to both the SSR and admin Lambdas through the `STRIPE_CREDENTIALS_SECRET_JSON` dynamic reference — the admin Lambda needs it so canceling a pending order can verify and expire the order's still-open checkout session first. Refunds for canceled paid orders are performed manually in the Stripe dashboard.
+
+CloudFront has an AWS WAF web ACL with rate limits for `POST /admin/login`, `/admin*`, and customer-auth `POST /account/sign-in` and `POST /account/sign-up` requests. Direct API Gateway access through the `SsrHttpApiUrl` output remains useful for public SSR checks, but production admin access must use `https://thailandgiftshop.com/admin` so CloudFront can apply WAF rules and inject the admin origin header.
 
 ## Deploy
 

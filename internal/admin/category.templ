@@ -16,6 +16,7 @@ templ adminCategoryHeader(csrfValue string) {
 					<a data-testid="admin-nav-dashboard" href="/admin" class="inline-flex h-10 items-center justify-center border border-flag-blue/20 bg-paper px-4 transition hover:border-flag-red hover:text-flag-red">Dashboard</a>
 					<a data-testid="admin-nav-products" href="/admin/products" class="inline-flex h-10 items-center justify-center border border-flag-blue/20 bg-paper px-4 transition hover:border-flag-red hover:text-flag-red">Products</a>
 					<a data-testid="admin-nav-categories" aria-current="page" href="/admin/categories" class="inline-flex h-10 items-center justify-center bg-flag-blue px-4 text-white transition hover:bg-ink">Categories</a>
+					<a data-testid="admin-nav-orders" href="/admin/orders" class="inline-flex h-10 items-center justify-center border border-flag-blue/20 bg-paper px-4 transition hover:border-flag-red hover:text-flag-red">Orders</a>
 				</nav>
 				<form method="post" action="/admin/logout" class="flex">
 					<input type="hidden" name="csrf_token" value={ csrfValue }/>

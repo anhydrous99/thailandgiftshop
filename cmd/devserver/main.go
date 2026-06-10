@@ -11,6 +11,8 @@ import (
 
 	"github.com/anhydrous99/thailandgiftshop/internal/admin"
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
+	"github.com/anhydrous99/thailandgiftshop/internal/commerce"
+	"github.com/anhydrous99/thailandgiftshop/internal/payments"
 	"github.com/anhydrous99/thailandgiftshop/internal/ssr"
 	"github.com/aws/aws-lambda-go/events"
 )
@@ -59,12 +61,21 @@ type devServerHandlers struct {
 
 func newDevServerHandlers(ctx context.Context) (devServerHandlers, error) {
 	if os.Getenv(envDemoCatalogStore) == "1" {
+		// One shared commerce store and fake payment provider back both
+		// Lambdas, so orders placed on the storefront show up in the admin
+		// order desk, and the shared catalog MemoryStore doubles as the
+		// stock store for reservations and releases.
 		store := catalog.NewMemoryStore(catalog.DemoCatalogProducts(), catalog.DemoCatalogCategories())
+		commerceStore := commerce.NewMemoryStore()
+		provider := payments.NewFakeProvider()
 		credentials, err := admin.CredentialsFromEnvironment(ctx)
 		if err != nil {
 			return devServerHandlers{}, err
 		}
-		return devServerHandlers{ssr: ssr.NewHandler(store), admin: admin.NewLocalDemoHandler(credentials, store)}, nil
+		return devServerHandlers{
+			ssr:   ssr.NewLocalDemoHandler(store, commerceStore, provider),
+			admin: admin.NewLocalDemoHandler(credentials, store, commerceStore, store, provider),
+		}, nil
 	}
 
 	ssrHandler, err := ssr.NewHandlerFromEnvironment(ctx)
@@ -80,7 +91,8 @@ func newDevServerHandlers(ctx context.Context) (devServerHandlers, error) {
 
 func newDevServerHandler(ctx context.Context) (*ssr.Handler, error) {
 	if os.Getenv(envDemoCatalogStore) == "1" {
-		return ssr.NewHandler(catalog.NewDemoStore()), nil
+		store := catalog.NewMemoryStore(catalog.DemoCatalogProducts(), catalog.DemoCatalogCategories())
+		return ssr.NewLocalDemoHandler(store, commerce.NewMemoryStore(), payments.NewFakeProvider()), nil
 	}
 	return ssr.NewHandlerFromEnvironment(ctx)
 }

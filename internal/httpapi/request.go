@@ -97,6 +97,20 @@ func JSONBody(request events.APIGatewayV2HTTPRequest, target any) error {
 	return decoder.Decode(target)
 }
 
+// RawBody returns the request body's exact raw bytes, base64-decoding only
+// when the event is marked encoded. Webhook signature verification must run
+// over these bytes before any form or JSON parsing touches the request.
+func RawBody(request events.APIGatewayV2HTTPRequest) ([]byte, error) {
+	if !request.IsBase64Encoded {
+		return []byte(request.Body), nil
+	}
+	decoded, err := base64.StdEncoding.DecodeString(request.Body)
+	if err != nil {
+		return nil, err
+	}
+	return decoded, nil
+}
+
 func bodyString(request events.APIGatewayV2HTTPRequest) (string, error) {
 	if !request.IsBase64Encoded {
 		return request.Body, nil

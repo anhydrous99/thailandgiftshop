@@ -1,0 +1,76 @@
+package admin
+
+import "strconv"
+
+templ adminOrdersHeader(csrfValue string) {
+	<header class="sticky top-0 z-30 border-b-2 border-ink bg-paper">
+		@adminFlagBand("h-1.5")
+		<div class="mx-auto flex min-h-16 w-full max-w-7xl flex-col gap-4 px-5 py-4 sm:px-8 md:flex-row md:items-center md:justify-between">
+			<a href="/admin" aria-label="Thailand Gift Shop admin dashboard" class="flex min-w-0 items-center gap-3">
+				<img class="h-8 w-8 shrink-0 sm:h-9 sm:w-9" src="/static/logo.svg" alt=""/>
+				<span class="truncate font-display text-lg font-bold tracking-tight text-ink">Thailand Gift Shop</span>
+				<span class="hidden border border-flag-blue/20 bg-flag-white px-2 py-0.5 text-xs font-semibold uppercase tracking-eyebrow text-flag-blue sm:inline">Admin</span>
+			</a>
+			<div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+				<nav data-testid="admin-nav" aria-label="Admin navigation" class="flex flex-wrap gap-2 text-sm font-medium text-flag-blue">
+					<a data-testid="admin-nav-dashboard" href="/admin" class="inline-flex h-10 items-center justify-center border border-flag-blue/20 bg-paper px-4 transition hover:border-flag-red hover:text-flag-red">Dashboard</a>
+					<a data-testid="admin-nav-products" href="/admin/products" class="inline-flex h-10 items-center justify-center border border-flag-blue/20 bg-paper px-4 transition hover:border-flag-red hover:text-flag-red">Products</a>
+					<a data-testid="admin-nav-categories" href="/admin/categories" class="inline-flex h-10 items-center justify-center border border-flag-blue/20 bg-paper px-4 transition hover:border-flag-red hover:text-flag-red">Categories</a>
+					<a data-testid="admin-nav-orders" aria-current="page" href="/admin/orders" class="inline-flex h-10 items-center justify-center bg-flag-blue px-4 text-white transition hover:bg-ink">Orders</a>
+				</nav>
+				<form method="post" action="/admin/logout" class="flex">
+					<input type="hidden" name="csrf_token" value={ csrfValue }/>
+					<button data-testid="admin-logout-button" type="submit" class="inline-flex h-10 items-center justify-center bg-flag-red px-4 text-sm font-bold text-white transition hover:bg-flag-red-deep">Logout</button>
+				</form>
+			</div>
+		</div>
+	</header>
+}
+
+templ adminOrderListPage(vm adminOrderListViewModel) {
+	<!DOCTYPE html>
+	<html lang="en" class="scroll-smooth">
+		@adminHead("Orders | Thailand Gift Shop Admin")
+		<body class="min-h-screen bg-paper text-ink antialiased">
+			<div data-testid="admin-shell" class="min-h-screen">
+				@adminOrdersHeader(vm.CSRFValue)
+				<main id="admin-main" class="mx-auto w-full max-w-7xl px-5 py-10 sm:px-8 lg:py-14">
+					<section class="border border-flag-blue bg-flag-blue text-white">
+						@adminFlagBand("h-1.5")
+						<div class="grid gap-6 p-6 sm:p-8">
+							<div>
+								<p class="text-xs font-semibold uppercase tracking-eyebrow text-flag-white">Order desk</p>
+								<h1 class="mt-3 font-display text-5xl font-bold leading-none tracking-tight text-white sm:text-6xl">Orders</h1>
+								<p class="mt-5 max-w-3xl text-lg leading-8 text-white/80">Newest orders first. Add tracking, advance paid orders through shipping and delivery, and cancel with automatic stock release.</p>
+							</div>
+						</div>
+					</section>
+					<section class="mt-6 border border-flag-blue/15 bg-paper">
+						if len(vm.Orders) == 0 {
+							<div data-testid="admin-orders-empty" role="status" class="p-8 text-center"><h2 class="font-display text-xl font-bold text-flag-blue">No orders yet.</h2><p class="mt-2 text-sm leading-6 text-muted">Orders appear here the moment a shopper starts checkout.</p></div>
+						} else {
+							<div class="divide-y divide-flag-blue/10">
+								for _, row := range vm.Orders {
+									<article data-testid="admin-order-row" class="grid gap-4 p-5 md:grid-cols-[1fr_auto_auto] md:items-center">
+										<div>
+											<a href={ "/admin/orders/" + row.Order.ID } class="break-all font-display text-xl font-medium text-flag-blue transition hover:text-flag-red">Order { row.Order.ID }</a>
+											<p class="mt-1 text-sm leading-6 text-muted">{ row.Order.Email } · { formatAdminOrderTime(row.Order.CreatedAt) } · { strconv.Itoa(adminOrderItemCount(row.Order)) } items</p>
+											<p class="mt-2 flex flex-wrap gap-2">
+												<span data-testid="admin-order-status" class={ adminOrderStatusChipClass(row.Order.Status) }>{ adminOrderStatusLabel(row.Order.Status) }</span>
+												if row.Overdue {
+													<span data-testid="admin-order-overdue" class="inline-flex bg-flag-red px-2.5 py-1 text-xs font-bold uppercase tracking-eyebrow text-white">Overdue pending</span>
+												}
+											</p>
+										</div>
+										<p class="font-display text-xl font-bold text-flag-blue">{ formatAdminPrice(row.Order.TotalCents) }</p>
+										<a href={ "/admin/orders/" + row.Order.ID } class="inline-flex h-11 items-center justify-center bg-flag-blue px-5 text-sm font-bold text-white transition hover:bg-ink">Review</a>
+									</article>
+								}
+							</div>
+						}
+					</section>
+				</main>
+			</div>
+		</body>
+	</html>
+}

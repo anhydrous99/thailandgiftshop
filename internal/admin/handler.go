@@ -14,8 +14,10 @@ import (
 	"time"
 
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
+	"github.com/anhydrous99/thailandgiftshop/internal/commerce"
 	"github.com/anhydrous99/thailandgiftshop/internal/httpapi"
 	"github.com/anhydrous99/thailandgiftshop/internal/observability"
+	"github.com/anhydrous99/thailandgiftshop/internal/payments"
 	"github.com/aws/aws-lambda-go/events"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -40,6 +42,9 @@ type Handler struct {
 	credentials        Credentials
 	now                func() time.Time
 	catalog            catalog.AdminStore
+	commerce           commerce.Store
+	stock              catalog.StockStore
+	payments           payments.Provider
 	uploads            productImageUploads
 	loginThrottle      adminLoginThrottle
 	metrics            observability.Recorder
@@ -68,9 +73,12 @@ func NewHandlerWithCredentialsAndCatalog(credentials Credentials, adminStore cat
 	return handler
 }
 
-func NewLocalDemoHandler(credentials Credentials, adminStore catalog.AdminStore) *Handler {
+func NewLocalDemoHandler(credentials Credentials, adminStore catalog.AdminStore, commerceStore commerce.Store, stockStore catalog.StockStore, paymentsProvider payments.Provider) *Handler {
 	handler := NewHandlerWithCredentialsAndCatalog(credentials, adminStore)
 	handler.uploads = localProductImageUploads{}
+	handler.commerce = commerceStore
+	handler.stock = stockStore
+	handler.payments = paymentsProvider
 	return handler
 }
 
@@ -90,7 +98,29 @@ func NewHandlerFromEnvironment(ctx context.Context) (*Handler, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	commerceStore, _, err := commerce.NewStoreFromEnvWithRecorder(ctx, metrics)
+	if err != nil {
+		return nil, err
+	}
 	handler := NewHandlerWithCredentialsAndCatalog(credentials, adminStore)
+	handler.commerce = commerceStore
+	// The catalog admin store doubles as the stock store (both the Dynamo and
+	// memory implementations satisfy catalog.StockStore), so admin order
+	// cancellations release stock through the same versioned write path.
+	if stockStore, ok := adminStore.(catalog.StockStore); ok {
+		handler.stock = stockStore
+	}
+	// Best-effort payments wiring: the CDK stack grants the admin Lambda the
+	// Stripe credentials, but a missing provider (for example a local run
+	// without the env var) must not fail admin startup. Without one, the
+	// pending-order cancel flow skips the session-expiry guard instead of
+	// refusing to cancel.
+	if provider, providerErr := payments.NewProviderFromEnvironment(ctx); providerErr != nil {
+		logAdminError("orders: payments provider unavailable; cancel skips session expiry", providerErr)
+	} else {
+		handler.payments = provider
+	}
 	handler.loginThrottle = loginThrottle
 	handler.metrics = metrics
 	return handler, nil
@@ -153,6 +183,9 @@ func (h *Handler) adminMetricRoute(request events.APIGatewayV2HTTPRequest) strin
 	}
 	if isAdminCategoryPath(path) {
 		return "categories"
+	}
+	if isAdminOrderPath(path) {
+		return "orders"
 	}
 	if isProductImageUploadPath(path) {
 		return "uploads"
@@ -276,6 +309,9 @@ func (h *Handler) handleProtectedAdmin(ctx context.Context, request events.APIGa
 	}
 	if isAdminCategoryPath(path) {
 		return h.handleAdminCategories(ctx, path, request, session)
+	}
+	if isAdminOrderPath(path) {
+		return h.handleAdminOrders(ctx, path, request, session)
 	}
 	if isProductImageUploadPath(path) {
 		if method != http.MethodPost {

@@ -13,8 +13,11 @@ import (
 
 	"github.com/anhydrous99/thailandgiftshop/internal/cart"
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
+	"github.com/anhydrous99/thailandgiftshop/internal/checkout"
+	"github.com/anhydrous99/thailandgiftshop/internal/commerce"
 	"github.com/anhydrous99/thailandgiftshop/internal/httpapi"
 	"github.com/anhydrous99/thailandgiftshop/internal/observability"
+	"github.com/anhydrous99/thailandgiftshop/internal/payments"
 	"github.com/aws/aws-lambda-go/events"
 )
 
@@ -29,6 +32,13 @@ type Handler struct {
 	metrics                    observability.Recorder
 	productImagePlaceholderURL string
 	cartCookieSecret           string
+	commerce                   commerce.Store
+	payments                   payments.Provider
+	checkout                   *checkout.Service
+	stock                      catalog.StockStore
+	customerSessionSecret      string
+	passwordHashCost           int
+	now                        func() time.Time
 	originSecretDigest         [32]byte
 	originSecretSet            bool
 }
@@ -52,6 +62,8 @@ func NewHandlerWithProductImagePlaceholderURL(catalogStore catalog.Store, placeh
 		catalogStore:               catalogStore,
 		productImagePlaceholderURL: placeholderURL,
 		cartCookieSecret:           os.Getenv(cart.EnvCookieSecret),
+		customerSessionSecret:      os.Getenv(commerce.EnvSessionSecret),
+		now:                        time.Now,
 		originSecretDigest:         originSecretDigest,
 		originSecretSet:            originSecretSet,
 	}
@@ -63,14 +75,71 @@ func NewHandlerFromEnvironment(ctx context.Context) (*Handler, error) {
 	if err != nil {
 		return nil, err
 	}
+	commerceStore, _, err := commerce.NewStoreFromEnvWithRecorder(ctx, metrics)
+	if err != nil {
+		return nil, err
+	}
+	paymentsProvider, err := payments.NewProviderFromEnvironment(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	handler := NewHandler(catalogStore)
 	handler.metrics = metrics
+	handler.commerce = commerceStore
+	handler.payments = paymentsProvider
+	// The production catalog DynamoStore implements StockStore; the
+	// EmptyStore fallback (no CATALOG_TABLE_NAME outside production) does
+	// not, which leaves checkout unreachable along with the empty catalog.
+	if stockStore, ok := catalogStore.(catalog.StockStore); ok {
+		handler.stock = stockStore
+	}
+	handler.checkout = &checkout.Service{
+		Commerce: commerceStore,
+		Payments: paymentsProvider,
+		Stock:    handler.stock,
+		Metrics:  metrics,
+		BaseURL:  payments.PublicBaseURLFromEnvironment(),
+	}
 	return handler, nil
+}
+
+// NewLocalDemoHandler wires the in-memory commerce store and the fake payment
+// provider around the shared demo catalog for devserver and tests. The
+// catalog MemoryStore doubles as the stock store.
+func NewLocalDemoHandler(catalogStore *catalog.MemoryStore, commerceStore commerce.Store, provider payments.Provider) *Handler {
+	handler := NewHandler(catalogStore)
+	handler.commerce = commerceStore
+	handler.payments = provider
+	handler.stock = catalogStore
+	handler.checkout = &checkout.Service{
+		Commerce: commerceStore,
+		Payments: provider,
+		Stock:    catalogStore,
+		BaseURL:  localDemoBaseURL(),
+	}
+	return handler
+}
+
+// localDemoBaseURL prefers an explicit PUBLIC_BASE_URL and otherwise targets
+// the devserver origin, keeping provider redirect URLs on-site locally.
+func localDemoBaseURL() string {
+	if baseURL := strings.TrimSpace(os.Getenv(payments.EnvPublicBaseURL)); baseURL != "" {
+		return strings.TrimSuffix(baseURL, "/")
+	}
+	return "http://127.0.0.1:8080"
 }
 
 func (h *Handler) Catalog() catalog.Store {
 	return h.catalogStore
+}
+
+// currentTime is the injected clock (the admin precedent); tests set h.now.
+func (h *Handler) currentTime() time.Time {
+	if h.now == nil {
+		return time.Now()
+	}
+	return h.now()
 }
 
 var defaultHandler = NewHandler(catalog.EmptyStore{})
@@ -118,8 +187,17 @@ func (h *Handler) handle(ctx context.Context, request events.APIGatewayV2HTTPReq
 	if route.kind == pageSitemapXML {
 		return h.handleSitemap(ctx, method), nil
 	}
+	if route.kind == pageStripeWebhook {
+		return h.handleStripeWebhook(ctx, request), nil
+	}
 	if isCartMutationRoute(route.kind) {
 		return h.handleCartMutation(ctx, request, route), nil
+	}
+	if isAccountRoute(route.kind) {
+		return h.handleAccountRoute(ctx, request, route), nil
+	}
+	if isCheckoutFlowRoute(route.kind) {
+		return h.handleCheckoutFlowRoute(ctx, request, route), nil
 	}
 	var body string
 	statusCode := http.StatusOK
@@ -127,7 +205,7 @@ func (h *Handler) handle(ctx context.Context, request events.APIGatewayV2HTTPReq
 	var err error
 	headerCartLabel := cartNavigationLabel(0)
 	var pageCartState *requestCart
-	if route.kind == pageCart || route.kind == pageCheckout {
+	if route.kind == pageCart {
 		currentCart, cartErr := h.cartStateFromRequest(ctx, request)
 		if cartErr != nil {
 			logHandlerError(route.kind, method, path, cartErr)
@@ -166,20 +244,6 @@ func (h *Handler) handle(ctx context.Context, request events.APIGatewayV2HTTPReq
 	case pageCart:
 		body, err = renderCartPage(ctx, cartPageViewModel{
 			Metadata:                   cartMetadata(),
-			Lines:                      pageCartState.lines,
-			ProductImagePlaceholderURL: h.productImagePlaceholderURL,
-			HeaderCartLabel:            headerCartLabel,
-		})
-	case pageCheckout:
-		if pageCartState.cart.LineCount() == 0 || hasUnavailableCartLines(pageCartState.lines) {
-			response := httpapi.SeeOther("/cart", cookies, seoHeadersForRoute(route.kind))
-			if method == http.MethodHead {
-				response.Body = ""
-			}
-			return response, nil
-		}
-		body, err = renderCheckoutPage(ctx, checkoutPageViewModel{
-			Metadata:                   checkoutMetadata(),
 			Lines:                      pageCartState.lines,
 			ProductImagePlaceholderURL: h.productImagePlaceholderURL,
 			HeaderCartLabel:            headerCartLabel,
@@ -538,15 +602,6 @@ func parallelCatalogReads[A any, B any](ctx context.Context, first func(context.
 func renderCartPage(ctx context.Context, vm cartPageViewModel) (string, error) {
 	var body bytes.Buffer
 	if err := cartPage(vm).Render(ctx, &body); err != nil {
-		return "", err
-	}
-
-	return body.String(), nil
-}
-
-func renderCheckoutPage(ctx context.Context, vm checkoutPageViewModel) (string, error) {
-	var body bytes.Buffer
-	if err := checkoutPage(vm).Render(ctx, &body); err != nil {
 		return "", err
 	}
 

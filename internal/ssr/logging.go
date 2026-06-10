@@ -28,3 +28,14 @@ func logHandlerWarn(kind pageKind, method string, path string, err error) {
 		slog.String("error", err.Error()),
 	)
 }
+
+// logAccountError reports customer-account failures that degrade a request
+// without failing it (session resolution, cart persistence). Never log cookie
+// values, tokens, or passwords here.
+func logAccountError(operation string, err error) {
+	errorLogger.Error("account operation failed",
+		slog.String("service", "ssr"),
+		slog.String("operation", operation),
+		slog.String("error", err.Error()),
+	)
+}

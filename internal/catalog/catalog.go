@@ -198,6 +198,41 @@ type AdminStore interface {
 	ArchiveCategory(ctx context.Context, category Category) (Category, error)
 }
 
+// StockAdjustment describes one stock delta for a product or one of its
+// variants. Negative deltas reserve stock; positive deltas release it.
+// Adjustments are keyed by product ID (not slug) so a reservation survives
+// admin slug edits between reserve and a later release.
+type StockAdjustment struct {
+	ProductID string
+	VariantID string
+	Delta     int
+}
+
+// InsufficientStockError reports that an adjustment would drive a product or
+// variant stock quantity below zero. Available is the stock on hand before
+// the failing adjustment was applied.
+type InsufficientStockError struct {
+	ProductID string
+	Slug      string
+	VariantID string
+	Available int
+}
+
+func (e InsufficientStockError) Error() string {
+	if e.VariantID != "" {
+		return fmt.Sprintf("insufficient stock for product %q variant %q: %d available", e.ProductID, e.VariantID, e.Available)
+	}
+
+	return fmt.Sprintf("insufficient stock for product %q: %d available", e.ProductID, e.Available)
+}
+
+// StockStore applies stock deltas through the versioned product write path so
+// denormalized membership-row stock stays in sync. Multi-product adjustments
+// are applied sequentially with best-effort compensation on failure.
+type StockStore interface {
+	AdjustStock(ctx context.Context, adjustments []StockAdjustment) error
+}
+
 type EmptyStore struct{}
 
 func (EmptyStore) ListActiveProducts(ctx context.Context, limit int) ([]Product, error) {

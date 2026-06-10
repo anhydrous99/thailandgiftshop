@@ -5,7 +5,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,12 +18,20 @@ import (
 	"github.com/anhydrous99/thailandgiftshop/internal/appenv"
 	"github.com/anhydrous99/thailandgiftshop/internal/cart"
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
+	"github.com/anhydrous99/thailandgiftshop/internal/commerce"
 	"github.com/anhydrous99/thailandgiftshop/internal/httpapi"
 	"github.com/anhydrous99/thailandgiftshop/internal/observability"
+	"github.com/anhydrous99/thailandgiftshop/internal/payments"
 	"github.com/aws/aws-lambda-go/events"
+	"golang.org/x/crypto/bcrypt"
 )
 
 const ssrTestCartSecret = "ssr-cart-test-secret"
+const ssrTestSessionSecret = "ssr-customer-session-test-secret"
+
+// ssrTestAccountID matches the 26-char lowercase Crockford base32 identifier
+// shape used for addresses and orders.
+const ssrTestAccountID = "0123456789abcdefghjkmnpqrs"
 
 var expectedHomeContent = []string{
 	"<!doctype html>",
@@ -170,6 +181,126 @@ func TestRouteForPath(t *testing.T) {
 			want: pageRoute{kind: pageCheckout, redirectTo: "/checkout", knownPageShape: true},
 		},
 		{
+			name: "account",
+			path: "/account",
+			want: pageRoute{kind: pageAccount, knownPageShape: true},
+		},
+		{
+			name: "account trailing slash redirect",
+			path: "/account/",
+			want: pageRoute{kind: pageAccount, redirectTo: "/account", knownPageShape: true},
+		},
+		{
+			name: "account sign up",
+			path: "/account/sign-up",
+			want: pageRoute{kind: pageAccountSignUp, knownPageShape: true},
+		},
+		{
+			name: "account sign up trailing slash redirect",
+			path: "/account/sign-up/",
+			want: pageRoute{kind: pageAccountSignUp, redirectTo: "/account/sign-up", knownPageShape: true},
+		},
+		{
+			name: "account sign in",
+			path: "/account/sign-in",
+			want: pageRoute{kind: pageAccountSignIn, knownPageShape: true},
+		},
+		{
+			name: "account sign in trailing slash redirect",
+			path: "/account/sign-in/",
+			want: pageRoute{kind: pageAccountSignIn, redirectTo: "/account/sign-in", knownPageShape: true},
+		},
+		{
+			name: "account sign out",
+			path: "/account/sign-out",
+			want: pageRoute{kind: pageAccountSignOut, knownPageShape: true},
+		},
+		{
+			name: "account password",
+			path: "/account/password",
+			want: pageRoute{kind: pageAccountPassword, knownPageShape: true},
+		},
+		{
+			name: "account addresses",
+			path: "/account/addresses",
+			want: pageRoute{kind: pageAccountAddresses, knownPageShape: true},
+		},
+		{
+			name: "account addresses trailing slash redirect",
+			path: "/account/addresses/",
+			want: pageRoute{kind: pageAccountAddresses, redirectTo: "/account/addresses", knownPageShape: true},
+		},
+		{
+			name: "account address edit",
+			path: "/account/addresses/" + ssrTestAccountID + "/edit",
+			want: pageRoute{kind: pageAccountAddressEdit, slug: ssrTestAccountID, knownPageShape: true},
+		},
+		{
+			name: "account address edit trailing slash redirect",
+			path: "/account/addresses/" + ssrTestAccountID + "/edit/",
+			want: pageRoute{kind: pageAccountAddressEdit, slug: ssrTestAccountID, redirectTo: "/account/addresses/" + ssrTestAccountID + "/edit", knownPageShape: true},
+		},
+		{
+			name: "account address update",
+			path: "/account/addresses/" + ssrTestAccountID + "/update",
+			want: pageRoute{kind: pageAccountAddressUpdate, slug: ssrTestAccountID, knownPageShape: true},
+		},
+		{
+			name: "account address remove",
+			path: "/account/addresses/" + ssrTestAccountID + "/remove",
+			want: pageRoute{kind: pageAccountAddressRemove, slug: ssrTestAccountID, knownPageShape: true},
+		},
+		{
+			name: "account address default",
+			path: "/account/addresses/" + ssrTestAccountID + "/default",
+			want: pageRoute{kind: pageAccountAddressDefault, slug: ssrTestAccountID, knownPageShape: true},
+		},
+		{
+			name: "account payment methods",
+			path: "/account/payment-methods",
+			want: pageRoute{kind: pageAccountPaymentMethods, knownPageShape: true},
+		},
+		{
+			name: "account payment methods trailing slash redirect",
+			path: "/account/payment-methods/",
+			want: pageRoute{kind: pageAccountPaymentMethods, redirectTo: "/account/payment-methods", knownPageShape: true},
+		},
+		{
+			name: "account payment method add",
+			path: "/account/payment-methods/add",
+			want: pageRoute{kind: pageAccountPaymentMethodAdd, knownPageShape: true},
+		},
+		{
+			name: "account payment method remove",
+			path: "/account/payment-methods/pm_fake_visa_4242/remove",
+			want: pageRoute{kind: pageAccountPaymentMethodRemove, slug: "pm_fake_visa_4242", knownPageShape: true},
+		},
+		{
+			name: "account address edit rejects malformed id",
+			path: "/account/addresses/UPPERCASE-IS-NOT-AN-ID-1234/edit",
+			want: pageRoute{kind: pageUnknown},
+		},
+		{
+			name: "account address update rejects short id",
+			path: "/account/addresses/tooshort/update",
+			want: pageRoute{kind: pageUnknown},
+		},
+		{
+			name: "account payment method remove rejects malformed id",
+			path: "/account/payment-methods/visa4242/remove",
+			want: pageRoute{kind: pageUnknown},
+		},
+		{
+			name: "account payment method remove rejects too-short id",
+			path: "/account/payment-methods/pm_x/remove",
+			want: pageRoute{kind: pageUnknown},
+		},
+		{
+			name: "unknown account subpath",
+			path: "/account/unknown",
+			want: pageRoute{kind: pageUnknown},
+		},
+		{
 			name: "unknown",
 			path: "/missing",
 			want: pageRoute{kind: pageUnknown},
@@ -268,6 +399,12 @@ func TestRedirects(t *testing.T) {
 		{name: "story trailing slash", method: http.MethodGet, path: "/story/", location: "/story"},
 		{name: "cart trailing slash", method: http.MethodGet, path: "/cart/", location: "/cart"},
 		{name: "checkout trailing slash", method: http.MethodGet, path: "/checkout/", location: "/checkout"},
+		{name: "account trailing slash", method: http.MethodGet, path: "/account/", location: "/account"},
+		{name: "account sign in trailing slash", method: http.MethodGet, path: "/account/sign-in/", location: "/account/sign-in"},
+		{name: "account sign up trailing slash", method: http.MethodGet, path: "/account/sign-up/", location: "/account/sign-up"},
+		{name: "account addresses trailing slash", method: http.MethodGet, path: "/account/addresses/", location: "/account/addresses"},
+		{name: "account address edit trailing slash", method: http.MethodGet, path: "/account/addresses/" + ssrTestAccountID + "/edit/", location: "/account/addresses/" + ssrTestAccountID + "/edit"},
+		{name: "account payment methods trailing slash", method: http.MethodGet, path: "/account/payment-methods/", location: "/account/payment-methods"},
 		{name: "head redirect has no body", method: http.MethodHead, path: "/shop", location: "/products"},
 	}
 
@@ -365,6 +502,7 @@ func TestSitemapIncludesOnlyPublicIndexActiveDetailAndStoryURLs(t *testing.T) {
 		"hidden-category",
 		"/cart",
 		"/checkout",
+		"/account",
 		"/admin",
 		"/shop",
 		"/about",
@@ -489,9 +627,13 @@ func TestCartAndCheckoutRenderNoindexRobots(t *testing.T) {
 		`<link rel="canonical" href="` + canonicalHost + `/cart">`,
 	})
 
-	checkoutRequest := pageRequest(http.MethodGet, "/checkout")
-	checkoutRequest.Cookies = request.Cookies
-	checkoutResponse, err := NewHandler(cartRouteStore()).Handle(context.Background(), checkoutRequest)
+	// The checkout page is session-gated now, so the noindex/no-store
+	// assertions run against a signed-in render with a server cart.
+	env := newAccountTestEnv(t)
+	jar := testCookieJar{}
+	signUpTestCustomer(t, env.handler, jar, "shopper@example.com", "orchid-market-99")
+	addToTestCart(t, env.handler, jar, "mango-sticky-rice-kit", 1)
+	checkoutResponse, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, "/checkout", jar))
 	if err != nil {
 		t.Fatalf("Handle checkout returned error: %v", err)
 	}
@@ -508,6 +650,23 @@ func TestCartAndCheckoutRenderNoindexRobots(t *testing.T) {
 		`<meta name="robots" content="noindex, follow">`,
 		`<link rel="canonical" href="` + canonicalHost + `/checkout">`,
 	})
+}
+
+// addToTestCart drives the real POST /cart/items mutation so signed-in tests
+// exercise the server-cart write path.
+func addToTestCart(t *testing.T, handler *Handler, jar testCookieJar, slug string, quantity int) {
+	t.Helper()
+	response, err := handler.Handle(context.Background(), jarFormPostRequest("/cart/items", url.Values{
+		"slug":     {slug},
+		"quantity": {strconv.Itoa(quantity)},
+	}, jar))
+	if err != nil {
+		t.Fatalf("Handle cart add returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusSeeOther {
+		t.Fatalf("cart add status = %d body %q, want 303", response.StatusCode, response.Body)
+	}
+	jar.update(t, response)
 }
 
 func TestCartMutationsPostCartItemsSetsCookieAndRedirectsToCart(t *testing.T) {
@@ -689,7 +848,7 @@ func TestCartPageRenders(t *testing.T) {
 		if response.StatusCode != http.StatusOK {
 			t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
 		}
-		assertBodyContains(t, response.Body, []string{`Cart (2)`, `data-testid="cart-line-item"`, `src="/images/products/mango-sticky-rice-kit.jpg"`, `alt="Mango Sticky Rice Treats"`, `href="/products/mango-sticky-rice-kit"`, `Mango Sticky Rice Treats`, `$28.99`, `$57.98`, `action="/cart/items/mango-sticky-rice-kit/quantity"`, `name="quantity"`, `value="2"`, `max="5"`, `action="/cart/items/mango-sticky-rice-kit/remove"`, `action="/cart/clear"`, `href="/checkout"`, `Review checkout`, `Continue shopping`, `Clear cart`})
+		assertBodyContains(t, response.Body, []string{`Cart (2)`, `data-testid="cart-line-item"`, `src="/images/products/mango-sticky-rice-kit.jpg"`, `alt="Mango Sticky Rice Treats"`, `href="/products/mango-sticky-rice-kit"`, `Mango Sticky Rice Treats`, `$28.99`, `$57.98`, `action="/cart/items/mango-sticky-rice-kit/quantity"`, `name="quantity"`, `value="2"`, `max="5"`, `action="/cart/items/mango-sticky-rice-kit/remove"`, `action="/cart/clear"`, `href="/checkout"`, `Check out`, `Continue shopping`, `Clear cart`})
 	})
 }
 
@@ -710,11 +869,11 @@ func TestCartPageShowsVariantLabelAndBlocksUnavailableVariantUntilRemoved(t *tes
 		`Size Small`,
 		`Size Archived`,
 		`Selected size is unavailable. Remove it to continue.`,
-		`Remove unavailable sizes before checkout review.`,
+		`Remove unavailable sizes before checkout.`,
 		`action="/cart/items/variant-shirt/remove"`,
 		`type="hidden" name="variant_id" value="var-archived"`,
 	})
-	assertBodyOmits(t, response.Body, []string{`href="/checkout"`, `Review checkout`})
+	assertBodyOmits(t, response.Body, []string{`href="/checkout"`, `Check out`})
 }
 
 func TestCartRemoveUnavailableVariantLine(t *testing.T) {
@@ -734,20 +893,61 @@ func TestCartRemoveUnavailableVariantLine(t *testing.T) {
 	}
 }
 
-func TestCheckoutPageRendersReviewOnly(t *testing.T) {
-	t.Setenv(cart.EnvCookieSecret, ssrTestCartSecret)
-	request := pageRequest(http.MethodGet, "/checkout")
-	request.Cookies = []string{cart.CookieName + "=" + encodedTestCart(t, []cart.Line{{Slug: "mango-sticky-rice-kit", Quantity: 2}})}
+// TestCheckoutPageRendersAddressesAndPlaceOrder replaces the review-only
+// checkout assertions with positive ones: address radio cards, the priced
+// order summary, and the single place-order action.
+func TestCheckoutPageRendersAddressesAndPlaceOrder(t *testing.T) {
+	env := newAccountTestEnv(t)
+	jar := testCookieJar{}
+	signUpTestCustomer(t, env.handler, jar, "shopper@example.com", "orchid-market-99")
+	addToTestCart(t, env.handler, jar, "mango-sticky-rice-kit", 2)
+	createTestAddress(t, env.handler, jar, "Anong Shopper")
 
-	response, err := NewHandlerWithProductImagePlaceholderURL(cartRouteStore(), "/images/placeholder-product.jpg").Handle(context.Background(), request)
+	response, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, "/checkout", jar))
 	if err != nil {
 		t.Fatalf("Handle returned error: %v", err)
 	}
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
 	}
-	assertBodyContains(t, response.Body, []string{`<title>Checkout Review | Thailand Gift Shop</title>`, `Checkout Review`, `Review only`, `data-testid="checkout-line-item"`, `src="/images/products/mango-sticky-rice-kit.jpg"`, `Mango Sticky Rice Treats`, `Quantity 2`, `$28.99`, `$57.98`, `Shipping and tax are not calculated on this review page.`, `Payment is not collected, and no order is placed from this screen.`, `No customer details or payment details are collected here, and no order is submitted.`, `href="/cart"`, `href="/products"`})
-	assertBodyOmits(t, response.Body, []string{`<form`, `name="email"`, `name="address"`, `name="card"`, `payment submit`, `instant purchase`})
+	assertBodyContains(t, response.Body, []string{
+		`<title>Checkout | Thailand Gift Shop</title>`,
+		`Payment is processed by Stripe. We never see or store your card number. Shipping is free while we launch; tax is not collected yet.`,
+		`action="/checkout/place-order"`,
+		`data-testid="checkout-address-option"`,
+		`type="radio" name="address_id"`,
+		`Anong Shopper`,
+		`data-testid="checkout-line-item"`,
+		`Mango Sticky Rice Treats`,
+		`Quantity 2`,
+		`$28.99`,
+		`$57.98`,
+		`data-testid="place-order-button"`,
+		`Continue to payment`,
+		`name="csrf_token"`,
+	})
+}
+
+// createTestAddress saves a US address through the real POST /account/addresses
+// flow and returns nothing; tests read IDs back from the addresses page.
+func createTestAddress(t *testing.T, handler *Handler, jar testCookieJar, fullName string) {
+	t.Helper()
+	token := accountCSRFToken(t, handler, jar)
+	response, err := handler.Handle(context.Background(), jarFormPostRequest("/account/addresses", url.Values{
+		customerCSRFFieldName: {token},
+		"full_name":           {fullName},
+		"line1":               {"123 Sukhumvit Rd"},
+		"city":                {"Bangkok"},
+		"region":              {"NY"},
+		"postal_code":         {"10110"},
+	}, jar))
+	if err != nil {
+		t.Fatalf("Handle address create returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusSeeOther {
+		t.Fatalf("address create status = %d body %q, want 303", response.StatusCode, response.Body)
+	}
+	jar.update(t, response)
 }
 
 func TestCheckoutRedirectsWhenCartHasUnavailableVariant(t *testing.T) {
@@ -770,23 +970,29 @@ func TestCheckoutRedirectsWhenCartHasUnavailableVariant(t *testing.T) {
 	}
 }
 
-func TestCartPageOmitsPIIAndPaymentControls(t *testing.T) {
+// TestCartPageExplainsStripeCheckout replaces the old PII-omission test with
+// positive assertions: the cart explains the Stripe handoff and links to the
+// real checkout. Card entry itself happens only on Stripe's hosted page.
+func TestCartPageExplainsStripeCheckout(t *testing.T) {
 	t.Setenv(cart.EnvCookieSecret, ssrTestCartSecret)
-	for _, path := range []string{"/cart", "/checkout"} {
-		t.Run(path, func(t *testing.T) {
-			request := pageRequest(http.MethodGet, path)
-			request.Cookies = []string{cart.CookieName + "=" + encodedTestCart(t, []cart.Line{{Slug: "mango-sticky-rice-kit", Quantity: 1}})}
+	request := pageRequest(http.MethodGet, "/cart")
+	request.Cookies = []string{cart.CookieName + "=" + encodedTestCart(t, []cart.Line{{Slug: "mango-sticky-rice-kit", Quantity: 1}})}
 
-			response, err := NewHandler(cartRouteStore()).Handle(context.Background(), request)
-			if err != nil {
-				t.Fatalf("Handle returned error: %v", err)
-			}
-			if response.StatusCode != http.StatusOK {
-				t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
-			}
-			assertBodyOmits(t, response.Body, []string{`name="email"`, `name="address"`, `name="card"`, `card number`, `payment submit`, `instant purchase`})
-		})
+	response, err := NewHandler(cartRouteStore()).Handle(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
 	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	assertBodyContains(t, response.Body, []string{
+		`Payment is processed by Stripe at checkout. Shipping is free while we launch; tax is not collected yet.`,
+		`href="/checkout"`,
+		`Check out`,
+	})
+	// Card numbers are entered exclusively on checkout.stripe.com; the cart
+	// never renders card inputs.
+	assertBodyOmits(t, response.Body, []string{`name="card"`, `card_number`})
 }
 
 func TestCartPageShowsCappedInventoryQuantities(t *testing.T) {
@@ -810,11 +1016,32 @@ func TestCartPageShowsCappedInventoryQuantities(t *testing.T) {
 }
 
 func TestCheckoutPageExcludesDroppedStaleItems(t *testing.T) {
-	t.Setenv(cart.EnvCookieSecret, ssrTestCartSecret)
-	request := pageRequest(http.MethodGet, "/checkout")
-	request.Cookies = []string{cart.CookieName + "=" + encodedTestCart(t, []cart.Line{{Slug: "mango-sticky-rice-kit", Quantity: 2}, {Slug: "draft-product", Quantity: 1}, {Slug: "sold-out", Quantity: 1}, {Slug: "missing-product", Quantity: 1}})}
+	// Stale server-cart lines (draft, sold out, deleted) are normalized away
+	// before the signed-in checkout renders, and the repaired cart is written
+	// back to both the CART row and the tgs_cart mirror.
+	env := newAccountTestEnvWithProducts(t, append(accountTestCatalogProducts(),
+		catalog.Product{ID: "prod_draft", Slug: "draft-product", Name: "Draft Product", Status: catalog.StatusDraft, StockQuantity: 5},
+		catalog.Product{ID: "prod_sold_out", Slug: "sold-out", Name: "Sold Out", Status: catalog.StatusActive, StockQuantity: 0},
+	))
+	jar := testCookieJar{}
+	signUpTestCustomer(t, env.handler, jar, "shopper@example.com", "orchid-market-99")
+	customerID := accountCustomerID(t, env, "shopper@example.com")
+	record, _, err := env.commerce.GetCart(context.Background(), customerID)
+	if err != nil {
+		t.Fatalf("GetCart returned error: %v", err)
+	}
+	record.CustomerID = customerID
+	record.Lines = []cart.Line{
+		{Slug: "mango-sticky-rice-kit", Quantity: 2},
+		{Slug: "draft-product", Quantity: 1},
+		{Slug: "sold-out", Quantity: 1},
+		{Slug: "missing-product", Quantity: 1},
+	}
+	if _, err := env.commerce.PutCart(context.Background(), record); err != nil {
+		t.Fatalf("PutCart returned error: %v", err)
+	}
 
-	response, err := NewHandler(cartRouteStore()).Handle(context.Background(), request)
+	response, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, "/checkout", jar))
 	if err != nil {
 		t.Fatalf("Handle returned error: %v", err)
 	}
@@ -823,7 +1050,10 @@ func TestCheckoutPageExcludesDroppedStaleItems(t *testing.T) {
 	}
 	decoded := decodedCartFromResponse(t, response)
 	if got := decoded.Lines(); len(got) != 1 || got[0].Slug != "mango-sticky-rice-kit" || got[0].Quantity != 2 {
-		t.Fatalf("normalized lines = %#v, want only active in-stock mango", got)
+		t.Fatalf("normalized mirror lines = %#v, want only active in-stock mango", got)
+	}
+	if lines := serverCartLines(t, env, customerID); len(lines) != 1 || lines[0].Slug != "mango-sticky-rice-kit" {
+		t.Fatalf("repaired server cart = %#v, want only mango", lines)
 	}
 	assertBodyContains(t, response.Body, []string{`Mango Sticky Rice Treats`, `$57.98`})
 	assertBodyOmits(t, response.Body, []string{`Draft Product`, `Sold Out`, `missing-product`})
@@ -1621,23 +1851,34 @@ func TestHeaderCartLinkLabelCountsCookieLinesWithoutValidatingProducts(t *testin
 func TestCartBearingPagesReuseNormalizedRequestCart(t *testing.T) {
 	t.Setenv(cart.EnvCookieSecret, ssrTestCartSecret)
 
-	for _, path := range []string{"/cart", "/checkout"} {
-		t.Run(path, func(t *testing.T) {
+	// The anonymous checkout request 303s to sign-in, but its cart guard
+	// still normalizes the cart exactly once first.
+	tests := []struct {
+		path       string
+		statusCode int
+	}{
+		{path: "/cart", statusCode: http.StatusOK},
+		{path: "/checkout", statusCode: http.StatusSeeOther},
+	}
+	for _, test := range tests {
+		t.Run(test.path, func(t *testing.T) {
 			store := cartRouteStore()
-			request := pageRequest(http.MethodGet, path)
+			request := pageRequest(http.MethodGet, test.path)
 			request.Cookies = []string{cart.CookieName + "=" + encodedTestCart(t, []cart.Line{{Slug: "mango-sticky-rice-kit", Quantity: 2}})}
 
 			response, err := NewHandler(store).Handle(context.Background(), request)
 			if err != nil {
 				t.Fatalf("Handle returned error: %v", err)
 			}
-			if response.StatusCode != http.StatusOK {
-				t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
+			if response.StatusCode != test.statusCode {
+				t.Fatalf("status code = %d, want %d", response.StatusCode, test.statusCode)
 			}
 			if got := store.productLookupCount("mango-sticky-rice-kit"); got != 1 {
 				t.Fatalf("GetProductBySlug lookups for mango-sticky-rice-kit = %d, want 1", got)
 			}
-			assertBodyContains(t, response.Body, []string{`Cart (2)`, `Mango Sticky Rice Treats`})
+			if test.statusCode == http.StatusOK {
+				assertBodyContains(t, response.Body, []string{`Cart (2)`, `Mango Sticky Rice Treats`})
+			}
 		})
 	}
 }
@@ -2226,10 +2467,8 @@ func TestProductDetailRendersCartFormForInStockProduct(t *testing.T) {
 		`type="hidden" name="slug" value="thai-tea-sampler"`,
 		`type="number" name="quantity" value="1" min="1" max="99"`,
 		`Add to cart`,
-		`Adding this item starts a cart review.`,
-		`No payment is collected yet`,
-		`shipping and tax are not included`,
-		`Stripe payment processing will be added later`,
+		`Checkout is handled securely by Stripe.`,
+		`Shipping is free while we launch; tax is not collected yet.`,
 	})
 	assertBodyOmits(t, response.Body, []string{
 		`prod_active_cart`,
@@ -2880,11 +3119,13 @@ func TestStoryReturnsStaticPageWithoutCatalogQuery(t *testing.T) {
 		`Thailand Gift Shop is a Bangkok gift shop online for Thai snacks, souvenirs, textiles, pantry items, decor, wellness, and small keepsakes.`,
 		`Each aisle is shaped for calm browsing: clear categories, strong product images, concise details, and slug-based links that work without JavaScript.`,
 		`The shop point of view is market-bright and practical, rooted in the colors, textures, pantry flavors, and compact keepsakes travelers remember from Bangkok gift shops.`,
-		`Checkout is review-only for now: no payment is collected yet, and shipping and tax are confirmed later.`,
+		`Checkout is handled securely by Stripe — we never see or store card numbers. Shipping is free while we launch; tax is not collected yet.`,
 	})
 }
 
-func TestStoryExplainsReviewOnlyCheckout(t *testing.T) {
+// TestStoryExplainsStripeCheckout replaces the review-only story assertion
+// with the live-checkout disclosure copy.
+func TestStoryExplainsStripeCheckout(t *testing.T) {
 	response, err := NewHandler(&fakeCatalogStore{}).Handle(context.Background(), pageRequest(http.MethodGet, "/story"))
 	if err != nil {
 		t.Fatalf("Handle returned error: %v", err)
@@ -2894,9 +3135,10 @@ func TestStoryExplainsReviewOnlyCheckout(t *testing.T) {
 	}
 	assertBodyContains(t, response.Body, []string{
 		`Thai gift-shop catalog`,
-		`Review-only checkout: no payment is collected yet, and shipping and tax are confirmed later.`,
-		`Checkout is review-only for now: no payment is collected yet, and shipping and tax are confirmed later.`,
+		`Checkout is handled securely by Stripe. We never see or store card numbers.`,
+		`Checkout is handled securely by Stripe — we never see or store card numbers. Shipping is free while we launch; tax is not collected yet.`,
 	})
+	assertBodyOmits(t, response.Body, []string{"review-only", "Review only", "review only"})
 }
 
 func TestStorySupportsHeadAndRejectsPost(t *testing.T) {
@@ -3046,7 +3288,6 @@ func routeMatrixStore() *fakeCatalogStore {
 
 func excludedUILabels() []string {
 	return []string{
-		"Account",
 		"Search",
 		"Filter",
 		"Sort",
@@ -3667,5 +3908,2166 @@ func TestHomeIgnoresLegacyFallbackGreetingQuery(t *testing.T) {
 	}
 	if !strings.Contains(response.Body, "<!doctype html>") || !strings.Contains(response.Body, `<html lang="en"`) || !strings.Contains(response.Body, "No products are available yet.") {
 		t.Fatalf("fallback response does not contain full-page shell: %q", response.Body)
+	}
+}
+
+// --- Customer accounts, sessions, and server carts ---
+
+type accountTestEnv struct {
+	handler  *Handler
+	commerce *commerce.MemoryStore
+	payments *payments.FakeProvider
+	catalog  *catalog.MemoryStore
+}
+
+func newAccountTestEnv(t *testing.T) accountTestEnv {
+	t.Helper()
+	return newAccountTestEnvWithProducts(t, accountTestCatalogProducts())
+}
+
+func newAccountTestEnvWithProducts(t *testing.T, products []catalog.Product) accountTestEnv {
+	t.Helper()
+	t.Setenv(cart.EnvCookieSecret, ssrTestCartSecret)
+	t.Setenv(commerce.EnvSessionSecret, ssrTestSessionSecret)
+	catalogStore := catalog.NewMemoryStore(products, nil)
+	commerceStore := commerce.NewMemoryStore()
+	provider := payments.NewFakeProvider()
+	handler := NewLocalDemoHandler(catalogStore, commerceStore, provider)
+	handler.passwordHashCost = bcrypt.MinCost
+	return accountTestEnv{handler: handler, commerce: commerceStore, payments: provider, catalog: catalogStore}
+}
+
+func accountTestCatalogProducts() []catalog.Product {
+	return []catalog.Product{
+		{
+			ID:            "prod_account_mango",
+			Slug:          "mango-sticky-rice-kit",
+			Name:          "Mango Sticky Rice Treats",
+			Description:   "Shelf-stable Thai dessert snacks.",
+			PriceCents:    2899,
+			ImageURL:      "/images/products/mango-sticky-rice-kit.jpg",
+			Status:        catalog.StatusActive,
+			StockQuantity: 5,
+		},
+		{
+			ID:            "prod_account_tea",
+			Slug:          "thai-tea-sampler",
+			Name:          "Thai Tea Selection",
+			Description:   "Loose leaf Thai tea and sweet snacks.",
+			PriceCents:    2199,
+			ImageURL:      "/images/products/thai-tea-sampler.jpg",
+			Status:        catalog.StatusActive,
+			StockQuantity: 9,
+		},
+	}
+}
+
+// testCookieJar tracks Set-Cookie state across the multi-request account
+// flows the way a browser would.
+type testCookieJar map[string]string
+
+func (jar testCookieJar) update(t *testing.T, response events.APIGatewayV2HTTPResponse) {
+	t.Helper()
+	for _, setCookie := range response.Cookies {
+		header := http.Header{}
+		header.Add("Set-Cookie", setCookie)
+		parsed := (&http.Response{Header: header}).Cookies()
+		if len(parsed) != 1 {
+			t.Fatalf("unparseable Set-Cookie %q", setCookie)
+		}
+		cookie := parsed[0]
+		if cookie.MaxAge < 0 {
+			delete(jar, cookie.Name)
+			continue
+		}
+		jar[cookie.Name] = cookie.Value
+	}
+}
+
+func (jar testCookieJar) requestCookies() []string {
+	cookies := make([]string, 0, len(jar))
+	for name, value := range jar {
+		cookies = append(cookies, name+"="+value)
+	}
+	sort.Strings(cookies)
+	return cookies
+}
+
+func cloneJar(jar testCookieJar) testCookieJar {
+	cloned := testCookieJar{}
+	for name, value := range jar {
+		cloned[name] = value
+	}
+	return cloned
+}
+
+func jarPageRequest(method string, path string, jar testCookieJar) events.APIGatewayV2HTTPRequest {
+	request := pageRequest(method, path)
+	request.Cookies = jar.requestCookies()
+	return request
+}
+
+func jarFormPostRequest(path string, form url.Values, jar testCookieJar) events.APIGatewayV2HTTPRequest {
+	request := formPostRequest(path, form.Encode())
+	request.Cookies = jar.requestCookies()
+	return request
+}
+
+func hiddenInputValue(t *testing.T, body string, name string) string {
+	t.Helper()
+	marker := `name="` + name + `" value="`
+	start := strings.Index(body, marker)
+	if start < 0 {
+		t.Fatalf("hidden input %q not found in body: %q", name, body)
+	}
+	rest := body[start+len(marker):]
+	end := strings.Index(rest, `"`)
+	if end < 0 {
+		t.Fatalf("hidden input %q is unterminated in body", name)
+	}
+	return rest[:end]
+}
+
+func rawSetCookie(t *testing.T, response events.APIGatewayV2HTTPResponse, name string) string {
+	t.Helper()
+	for _, setCookie := range response.Cookies {
+		if strings.HasPrefix(setCookie, name+"=") {
+			return setCookie
+		}
+	}
+	t.Fatalf("Set-Cookie for %q not found in %#v", name, response.Cookies)
+	return ""
+}
+
+func setCookieValue(t *testing.T, response events.APIGatewayV2HTTPResponse, name string) string {
+	t.Helper()
+	for _, setCookie := range response.Cookies {
+		if value, found := httpapi.NamedCookieValue(setCookie, name); found {
+			return value
+		}
+	}
+	t.Fatalf("Set-Cookie for %q not found in %#v", name, response.Cookies)
+	return ""
+}
+
+func guestCSRFTokenFor(t *testing.T, handler *Handler, jar testCookieJar, path string) string {
+	t.Helper()
+	response, err := handler.Handle(context.Background(), jarPageRequest(http.MethodGet, path, jar))
+	if err != nil {
+		t.Fatalf("Handle %s returned error: %v", path, err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("%s status = %d, want %d", path, response.StatusCode, http.StatusOK)
+	}
+	jar.update(t, response)
+	return hiddenInputValue(t, response.Body, guestCSRFFieldName)
+}
+
+func signUpTestCustomer(t *testing.T, handler *Handler, jar testCookieJar, email string, password string) events.APIGatewayV2HTTPResponse {
+	t.Helper()
+	token := guestCSRFTokenFor(t, handler, jar, "/account/sign-up")
+	response, err := handler.Handle(context.Background(), jarFormPostRequest("/account/sign-up", url.Values{
+		guestCSRFFieldName: {token},
+		"email":            {email},
+		"password":         {password},
+	}, jar))
+	if err != nil {
+		t.Fatalf("sign-up Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusSeeOther {
+		t.Fatalf("sign-up status = %d body %q, want %d", response.StatusCode, response.Body, http.StatusSeeOther)
+	}
+	jar.update(t, response)
+	return response
+}
+
+func signInTestCustomer(t *testing.T, handler *Handler, jar testCookieJar, email string, password string) events.APIGatewayV2HTTPResponse {
+	t.Helper()
+	token := guestCSRFTokenFor(t, handler, jar, "/account/sign-in")
+	response, err := handler.Handle(context.Background(), jarFormPostRequest("/account/sign-in", url.Values{
+		guestCSRFFieldName: {token},
+		"email":            {email},
+		"password":         {password},
+	}, jar))
+	if err != nil {
+		t.Fatalf("sign-in Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusSeeOther {
+		t.Fatalf("sign-in status = %d body %q, want %d", response.StatusCode, response.Body, http.StatusSeeOther)
+	}
+	jar.update(t, response)
+	return response
+}
+
+func accountCSRFToken(t *testing.T, handler *Handler, jar testCookieJar) string {
+	t.Helper()
+	response, err := handler.Handle(context.Background(), jarPageRequest(http.MethodGet, "/account", jar))
+	if err != nil {
+		t.Fatalf("Handle /account returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("/account status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	jar.update(t, response)
+	return hiddenInputValue(t, response.Body, customerCSRFFieldName)
+}
+
+func accountCustomerID(t *testing.T, env accountTestEnv, email string) string {
+	t.Helper()
+	customer, found, err := env.commerce.GetCustomerByEmail(context.Background(), commerce.NormalizeEmail(email))
+	if err != nil || !found {
+		t.Fatalf("GetCustomerByEmail(%q) = found %t, err %v", email, found, err)
+	}
+	return customer.ID
+}
+
+func serverCartLines(t *testing.T, env accountTestEnv, customerID string) []cart.Line {
+	t.Helper()
+	record, _, err := env.commerce.GetCart(context.Background(), customerID)
+	if err != nil {
+		t.Fatalf("GetCart returned error: %v", err)
+	}
+	return record.Lines
+}
+
+func TestAccountRouteMethodGates(t *testing.T) {
+	postOnlyPaths := []string{
+		"/account/sign-out",
+		"/account/password",
+		"/account/addresses/" + ssrTestAccountID + "/update",
+		"/account/addresses/" + ssrTestAccountID + "/remove",
+		"/account/addresses/" + ssrTestAccountID + "/default",
+		"/account/payment-methods/add",
+		"/account/payment-methods/pm_fake_visa_4242/remove",
+	}
+	for _, path := range postOnlyPaths {
+		for _, method := range []string{http.MethodGet, http.MethodHead} {
+			t.Run(method+" "+path, func(t *testing.T) {
+				response, err := Handle(context.Background(), pageRequest(method, path))
+				if err != nil {
+					t.Fatalf("Handle returned error: %v", err)
+				}
+				if response.StatusCode != http.StatusMethodNotAllowed {
+					t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusMethodNotAllowed)
+				}
+				if got := response.Headers["Allow"]; got != http.MethodPost {
+					t.Fatalf("Allow = %q, want POST", got)
+				}
+			})
+		}
+	}
+
+	pageOnlyPaths := []string{
+		"/account",
+		"/account/addresses/" + ssrTestAccountID + "/edit",
+		"/account/payment-methods",
+	}
+	for _, path := range pageOnlyPaths {
+		t.Run("POST "+path, func(t *testing.T) {
+			response, err := Handle(context.Background(), pageRequest(http.MethodPost, path))
+			if err != nil {
+				t.Fatalf("Handle returned error: %v", err)
+			}
+			if response.StatusCode != http.StatusMethodNotAllowed {
+				t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusMethodNotAllowed)
+			}
+			if got := response.Headers["Allow"]; got != allowedMethods {
+				t.Fatalf("Allow = %q, want %q", got, allowedMethods)
+			}
+		})
+	}
+
+	dualMethodPaths := []string{"/account/sign-in", "/account/sign-up", "/account/addresses"}
+	for _, path := range dualMethodPaths {
+		for _, method := range []string{http.MethodPut, http.MethodDelete} {
+			t.Run(method+" "+path, func(t *testing.T) {
+				response, err := Handle(context.Background(), pageRequest(method, path))
+				if err != nil {
+					t.Fatalf("Handle returned error: %v", err)
+				}
+				if response.StatusCode != http.StatusMethodNotAllowed {
+					t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusMethodNotAllowed)
+				}
+				if got := response.Headers["Allow"]; got != accountFormAllowedMethods {
+					t.Fatalf("Allow = %q, want %q", got, accountFormAllowedMethods)
+				}
+			})
+		}
+	}
+}
+
+func TestAccountPagesAnonymousRedirectToSignInWithReturnTo(t *testing.T) {
+	env := newAccountTestEnv(t)
+	tests := []struct {
+		method   string
+		path     string
+		location string
+	}{
+		{http.MethodGet, "/account", "/account/sign-in?return_to=%2Faccount"},
+		{http.MethodGet, "/account/addresses", "/account/sign-in?return_to=%2Faccount%2Faddresses"},
+		{http.MethodGet, "/account/payment-methods", "/account/sign-in?return_to=%2Faccount%2Fpayment-methods"},
+		{http.MethodGet, "/account/addresses/" + ssrTestAccountID + "/edit", "/account/sign-in?return_to=%2Faccount%2Faddresses%2F" + ssrTestAccountID + "%2Fedit"},
+		{http.MethodPost, "/account/password", "/account/sign-in?return_to=%2Faccount"},
+		{http.MethodPost, "/account/addresses/" + ssrTestAccountID + "/default", "/account/sign-in?return_to=%2Faccount%2Faddresses"},
+		{http.MethodPost, "/account/payment-methods/add", "/account/sign-in?return_to=%2Faccount%2Fpayment-methods"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.method+" "+test.path, func(t *testing.T) {
+			response, err := env.handler.Handle(context.Background(), pageRequest(test.method, test.path))
+			if err != nil {
+				t.Fatalf("Handle returned error: %v", err)
+			}
+			if response.StatusCode != http.StatusSeeOther {
+				t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusSeeOther)
+			}
+			if got := response.Headers["Location"]; got != test.location {
+				t.Fatalf("Location = %q, want %q", got, test.location)
+			}
+			if got := response.Headers["Cache-Control"]; got != privatePageCacheControl {
+				t.Fatalf("Cache-Control = %q, want %q", got, privatePageCacheControl)
+			}
+		})
+	}
+
+	t.Run("anonymous sign-out goes home", func(t *testing.T) {
+		response, err := env.handler.Handle(context.Background(), pageRequest(http.MethodPost, "/account/sign-out"))
+		if err != nil {
+			t.Fatalf("Handle returned error: %v", err)
+		}
+		if response.StatusCode != http.StatusSeeOther || response.Headers["Location"] != "/" {
+			t.Fatalf("response = %d %q, want 303 /", response.StatusCode, response.Headers["Location"])
+		}
+	})
+}
+
+func TestSignUpPageRendersFormWithGuestCSRF(t *testing.T) {
+	env := newAccountTestEnv(t)
+	response, err := env.handler.Handle(context.Background(), pageRequest(http.MethodGet, "/account/sign-up"))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	assertBodyContains(t, response.Body, []string{
+		`data-testid="signup-form"`,
+		`action="/account/sign-up"`,
+		`name="guest_csrf_token" value="`,
+		`name="email"`,
+		`name="password"`,
+		`Accounts are active immediately`,
+	})
+	guestCookie := rawSetCookie(t, response, commerce.GuestCSRFCookieName)
+	for _, want := range []string{"Path=/", "Max-Age=7200", "HttpOnly", "Secure", "SameSite=Lax"} {
+		if !strings.Contains(guestCookie, want) {
+			t.Fatalf("guest csrf cookie %q missing %q", guestCookie, want)
+		}
+	}
+	token := hiddenInputValue(t, response.Body, guestCSRFFieldName)
+	if cookieValue, _ := httpapi.NamedCookieValue(guestCookie, commerce.GuestCSRFCookieName); cookieValue != token {
+		t.Fatalf("guest csrf cookie value %q != hidden field %q (double submit must match)", cookieValue, token)
+	}
+}
+
+func TestSignInPageRendersResetDeferralCopyAndReturnTo(t *testing.T) {
+	env := newAccountTestEnv(t)
+	request := pageRequest(http.MethodGet, "/account/sign-in")
+	request.QueryStringParameters = map[string]string{"return_to": "/cart"}
+	response, err := env.handler.Handle(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	assertBodyContains(t, response.Body, []string{
+		`data-testid="signin-form"`,
+		`action="/account/sign-in"`,
+		`Forgot your password? Reset is not available yet`,
+		`name="return_to" value="/cart"`,
+		`href="/account/sign-up"`,
+	})
+
+	maliciousRequest := pageRequest(http.MethodGet, "/account/sign-in")
+	maliciousRequest.QueryStringParameters = map[string]string{"return_to": "https://evil.example"}
+	maliciousResponse, err := env.handler.Handle(context.Background(), maliciousRequest)
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	assertBodyOmits(t, maliciousResponse.Body, []string{"evil.example", `name="return_to"`})
+}
+
+func TestSignUpCreatesAccountSessionAndCookies(t *testing.T) {
+	env := newAccountTestEnv(t)
+	jar := testCookieJar{}
+	response := signUpTestCustomer(t, env.handler, jar, "Shopper@Example.com", "orchid-market-99")
+
+	if got := response.Headers["Location"]; got != "/account" {
+		t.Fatalf("Location = %q, want /account", got)
+	}
+	if got := response.Headers["Cache-Control"]; got != privatePageCacheControl {
+		t.Fatalf("Cache-Control = %q, want %q", got, privatePageCacheControl)
+	}
+	if len(response.Cookies) != 4 {
+		t.Fatalf("cookies = %#v, want session, csrf, guest clear, cart mirror", response.Cookies)
+	}
+	sessionCookie := rawSetCookie(t, response, commerce.SessionCookieName)
+	for _, want := range []string{"Path=/", "Max-Age=2592000", "HttpOnly", "Secure", "SameSite=Lax"} {
+		if !strings.Contains(sessionCookie, want) {
+			t.Fatalf("session cookie %q missing %q", sessionCookie, want)
+		}
+	}
+	if csrfCookie := rawSetCookie(t, response, commerce.CSRFCookieName); !strings.Contains(csrfCookie, "Max-Age=2592000") {
+		t.Fatalf("csrf cookie = %q, want session-aligned Max-Age", csrfCookie)
+	}
+	if guestClear := rawSetCookie(t, response, commerce.GuestCSRFCookieName); !strings.Contains(guestClear, "Max-Age=0") {
+		t.Fatalf("guest csrf cookie = %q, want clearing", guestClear)
+	}
+	if cartMirror := rawSetCookie(t, response, cart.CookieName); !strings.Contains(cartMirror, "Max-Age=0") {
+		t.Fatalf("cart mirror = %q, want clearing for an empty cart", cartMirror)
+	}
+
+	customer, found, err := env.commerce.GetCustomerByEmail(context.Background(), "shopper@example.com")
+	if err != nil || !found {
+		t.Fatalf("customer lookup = found %t, err %v", found, err)
+	}
+	if customer.Email != "Shopper@Example.com" || customer.EmailNormalized != "shopper@example.com" {
+		t.Fatalf("customer emails = %q/%q, want display case preserved and normalized lookup", customer.Email, customer.EmailNormalized)
+	}
+	if bcrypt.CompareHashAndPassword([]byte(customer.PasswordHash), []byte("orchid-market-99")) != nil {
+		t.Fatal("stored password hash does not verify the password")
+	}
+
+	accountResponse, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, "/account", jar))
+	if err != nil {
+		t.Fatalf("Handle /account returned error: %v", err)
+	}
+	if accountResponse.StatusCode != http.StatusOK {
+		t.Fatalf("/account status = %d, want %d", accountResponse.StatusCode, http.StatusOK)
+	}
+	assertBodyContains(t, accountResponse.Body, []string{"Shopper@Example.com", `action="/account/sign-out"`, `action="/account/password"`})
+}
+
+// transientConflictCommerceStore fails CreateCustomer with the retryable
+// transient-conflict classification before delegating, simulating the Dynamo
+// transaction contention the memory store never produces on its own.
+type transientConflictCommerceStore struct {
+	commerce.Store
+	remainingFailures int
+	createCalls       int
+}
+
+func (s *transientConflictCommerceStore) CreateCustomer(ctx context.Context, email string, emailNormalized string, passwordHash string) (commerce.Customer, error) {
+	s.createCalls++
+	if s.remainingFailures > 0 {
+		s.remainingFailures--
+		return commerce.Customer{}, fmt.Errorf("%w: simulated contention", commerce.ErrTransientConflict)
+	}
+	return s.Store.CreateCustomer(ctx, email, emailNormalized, passwordHash)
+}
+
+func TestSignUpRetriesTransientCreateCustomerConflict(t *testing.T) {
+	env := newAccountTestEnv(t)
+	store := &transientConflictCommerceStore{Store: env.commerce, remainingFailures: 1}
+	env.handler.commerce = store
+
+	jar := testCookieJar{}
+	signUpTestCustomer(t, env.handler, jar, "shopper@example.com", "orchid-market-99")
+	if store.createCalls != 2 {
+		t.Fatalf("CreateCustomer calls = %d, want 2 (one transient conflict, one retry success)", store.createCalls)
+	}
+	if _, found, err := env.commerce.GetCustomerByEmail(context.Background(), "shopper@example.com"); err != nil || !found {
+		t.Fatalf("customer lookup after retried sign-up = found %t, err %v", found, err)
+	}
+}
+
+func TestSignUpDuplicateEmailShowsSignInPrompt(t *testing.T) {
+	env := newAccountTestEnv(t)
+	signUpTestCustomer(t, env.handler, testCookieJar{}, "shopper@example.com", "orchid-market-99")
+
+	jar := testCookieJar{}
+	token := guestCSRFTokenFor(t, env.handler, jar, "/account/sign-up")
+	response, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/sign-up", url.Values{
+		guestCSRFFieldName: {token},
+		"email":            {"shopper@example.com"},
+		"password":         {"another-password-1"},
+	}, jar))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusBadRequest)
+	}
+	assertBodyContains(t, response.Body, []string{
+		"An account with this email already exists. Sign in instead.",
+		`data-testid="signup-form"`,
+	})
+}
+
+func TestSignUpRejectsInvalidEmailAndPasswordLengths(t *testing.T) {
+	tests := []struct {
+		name     string
+		email    string
+		password string
+		message  string
+	}{
+		{name: "email missing at", email: "shopper.example.com", password: "orchid-market-99", message: invalidEmailError},
+		{name: "email two ats", email: "shopper@@example.com", password: "orchid-market-99", message: invalidEmailError},
+		{name: "email domain without dot", email: "shopper@localhost", password: "orchid-market-99", message: invalidEmailError},
+		{name: "email with spaces", email: "shop per@example.com", password: "orchid-market-99", message: invalidEmailError},
+		{name: "email too long", email: strings.Repeat("a", 250) + "@example.com", password: "orchid-market-99", message: invalidEmailError},
+		{name: "password seven bytes", email: "shopper@example.com", password: "1234567", message: invalidPasswordError},
+		{name: "password 73 bytes is rejected not truncated", email: "shopper@example.com", password: strings.Repeat("p", 73), message: invalidPasswordError},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			env := newAccountTestEnv(t)
+			jar := testCookieJar{}
+			token := guestCSRFTokenFor(t, env.handler, jar, "/account/sign-up")
+			response, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/sign-up", url.Values{
+				guestCSRFFieldName: {token},
+				"email":            {test.email},
+				"password":         {test.password},
+			}, jar))
+			if err != nil {
+				t.Fatalf("Handle returned error: %v", err)
+			}
+			if response.StatusCode != http.StatusBadRequest {
+				t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusBadRequest)
+			}
+			assertBodyContains(t, response.Body, []string{test.message})
+			if _, found, _ := env.commerce.GetCustomerByEmail(context.Background(), commerce.NormalizeEmail(test.email)); found {
+				t.Fatal("invalid sign-up created a customer")
+			}
+		})
+	}
+}
+
+func TestSignInHappyPathHonorsValidatedReturnTo(t *testing.T) {
+	env := newAccountTestEnv(t)
+	signUpTestCustomer(t, env.handler, testCookieJar{}, "shopper@example.com", "orchid-market-99")
+
+	jar := testCookieJar{}
+	token := guestCSRFTokenFor(t, env.handler, jar, "/account/sign-in")
+	response, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/sign-in", url.Values{
+		guestCSRFFieldName: {token},
+		"email":            {"shopper@example.com"},
+		"password":         {"orchid-market-99"},
+		"return_to":        {"/cart"},
+	}, jar))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusSeeOther || response.Headers["Location"] != "/cart" {
+		t.Fatalf("response = %d %q, want 303 /cart", response.StatusCode, response.Headers["Location"])
+	}
+	jar.update(t, response)
+
+	openRedirectJar := testCookieJar{}
+	openRedirectToken := guestCSRFTokenFor(t, env.handler, openRedirectJar, "/account/sign-in")
+	openRedirectResponse, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/sign-in", url.Values{
+		guestCSRFFieldName: {openRedirectToken},
+		"email":            {"shopper@example.com"},
+		"password":         {"orchid-market-99"},
+		"return_to":        {"//evil.example/phish"},
+	}, openRedirectJar))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if got := openRedirectResponse.Headers["Location"]; got != "/account" {
+		t.Fatalf("open-redirect Location = %q, want /account fallback", got)
+	}
+
+	accountResponse, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, "/account", jar))
+	if err != nil {
+		t.Fatalf("Handle /account returned error: %v", err)
+	}
+	if accountResponse.StatusCode != http.StatusOK {
+		t.Fatalf("/account status = %d, want %d", accountResponse.StatusCode, http.StatusOK)
+	}
+}
+
+func TestReturnToRejectsControlCharacterSpliceVectors(t *testing.T) {
+	// The WHATWG URL parser strips tab/CR/LF before parsing, so any control
+	// character that survives validation can re-create a protocol-relative
+	// "//evil.com" inside the Location header.
+	for _, value := range []string{
+		"/\t/evil.com",
+		"/\r/evil.com",
+		"/\n/evil.com",
+		"/\r\n/evil.com",
+		"/\x00/evil.com",
+		"/checkout\x1b",
+		"/checkout\x7f",
+	} {
+		if validReturnTo(value) {
+			t.Errorf("validReturnTo(%q) = true, want false", value)
+		}
+	}
+	if !validReturnTo("/checkout") {
+		t.Error(`validReturnTo("/checkout") = false, want true`)
+	}
+
+	env := newAccountTestEnv(t)
+	signUpTestCustomer(t, env.handler, testCookieJar{}, "shopper@example.com", "orchid-market-99")
+
+	// The %09-encoded form value reaches the handler decoded to a raw tab.
+	jar := testCookieJar{}
+	token := guestCSRFTokenFor(t, env.handler, jar, "/account/sign-in")
+	response, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/sign-in", url.Values{
+		guestCSRFFieldName: {token},
+		"email":            {"shopper@example.com"},
+		"password":         {"orchid-market-99"},
+		"return_to":        {"/\t/evil.com"},
+	}, jar))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if got := response.Headers["Location"]; got != "/account" {
+		t.Fatalf("tab-spliced return_to Location = %q, want /account fallback", got)
+	}
+	jar.update(t, response)
+
+	// The address-create "next" field funnels through the same validator.
+	addressToken := accountCSRFToken(t, env.handler, jar)
+	addressResponse, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/addresses", url.Values{
+		customerCSRFFieldName: {addressToken},
+		"full_name":           {"Anong Shopper"},
+		"line1":               {"123 Sukhumvit Rd"},
+		"city":                {"Bangkok"},
+		"region":              {"NY"},
+		"postal_code":         {"10110"},
+		"next":                {"/\r\n/evil.com"},
+	}, jar))
+	if err != nil {
+		t.Fatalf("Handle address create returned error: %v", err)
+	}
+	if got := addressResponse.Headers["Location"]; got != "/account/addresses" {
+		t.Fatalf("CRLF-spliced next Location = %q, want /account/addresses fallback", got)
+	}
+}
+
+func TestDummyCustomerBcryptHashMatchesProductionCost(t *testing.T) {
+	// A cheaper dummy hash would make unknown-email sign-ins measurably
+	// faster than wrong-password sign-ins — an email-existence timing oracle.
+	cost, err := bcrypt.Cost([]byte(dummyCustomerBcryptHash))
+	if err != nil {
+		t.Fatalf("bcrypt.Cost returned error: %v", err)
+	}
+	if cost != customerPasswordBcryptCost {
+		t.Fatalf("dummy hash cost = %d, want %d", cost, customerPasswordBcryptCost)
+	}
+}
+
+func TestSignInInvalidCredentialsAreGeneric(t *testing.T) {
+	env := newAccountTestEnv(t)
+	signUpTestCustomer(t, env.handler, testCookieJar{}, "shopper@example.com", "orchid-market-99")
+
+	for _, test := range []struct {
+		name     string
+		email    string
+		password string
+	}{
+		{name: "unknown email burns dummy bcrypt", email: "nobody@example.com", password: "orchid-market-99"},
+		{name: "wrong password", email: "shopper@example.com", password: "wrong-password-11"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			jar := testCookieJar{}
+			token := guestCSRFTokenFor(t, env.handler, jar, "/account/sign-in")
+			response, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/sign-in", url.Values{
+				guestCSRFFieldName: {token},
+				"email":            {test.email},
+				"password":         {test.password},
+			}, jar))
+			if err != nil {
+				t.Fatalf("Handle returned error: %v", err)
+			}
+			if response.StatusCode != http.StatusUnauthorized {
+				t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusUnauthorized)
+			}
+			assertBodyContains(t, response.Body, []string{"Invalid email or password.", `data-testid="signin-form"`})
+			for _, setCookie := range response.Cookies {
+				if strings.HasPrefix(setCookie, commerce.SessionCookieName+"=") {
+					t.Fatalf("failed sign-in set a session cookie: %q", setCookie)
+				}
+			}
+		})
+	}
+}
+
+func TestSignInIssuesFreshSessionPerLogin(t *testing.T) {
+	env := newAccountTestEnv(t)
+	firstJar := testCookieJar{}
+	firstResponse := signUpTestCustomer(t, env.handler, firstJar, "shopper@example.com", "orchid-market-99")
+	firstSession := setCookieValue(t, firstResponse, commerce.SessionCookieName)
+
+	secondJar := testCookieJar{}
+	secondResponse := signInTestCustomer(t, env.handler, secondJar, "shopper@example.com", "orchid-market-99")
+	secondSession := setCookieValue(t, secondResponse, commerce.SessionCookieName)
+
+	if firstSession == secondSession {
+		t.Fatal("second login reused the first session token; sessions must be freshly server-minted")
+	}
+	for name, jar := range map[string]testCookieJar{"first": firstJar, "second": secondJar} {
+		response, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, "/account", jar))
+		if err != nil {
+			t.Fatalf("Handle /account (%s) returned error: %v", name, err)
+		}
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("/account (%s) status = %d, want %d", name, response.StatusCode, http.StatusOK)
+		}
+	}
+}
+
+func TestSignInThrottledAfterRepeatedFailures(t *testing.T) {
+	env := newAccountTestEnv(t)
+	signUpTestCustomer(t, env.handler, testCookieJar{}, "shopper@example.com", "orchid-market-99")
+
+	jar := testCookieJar{}
+	token := guestCSRFTokenFor(t, env.handler, jar, "/account/sign-in")
+	failedAttempt := func() events.APIGatewayV2HTTPResponse {
+		response, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/sign-in", url.Values{
+			guestCSRFFieldName: {token},
+			"email":            {"shopper@example.com"},
+			"password":         {"wrong-password-11"},
+		}, jar))
+		if err != nil {
+			t.Fatalf("Handle returned error: %v", err)
+		}
+		return response
+	}
+
+	for attempt := 1; attempt <= commerce.LoginAttemptLimit; attempt++ {
+		if response := failedAttempt(); response.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("attempt %d status = %d, want %d", attempt, response.StatusCode, http.StatusUnauthorized)
+		}
+	}
+
+	throttled := failedAttempt()
+	if throttled.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("throttled status = %d, want %d", throttled.StatusCode, http.StatusTooManyRequests)
+	}
+	retryAfter, err := strconv.Atoi(throttled.Headers["Retry-After"])
+	if err != nil || retryAfter < 1 {
+		t.Fatalf("Retry-After = %q, want positive seconds", throttled.Headers["Retry-After"])
+	}
+	if throttled.Body != throttledBody {
+		t.Fatalf("throttled body = %q, want generic %q", throttled.Body, throttledBody)
+	}
+
+	// Reserve-before-verify: even the correct password is rejected while
+	// locked.
+	correct, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/sign-in", url.Values{
+		guestCSRFFieldName: {token},
+		"email":            {"shopper@example.com"},
+		"password":         {"orchid-market-99"},
+	}, jar))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if correct.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("locked correct-password status = %d, want %d", correct.StatusCode, http.StatusTooManyRequests)
+	}
+}
+
+func TestSignUpThrottledByIP(t *testing.T) {
+	env := newAccountTestEnv(t)
+	jar := testCookieJar{}
+	token := guestCSRFTokenFor(t, env.handler, jar, "/account/sign-up")
+	invalidAttempt := func() events.APIGatewayV2HTTPResponse {
+		response, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/sign-up", url.Values{
+			guestCSRFFieldName: {token},
+			"email":            {"not-an-email"},
+			"password":         {"orchid-market-99"},
+		}, jar))
+		if err != nil {
+			t.Fatalf("Handle returned error: %v", err)
+		}
+		return response
+	}
+
+	for attempt := 1; attempt <= commerce.LoginAttemptLimit; attempt++ {
+		if response := invalidAttempt(); response.StatusCode != http.StatusBadRequest {
+			t.Fatalf("attempt %d status = %d, want %d", attempt, response.StatusCode, http.StatusBadRequest)
+		}
+	}
+	throttled := invalidAttempt()
+	if throttled.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("throttled status = %d, want %d", throttled.StatusCode, http.StatusTooManyRequests)
+	}
+	if throttled.Headers["Retry-After"] == "" {
+		t.Fatal("throttled response missing Retry-After")
+	}
+}
+
+func TestGuestCSRFMatrixOnSignIn(t *testing.T) {
+	env := newAccountTestEnv(t)
+	signUpTestCustomer(t, env.handler, testCookieJar{}, "shopper@example.com", "orchid-market-99")
+
+	validJar := testCookieJar{}
+	validToken := guestCSRFTokenFor(t, env.handler, validJar, "/account/sign-in")
+	otherJar := testCookieJar{}
+	otherToken := guestCSRFTokenFor(t, env.handler, otherJar, "/account/sign-in")
+
+	tests := []struct {
+		name string
+		jar  testCookieJar
+		form url.Values
+	}{
+		{
+			name: "missing cookie",
+			jar:  testCookieJar{},
+			form: url.Values{guestCSRFFieldName: {validToken}, "email": {"shopper@example.com"}, "password": {"orchid-market-99"}},
+		},
+		{
+			name: "missing field",
+			jar:  validJar,
+			form: url.Values{"email": {"shopper@example.com"}, "password": {"orchid-market-99"}},
+		},
+		{
+			name: "cookie field mismatch",
+			jar:  validJar,
+			form: url.Values{guestCSRFFieldName: {otherToken}, "email": {"shopper@example.com"}, "password": {"orchid-market-99"}},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			response, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/sign-in", test.form, test.jar))
+			if err != nil {
+				t.Fatalf("Handle returned error: %v", err)
+			}
+			if response.StatusCode != http.StatusForbidden {
+				t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusForbidden)
+			}
+			for _, setCookie := range response.Cookies {
+				if strings.HasPrefix(setCookie, commerce.SessionCookieName+"=") {
+					t.Fatalf("CSRF-rejected sign-in set a session cookie: %q", setCookie)
+				}
+			}
+		})
+	}
+}
+
+func TestCustomerCSRFMatrix(t *testing.T) {
+	env := newAccountTestEnv(t)
+	jarA := testCookieJar{}
+	signUpTestCustomer(t, env.handler, jarA, "first@example.com", "orchid-market-99")
+	tokenA := accountCSRFToken(t, env.handler, jarA)
+	jarB := testCookieJar{}
+	signUpTestCustomer(t, env.handler, jarB, "second@example.com", "orchid-market-99")
+	tokenB := accountCSRFToken(t, env.handler, jarB)
+
+	missingCookieJar := cloneJar(jarA)
+	delete(missingCookieJar, commerce.CSRFCookieName)
+	crossSessionJar := cloneJar(jarA)
+	crossSessionJar[commerce.CSRFCookieName] = jarB[commerce.CSRFCookieName]
+
+	tests := []struct {
+		name string
+		jar  testCookieJar
+		form url.Values
+	}{
+		{name: "missing csrf cookie", jar: missingCookieJar, form: url.Values{customerCSRFFieldName: {tokenA}}},
+		{name: "missing csrf field", jar: jarA, form: url.Values{}},
+		{name: "cookie field mismatch", jar: jarA, form: url.Values{customerCSRFFieldName: {"not-the-cookie-value"}}},
+		{name: "cross-session token", jar: crossSessionJar, form: url.Values{customerCSRFFieldName: {tokenB}}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			response, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/sign-out", test.form, test.jar))
+			if err != nil {
+				t.Fatalf("Handle returned error: %v", err)
+			}
+			if response.StatusCode != http.StatusForbidden {
+				t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusForbidden)
+			}
+		})
+	}
+
+	// The session survived every rejected POST.
+	stillSignedIn, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, "/account", jarA))
+	if err != nil {
+		t.Fatalf("Handle /account returned error: %v", err)
+	}
+	if stillSignedIn.StatusCode != http.StatusOK {
+		t.Fatalf("/account status = %d, want %d after rejected CSRF posts", stillSignedIn.StatusCode, http.StatusOK)
+	}
+
+	// CSRF is validated before the password form is even parsed: a valid
+	// change request without a token is rejected and changes nothing.
+	noTokenChange, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/password", url.Values{
+		"current_password": {"orchid-market-99"},
+		"new_password":     {"replacement-pw-55"},
+	}, jarA))
+	if err != nil {
+		t.Fatalf("Handle password change returned error: %v", err)
+	}
+	if noTokenChange.StatusCode != http.StatusForbidden {
+		t.Fatalf("password change without CSRF = %d, want %d", noTokenChange.StatusCode, http.StatusForbidden)
+	}
+	signInTestCustomer(t, env.handler, testCookieJar{}, "first@example.com", "orchid-market-99")
+}
+
+func TestSignOutDeletesSessionAndClearsCookies(t *testing.T) {
+	env := newAccountTestEnv(t)
+	jar := testCookieJar{}
+	signUpTestCustomer(t, env.handler, jar, "shopper@example.com", "orchid-market-99")
+
+	cartResponse, err := env.handler.Handle(context.Background(), jarFormPostRequest("/cart/items", url.Values{
+		"slug":     {"mango-sticky-rice-kit"},
+		"quantity": {"2"},
+	}, jar))
+	if err != nil {
+		t.Fatalf("Handle cart add returned error: %v", err)
+	}
+	jar.update(t, cartResponse)
+
+	sessionCookieBeforeSignOut := jar[commerce.SessionCookieName]
+	token := accountCSRFToken(t, env.handler, jar)
+	response, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/sign-out", url.Values{
+		customerCSRFFieldName: {token},
+	}, jar))
+	if err != nil {
+		t.Fatalf("Handle sign-out returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusSeeOther || response.Headers["Location"] != "/" {
+		t.Fatalf("sign-out response = %d %q, want 303 /", response.StatusCode, response.Headers["Location"])
+	}
+	for _, name := range []string{commerce.SessionCookieName, commerce.CSRFCookieName, cart.CookieName} {
+		if raw := rawSetCookie(t, response, name); !strings.Contains(raw, "Max-Age=0") {
+			t.Fatalf("sign-out cookie %q = %q, want clearing", name, raw)
+		}
+	}
+	jar.update(t, response)
+
+	redirected, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, "/account", jar))
+	if err != nil {
+		t.Fatalf("Handle /account returned error: %v", err)
+	}
+	if redirected.StatusCode != http.StatusSeeOther {
+		t.Fatalf("/account after sign-out status = %d, want %d", redirected.StatusCode, http.StatusSeeOther)
+	}
+
+	// The session row is gone server-side; replaying the captured cookie
+	// stays anonymous.
+	replayJar := testCookieJar{commerce.SessionCookieName: sessionCookieBeforeSignOut}
+	replayed, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, "/account", replayJar))
+	if err != nil {
+		t.Fatalf("Handle replay returned error: %v", err)
+	}
+	if replayed.StatusCode != http.StatusSeeOther {
+		t.Fatalf("replayed session status = %d, want %d", replayed.StatusCode, http.StatusSeeOther)
+	}
+}
+
+func TestSignOutWithDeadSessionStillClearsAllCustomerCookies(t *testing.T) {
+	env := newAccountTestEnv(t)
+	jar := testCookieJar{}
+	signUpTestCustomer(t, env.handler, jar, "shopper@example.com", "orchid-market-99")
+	customerID := accountCustomerID(t, env, "shopper@example.com")
+
+	cartResponse, err := env.handler.Handle(context.Background(), jarFormPostRequest("/cart/items", url.Values{
+		"slug":     {"mango-sticky-rice-kit"},
+		"quantity": {"2"},
+	}, jar))
+	if err != nil {
+		t.Fatalf("Handle cart add returned error: %v", err)
+	}
+	jar.update(t, cartResponse)
+
+	// The session dies server-side (password change on another device).
+	if err := env.commerce.DeleteAllSessions(context.Background(), customerID); err != nil {
+		t.Fatalf("DeleteAllSessions returned error: %v", err)
+	}
+
+	// CSRF can never validate against a dead session, so the sign-out click
+	// degrades to an idempotent cookie-clearing no-op — including the cart
+	// mirror, which must not leak (or later merge) on a shared machine.
+	response, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/sign-out", url.Values{}, jar))
+	if err != nil {
+		t.Fatalf("Handle sign-out returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusSeeOther || response.Headers["Location"] != "/" {
+		t.Fatalf("dead-session sign-out = %d %q, want 303 /", response.StatusCode, response.Headers["Location"])
+	}
+	for _, name := range []string{commerce.SessionCookieName, commerce.CSRFCookieName, cart.CookieName} {
+		if raw := rawSetCookie(t, response, name); !strings.Contains(raw, "Max-Age=0") {
+			t.Fatalf("dead-session sign-out cookie %q = %q, want clearing", name, raw)
+		}
+	}
+
+	// A sign-out with no cookies at all still scrubs everything.
+	bareResponse, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/sign-out", url.Values{}, testCookieJar{}))
+	if err != nil {
+		t.Fatalf("Handle bare sign-out returned error: %v", err)
+	}
+	if bareResponse.StatusCode != http.StatusSeeOther || bareResponse.Headers["Location"] != "/" {
+		t.Fatalf("bare sign-out = %d %q, want 303 /", bareResponse.StatusCode, bareResponse.Headers["Location"])
+	}
+	for _, name := range []string{commerce.SessionCookieName, commerce.CSRFCookieName, cart.CookieName} {
+		if raw := rawSetCookie(t, bareResponse, name); !strings.Contains(raw, "Max-Age=0") {
+			t.Fatalf("bare sign-out cookie %q = %q, want clearing", name, raw)
+		}
+	}
+}
+
+func TestPasswordChangeRevokesOtherSessions(t *testing.T) {
+	env := newAccountTestEnv(t)
+	jar := testCookieJar{}
+	signUpTestCustomer(t, env.handler, jar, "shopper@example.com", "orchid-market-99")
+	otherDeviceJar := testCookieJar{}
+	signInTestCustomer(t, env.handler, otherDeviceJar, "shopper@example.com", "orchid-market-99")
+
+	token := accountCSRFToken(t, env.handler, jar)
+	response, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/password", url.Values{
+		customerCSRFFieldName: {token},
+		"current_password":    {"orchid-market-99"},
+		"new_password":        {"replacement-pw-55"},
+	}, jar))
+	if err != nil {
+		t.Fatalf("Handle password change returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusSeeOther || response.Headers["Location"] != "/account?password_changed=1" {
+		t.Fatalf("password change = %d %q, want 303 /account?password_changed=1", response.StatusCode, response.Headers["Location"])
+	}
+	jar.update(t, response)
+
+	bannerRequest := jarPageRequest(http.MethodGet, "/account", jar)
+	bannerRequest.QueryStringParameters = map[string]string{"password_changed": "1"}
+	bannerResponse, err := env.handler.Handle(context.Background(), bannerRequest)
+	if err != nil {
+		t.Fatalf("Handle /account returned error: %v", err)
+	}
+	if bannerResponse.StatusCode != http.StatusOK {
+		t.Fatalf("/account status = %d, want %d", bannerResponse.StatusCode, http.StatusOK)
+	}
+	assertBodyContains(t, bannerResponse.Body, []string{"Password changed. Other devices have been signed out."})
+
+	otherDevice, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, "/account", otherDeviceJar))
+	if err != nil {
+		t.Fatalf("Handle other device returned error: %v", err)
+	}
+	if otherDevice.StatusCode != http.StatusSeeOther {
+		t.Fatalf("other device status = %d, want %d (sessions revoked)", otherDevice.StatusCode, http.StatusSeeOther)
+	}
+
+	oldPasswordJar := testCookieJar{}
+	oldToken := guestCSRFTokenFor(t, env.handler, oldPasswordJar, "/account/sign-in")
+	oldPassword, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/sign-in", url.Values{
+		guestCSRFFieldName: {oldToken},
+		"email":            {"shopper@example.com"},
+		"password":         {"orchid-market-99"},
+	}, oldPasswordJar))
+	if err != nil {
+		t.Fatalf("Handle old-password sign-in returned error: %v", err)
+	}
+	if oldPassword.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("old password sign-in = %d, want %d", oldPassword.StatusCode, http.StatusUnauthorized)
+	}
+	signInTestCustomer(t, env.handler, testCookieJar{}, "shopper@example.com", "replacement-pw-55")
+}
+
+// failingDeleteAllSessionsStore injects a transient outage into session
+// revocation.
+type failingDeleteAllSessionsStore struct {
+	commerce.Store
+}
+
+func (failingDeleteAllSessionsStore) DeleteAllSessions(ctx context.Context, customerID string) error {
+	return errors.New("transient revocation outage")
+}
+
+func TestPasswordChangeFailsClosedWhenSessionRevocationFails(t *testing.T) {
+	env := newAccountTestEnv(t)
+	jar := testCookieJar{}
+	signUpTestCustomer(t, env.handler, jar, "shopper@example.com", "orchid-market-99")
+	token := accountCSRFToken(t, env.handler, jar)
+
+	env.handler.commerce = failingDeleteAllSessionsStore{Store: env.commerce}
+	response, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/password", url.Values{
+		customerCSRFFieldName: {token},
+		"current_password":    {"orchid-market-99"},
+		"new_password":        {"replacement-pw-55"},
+	}, jar))
+	if err != nil {
+		t.Fatalf("Handle password change returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("password change with failed revocation = %d, want %d", response.StatusCode, http.StatusInternalServerError)
+	}
+	env.handler.commerce = env.commerce
+
+	// Fail closed: the password must be unchanged, so a retry with the
+	// current password can re-trigger revocation.
+	signInTestCustomer(t, env.handler, testCookieJar{}, "shopper@example.com", "orchid-market-99")
+	newPasswordJar := testCookieJar{}
+	newPasswordToken := guestCSRFTokenFor(t, env.handler, newPasswordJar, "/account/sign-in")
+	newPassword, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/sign-in", url.Values{
+		guestCSRFFieldName: {newPasswordToken},
+		"email":            {"shopper@example.com"},
+		"password":         {"replacement-pw-55"},
+	}, newPasswordJar))
+	if err != nil {
+		t.Fatalf("Handle new-password sign-in returned error: %v", err)
+	}
+	if newPassword.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("new password sign-in = %d, want %d (password must not have committed)", newPassword.StatusCode, http.StatusUnauthorized)
+	}
+}
+
+func TestPasswordChangeValidatesCurrentAndNewPassword(t *testing.T) {
+	env := newAccountTestEnv(t)
+	jar := testCookieJar{}
+	signUpTestCustomer(t, env.handler, jar, "shopper@example.com", "orchid-market-99")
+	token := accountCSRFToken(t, env.handler, jar)
+
+	wrongCurrent, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/password", url.Values{
+		customerCSRFFieldName: {token},
+		"current_password":    {"not-my-password"},
+		"new_password":        {"replacement-pw-55"},
+	}, jar))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if wrongCurrent.StatusCode != http.StatusBadRequest {
+		t.Fatalf("wrong current status = %d, want %d", wrongCurrent.StatusCode, http.StatusBadRequest)
+	}
+	assertBodyContains(t, wrongCurrent.Body, []string{"Current password is incorrect."})
+
+	shortNew, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/password", url.Values{
+		customerCSRFFieldName: {token},
+		"current_password":    {"orchid-market-99"},
+		"new_password":        {"short"},
+	}, jar))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if shortNew.StatusCode != http.StatusBadRequest {
+		t.Fatalf("short new status = %d, want %d", shortNew.StatusCode, http.StatusBadRequest)
+	}
+	assertBodyContains(t, shortNew.Body, []string{invalidPasswordError})
+
+	// Both rejections left the password untouched.
+	signInTestCustomer(t, env.handler, testCookieJar{}, "shopper@example.com", "orchid-market-99")
+}
+
+func TestMergeOnLoginUsesMaxQuantityAndRewritesMirror(t *testing.T) {
+	env := newAccountTestEnv(t)
+	jar := testCookieJar{}
+	signUpTestCustomer(t, env.handler, jar, "shopper@example.com", "orchid-market-99")
+	customerID := accountCustomerID(t, env, "shopper@example.com")
+
+	addResponse, err := env.handler.Handle(context.Background(), jarFormPostRequest("/cart/items", url.Values{
+		"slug":     {"mango-sticky-rice-kit"},
+		"quantity": {"2"},
+	}, jar))
+	if err != nil {
+		t.Fatalf("Handle cart add returned error: %v", err)
+	}
+	jar.update(t, addResponse)
+	if lines := serverCartLines(t, env, customerID); len(lines) != 1 || lines[0].Quantity != 2 {
+		t.Fatalf("server cart = %#v, want mango quantity 2", lines)
+	}
+
+	// Anonymous browsing on another device: mango 3 (more than the server's
+	// 2) plus a new product.
+	anonymousJar := testCookieJar{
+		cart.CookieName: encodedTestCart(t, []cart.Line{
+			{Slug: "mango-sticky-rice-kit", Quantity: 3},
+			{Slug: "thai-tea-sampler", Quantity: 1},
+		}),
+	}
+	token := guestCSRFTokenFor(t, env.handler, anonymousJar, "/account/sign-in")
+	response, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/sign-in", url.Values{
+		guestCSRFFieldName: {token},
+		"email":            {"shopper@example.com"},
+		"password":         {"orchid-market-99"},
+	}, anonymousJar))
+	if err != nil {
+		t.Fatalf("Handle sign-in returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusSeeOther {
+		t.Fatalf("sign-in status = %d, want %d", response.StatusCode, http.StatusSeeOther)
+	}
+
+	mirror := setCookieValue(t, response, cart.CookieName)
+	decoded := cart.DecodeCookie(mirror, ssrTestCartSecret)
+	if decoded.NeedsClear {
+		t.Fatalf("mirror cookie failed to decode: %q", mirror)
+	}
+	mirrorLines := decoded.Cart.Lines()
+	if len(mirrorLines) != 2 ||
+		mirrorLines[0].Slug != "mango-sticky-rice-kit" || mirrorLines[0].Quantity != 3 ||
+		mirrorLines[1].Slug != "thai-tea-sampler" || mirrorLines[1].Quantity != 1 {
+		t.Fatalf("mirror lines = %#v, want server-first mango max(2,3)=3 then tea 1", mirrorLines)
+	}
+	serverLines := serverCartLines(t, env, customerID)
+	if len(serverLines) != 2 || serverLines[0].Quantity != 3 || serverLines[1].Quantity != 1 {
+		t.Fatalf("server lines = %#v, want merged max quantities", serverLines)
+	}
+
+	anonymousJar.update(t, response)
+	headerResponse, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, "/products", anonymousJar))
+	if err != nil {
+		t.Fatalf("Handle /products returned error: %v", err)
+	}
+	assertBodyContains(t, headerResponse.Body, []string{`href="/cart">Cart (4)</a>`})
+
+	// Replaying the merged cookie through another login is idempotent: max
+	// semantics keep the quantities stable.
+	replayJar := testCookieJar{cart.CookieName: mirror}
+	replayToken := guestCSRFTokenFor(t, env.handler, replayJar, "/account/sign-in")
+	replayResponse, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/sign-in", url.Values{
+		guestCSRFFieldName: {replayToken},
+		"email":            {"shopper@example.com"},
+		"password":         {"orchid-market-99"},
+	}, replayJar))
+	if err != nil {
+		t.Fatalf("Handle replay sign-in returned error: %v", err)
+	}
+	if replayResponse.StatusCode != http.StatusSeeOther {
+		t.Fatalf("replay sign-in status = %d, want %d", replayResponse.StatusCode, http.StatusSeeOther)
+	}
+	if lines := serverCartLines(t, env, customerID); len(lines) != 2 || lines[0].Quantity != 3 || lines[1].Quantity != 1 {
+		t.Fatalf("server lines after replay = %#v, want unchanged max quantities", lines)
+	}
+}
+
+func TestStaleMirrorCookieIsNotMergedOnNextSignIn(t *testing.T) {
+	env := newAccountTestEnv(t)
+	jar := testCookieJar{}
+	signUpTestCustomer(t, env.handler, jar, "shopper@example.com", "orchid-market-99")
+	customerID := accountCustomerID(t, env, "shopper@example.com")
+
+	addResponse, err := env.handler.Handle(context.Background(), jarFormPostRequest("/cart/items", url.Values{
+		"slug":     {"mango-sticky-rice-kit"},
+		"quantity": {"2"},
+	}, jar))
+	if err != nil {
+		t.Fatalf("Handle cart add returned error: %v", err)
+	}
+	mirrorValue := setCookieValue(t, addResponse, cart.CookieName)
+	if !cart.DecodeCookie(mirrorValue, ssrTestCartSecret).Mirror {
+		t.Fatalf("signed-in mutation cookie is not mirror-flagged: %q", mirrorValue)
+	}
+
+	// The customer pays on another device (server cart cleared) and a
+	// password change revokes every session without touching this device's
+	// cookies.
+	record, _, err := env.commerce.GetCart(context.Background(), customerID)
+	if err != nil {
+		t.Fatalf("GetCart returned error: %v", err)
+	}
+	record.CustomerID = customerID
+	record.Lines = nil
+	if _, err := env.commerce.PutCart(context.Background(), record); err != nil {
+		t.Fatalf("PutCart returned error: %v", err)
+	}
+	if err := env.commerce.DeleteAllSessions(context.Background(), customerID); err != nil {
+		t.Fatalf("DeleteAllSessions returned error: %v", err)
+	}
+
+	// Signing back in with only the stale mirror must not resurrect the
+	// paid-and-cleared lines: a mirror is a dead echo of server-cart state,
+	// not anonymous shopping.
+	staleJar := testCookieJar{cart.CookieName: mirrorValue}
+	signInResponse := signInTestCustomer(t, env.handler, staleJar, "shopper@example.com", "orchid-market-99")
+	if lines := serverCartLines(t, env, customerID); len(lines) != 0 {
+		t.Fatalf("server cart after stale-mirror sign-in = %#v, want empty", lines)
+	}
+	if raw := rawSetCookie(t, signInResponse, cart.CookieName); !strings.Contains(raw, "Max-Age=0") {
+		t.Fatalf("stale-mirror sign-in cart cookie = %q, want clearing mirror of the empty cart", raw)
+	}
+
+	// A genuine anonymous cookie (no mirror flag — also the pre-flag legacy
+	// shape) still merges.
+	anonymousJar := testCookieJar{cart.CookieName: encodedTestCart(t, []cart.Line{{Slug: "thai-tea-sampler", Quantity: 1}})}
+	signInTestCustomer(t, env.handler, anonymousJar, "shopper@example.com", "orchid-market-99")
+	lines := serverCartLines(t, env, customerID)
+	if len(lines) != 1 || lines[0].Slug != "thai-tea-sampler" || lines[0].Quantity != 1 {
+		t.Fatalf("server cart after anonymous-cookie sign-in = %#v, want tea 1", lines)
+	}
+}
+
+func TestSignedInCartMutationsWriteThroughServerCart(t *testing.T) {
+	env := newAccountTestEnv(t)
+	jar := testCookieJar{}
+	signUpTestCustomer(t, env.handler, jar, "shopper@example.com", "orchid-market-99")
+	customerID := accountCustomerID(t, env, "shopper@example.com")
+
+	addResponse, err := env.handler.Handle(context.Background(), jarFormPostRequest("/cart/items", url.Values{
+		"slug":     {"mango-sticky-rice-kit"},
+		"quantity": {"2"},
+	}, jar))
+	if err != nil {
+		t.Fatalf("Handle cart add returned error: %v", err)
+	}
+	if addResponse.StatusCode != http.StatusSeeOther || addResponse.Headers["Location"] != "/cart" {
+		t.Fatalf("cart add = %d %q, want 303 /cart", addResponse.StatusCode, addResponse.Headers["Location"])
+	}
+	mirror := cart.DecodeCookie(setCookieValue(t, addResponse, cart.CookieName), ssrTestCartSecret)
+	if got := mirror.Cart.Lines(); len(got) != 1 || got[0].Quantity != 2 {
+		t.Fatalf("mirror after add = %#v, want mango 2", got)
+	}
+	if lines := serverCartLines(t, env, customerID); len(lines) != 1 || lines[0].Quantity != 2 {
+		t.Fatalf("server cart after add = %#v, want mango 2", lines)
+	}
+	jar.update(t, addResponse)
+
+	// Another device with no cart cookie still sees the server cart, and the
+	// render re-emits the mirror (self-healing).
+	bareJar := cloneJar(jar)
+	delete(bareJar, cart.CookieName)
+	cartPageResponse, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, "/cart", bareJar))
+	if err != nil {
+		t.Fatalf("Handle /cart returned error: %v", err)
+	}
+	if cartPageResponse.StatusCode != http.StatusOK {
+		t.Fatalf("/cart status = %d, want %d", cartPageResponse.StatusCode, http.StatusOK)
+	}
+	assertBodyContains(t, cartPageResponse.Body, []string{"Mango Sticky Rice Treats", "Cart (2)"})
+	rehealed := cart.DecodeCookie(setCookieValue(t, cartPageResponse, cart.CookieName), ssrTestCartSecret)
+	if got := rehealed.Cart.Lines(); len(got) != 1 || got[0].Quantity != 2 {
+		t.Fatalf("re-emitted mirror = %#v, want mango 2", got)
+	}
+
+	quantityResponse, err := env.handler.Handle(context.Background(), jarFormPostRequest("/cart/items/mango-sticky-rice-kit/quantity", url.Values{
+		"quantity": {"4"},
+	}, jar))
+	if err != nil {
+		t.Fatalf("Handle quantity returned error: %v", err)
+	}
+	jar.update(t, quantityResponse)
+	if lines := serverCartLines(t, env, customerID); len(lines) != 1 || lines[0].Quantity != 4 {
+		t.Fatalf("server cart after quantity = %#v, want mango 4", lines)
+	}
+
+	// The signed-in checkout page still renders from the server cart.
+	checkoutResponse, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, "/checkout", jar))
+	if err != nil {
+		t.Fatalf("Handle /checkout returned error: %v", err)
+	}
+	if checkoutResponse.StatusCode != http.StatusOK {
+		t.Fatalf("/checkout status = %d, want %d", checkoutResponse.StatusCode, http.StatusOK)
+	}
+	assertBodyContains(t, checkoutResponse.Body, []string{"Mango Sticky Rice Treats"})
+
+	clearResponse, err := env.handler.Handle(context.Background(), jarFormPostRequest("/cart/clear", url.Values{}, jar))
+	if err != nil {
+		t.Fatalf("Handle clear returned error: %v", err)
+	}
+	if raw := rawSetCookie(t, clearResponse, cart.CookieName); !strings.Contains(raw, "Max-Age=0") {
+		t.Fatalf("clear mirror = %q, want clearing cookie", raw)
+	}
+	if lines := serverCartLines(t, env, customerID); len(lines) != 0 {
+		t.Fatalf("server cart after clear = %#v, want empty", lines)
+	}
+}
+
+// oversizedCartCatalogProducts returns enough realistic-slug products that a
+// server cart spanning them encodes past cart.MaxEncodedCookieLength while
+// staying under cart.MaxLineItems.
+func oversizedCartCatalogProducts(count int) []catalog.Product {
+	products := make([]catalog.Product, count)
+	for i := range products {
+		slug := fmt.Sprintf("aromatic-jasmine-handmade-%02d", i)
+		products[i] = catalog.Product{
+			ID:            "prod_oversized_" + strconv.Itoa(i),
+			Slug:          slug,
+			Name:          "Oversized Cart Product " + strconv.Itoa(i),
+			Description:   "Fixture product for mirror-overflow coverage.",
+			PriceCents:    1099,
+			Status:        catalog.StatusActive,
+			StockQuantity: 9,
+		}
+	}
+	return products
+}
+
+func TestOversizedServerCartDegradesMirrorAndNeverFailsRequests(t *testing.T) {
+	products := oversizedCartCatalogProducts(49)
+	env := newAccountTestEnvWithProducts(t, products)
+	jar := testCookieJar{}
+	signUpTestCustomer(t, env.handler, jar, "shopper@example.com", "orchid-market-99")
+	customerID := accountCustomerID(t, env, "shopper@example.com")
+
+	// Persist a server cart whose mirror cannot encode within the cookie
+	// limit (the server cart, unlike the cookie, has no size bound).
+	lines := make([]cart.Line, 48)
+	for i := range lines {
+		lines[i] = cart.Line{Slug: products[i].Slug, Quantity: 1}
+	}
+	oversized, err := cart.New(lines)
+	if err != nil {
+		t.Fatalf("cart.New returned error: %v", err)
+	}
+	if _, err := cart.EncodeCookie(oversized, ssrTestCartSecret); !errors.Is(err, cart.ErrCookieTooLarge) {
+		t.Fatalf("EncodeCookie fixture error = %v, want ErrCookieTooLarge (fixture too small)", err)
+	}
+	record, _, err := env.commerce.GetCart(context.Background(), customerID)
+	if err != nil {
+		t.Fatalf("GetCart returned error: %v", err)
+	}
+	record.CustomerID = customerID
+	record.Lines = lines
+	if _, err := env.commerce.PutCart(context.Background(), record); err != nil {
+		t.Fatalf("PutCart returned error: %v", err)
+	}
+
+	// Renders degrade to a truncated mirror instead of 500ing.
+	cartPageResponse, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, "/cart", jar))
+	if err != nil {
+		t.Fatalf("Handle /cart returned error: %v", err)
+	}
+	if cartPageResponse.StatusCode != http.StatusOK {
+		t.Fatalf("/cart status = %d body %q, want %d", cartPageResponse.StatusCode, cartPageResponse.Body, http.StatusOK)
+	}
+	mirror := cart.DecodeCookie(setCookieValue(t, cartPageResponse, cart.CookieName), ssrTestCartSecret)
+	if mirror.NeedsClear || !mirror.Mirror {
+		t.Fatalf("oversized-cart mirror NeedsClear = %t Mirror = %t, want decodable mirror", mirror.NeedsClear, mirror.Mirror)
+	}
+	if got := mirror.Cart.LineCount(); got == 0 || got >= len(lines) {
+		t.Fatalf("truncated mirror line count = %d, want a non-empty strict prefix of %d", got, len(lines))
+	}
+	jar.update(t, cartPageResponse)
+
+	// Mutations — including the one that crosses the limit — still succeed.
+	mutationResponse, err := env.handler.Handle(context.Background(), jarFormPostRequest("/cart/items", url.Values{
+		"slug":     {products[48].Slug},
+		"quantity": {"1"},
+	}, jar))
+	if err != nil {
+		t.Fatalf("Handle cart add returned error: %v", err)
+	}
+	if mutationResponse.StatusCode != http.StatusSeeOther || mutationResponse.Headers["Location"] != "/cart" {
+		t.Fatalf("oversized cart add = %d %q, want 303 /cart", mutationResponse.StatusCode, mutationResponse.Headers["Location"])
+	}
+	if got := len(serverCartLines(t, env, customerID)); got != 49 {
+		t.Fatalf("server cart line count after add = %d, want 49", got)
+	}
+
+	// Sign-in (the merge path) from any device keeps working too.
+	freshJar := testCookieJar{}
+	signInTestCustomer(t, env.handler, freshJar, "shopper@example.com", "orchid-market-99")
+	if got := len(serverCartLines(t, env, customerID)); got != 49 {
+		t.Fatalf("server cart line count after sign-in = %d, want 49", got)
+	}
+}
+
+func TestCartBearingRoutesClearDeadSessionCookies(t *testing.T) {
+	env := newAccountTestEnv(t)
+	jar := testCookieJar{}
+	signUpTestCustomer(t, env.handler, jar, "shopper@example.com", "orchid-market-99")
+	customerID := accountCustomerID(t, env, "shopper@example.com")
+
+	if err := env.commerce.DeleteAllSessions(context.Background(), customerID); err != nil {
+		t.Fatalf("DeleteAllSessions returned error: %v", err)
+	}
+
+	response, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, "/cart", jar))
+	if err != nil {
+		t.Fatalf("Handle /cart returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("/cart status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	for _, name := range []string{commerce.SessionCookieName, commerce.CSRFCookieName} {
+		if raw := rawSetCookie(t, response, name); !strings.Contains(raw, "Max-Age=0") {
+			t.Fatalf("/cart dead-session cookie %q = %q, want clearing", name, raw)
+		}
+	}
+}
+
+// conflictingPutCartStore forces version conflicts on the first `conflicts`
+// PutCart calls, then delegates — the multi-writer race the memory store
+// cannot produce on its own.
+type conflictingPutCartStore struct {
+	commerce.Store
+	conflicts int
+	calls     int
+}
+
+func (s *conflictingPutCartStore) PutCart(ctx context.Context, c commerce.CartRecord) (commerce.CartRecord, error) {
+	s.calls++
+	if s.calls <= s.conflicts {
+		return commerce.CartRecord{}, commerce.ErrVersionConflict
+	}
+	return s.Store.PutCart(ctx, c)
+}
+
+func TestSignedInCartMutationRetriesVersionRacesAndPRGsOnContention(t *testing.T) {
+	env := newAccountTestEnv(t)
+	jar := testCookieJar{}
+	signUpTestCustomer(t, env.handler, jar, "shopper@example.com", "orchid-market-99")
+	customerID := accountCustomerID(t, env, "shopper@example.com")
+	addResponse, err := env.handler.Handle(context.Background(), jarFormPostRequest("/cart/items", url.Values{
+		"slug":     {"mango-sticky-rice-kit"},
+		"quantity": {"2"},
+	}, jar))
+	if err != nil {
+		t.Fatalf("Handle cart add returned error: %v", err)
+	}
+	jar.update(t, addResponse)
+
+	// A triple race (three conflicting writers) still lands the mutation.
+	env.handler.commerce = &conflictingPutCartStore{Store: env.commerce, conflicts: 3}
+	tripleRace, err := env.handler.Handle(context.Background(), jarFormPostRequest("/cart/items/mango-sticky-rice-kit/quantity", url.Values{
+		"quantity": {"4"},
+	}, jar))
+	if err != nil {
+		t.Fatalf("Handle triple-race quantity returned error: %v", err)
+	}
+	if tripleRace.StatusCode != http.StatusSeeOther || tripleRace.Headers["Location"] != "/cart" {
+		t.Fatalf("triple-race mutation = %d %q, want 303 /cart", tripleRace.StatusCode, tripleRace.Headers["Location"])
+	}
+	if lines := serverCartLines(t, env, customerID); len(lines) != 1 || lines[0].Quantity != 4 {
+		t.Fatalf("server cart after triple race = %#v, want mango 4", lines)
+	}
+
+	// Exhausted retries PRG back to /cart (self-heal) instead of 500ing.
+	env.handler.commerce = &conflictingPutCartStore{Store: env.commerce, conflicts: 1 << 10}
+	contended, err := env.handler.Handle(context.Background(), jarFormPostRequest("/cart/items/mango-sticky-rice-kit/quantity", url.Values{
+		"quantity": {"7"},
+	}, jar))
+	if err != nil {
+		t.Fatalf("Handle contended quantity returned error: %v", err)
+	}
+	if contended.StatusCode != http.StatusSeeOther || contended.Headers["Location"] != "/cart" {
+		t.Fatalf("contended mutation = %d %q, want 303 /cart", contended.StatusCode, contended.Headers["Location"])
+	}
+	env.handler.commerce = env.commerce
+	if lines := serverCartLines(t, env, customerID); len(lines) != 1 || lines[0].Quantity != 4 {
+		t.Fatalf("server cart after contention = %#v, want unchanged mango 4", lines)
+	}
+}
+
+// failingGetSessionStore injects a transient outage into session resolution
+// while the request still presents a session cookie.
+type failingGetSessionStore struct {
+	commerce.Store
+}
+
+func (failingGetSessionStore) GetSession(ctx context.Context, customerID string, tokenHash string) (commerce.Session, bool, error) {
+	return commerce.Session{}, false, errors.New("transient session outage")
+}
+
+func TestTransientSessionStoreErrorFailsCartMutationsButNotRenders(t *testing.T) {
+	env := newAccountTestEnv(t)
+	jar := testCookieJar{}
+	signUpTestCustomer(t, env.handler, jar, "shopper@example.com", "orchid-market-99")
+	customerID := accountCustomerID(t, env, "shopper@example.com")
+	addResponse, err := env.handler.Handle(context.Background(), jarFormPostRequest("/cart/items", url.Values{
+		"slug":     {"mango-sticky-rice-kit"},
+		"quantity": {"2"},
+	}, jar))
+	if err != nil {
+		t.Fatalf("Handle cart add returned error: %v", err)
+	}
+	jar.update(t, addResponse)
+
+	env.handler.commerce = failingGetSessionStore{Store: env.commerce}
+
+	// A mutation must not silently land in the cookie cart, where the next
+	// signed-in render would discard it.
+	mutation, err := env.handler.Handle(context.Background(), jarFormPostRequest("/cart/items", url.Values{
+		"slug":     {"thai-tea-sampler"},
+		"quantity": {"1"},
+	}, jar))
+	if err != nil {
+		t.Fatalf("Handle mutation returned error: %v", err)
+	}
+	if mutation.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("mutation during session outage = %d, want %d", mutation.StatusCode, http.StatusInternalServerError)
+	}
+
+	// Renders keep the graceful anonymous fallback, without clearing the
+	// still-valid session cookie over a blip.
+	render, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, "/cart", jar))
+	if err != nil {
+		t.Fatalf("Handle /cart returned error: %v", err)
+	}
+	if render.StatusCode != http.StatusOK {
+		t.Fatalf("/cart during session outage = %d, want %d", render.StatusCode, http.StatusOK)
+	}
+	for _, setCookie := range render.Cookies {
+		if strings.HasPrefix(setCookie, commerce.SessionCookieName+"=") {
+			t.Fatalf("render during outage touched the session cookie: %q", setCookie)
+		}
+	}
+
+	env.handler.commerce = env.commerce
+	if lines := serverCartLines(t, env, customerID); len(lines) != 1 || lines[0].Slug != "mango-sticky-rice-kit" || lines[0].Quantity != 2 {
+		t.Fatalf("server cart after outage = %#v, want untouched mango 2", lines)
+	}
+}
+
+func TestHeadRequestsOmitBodyOnAccountAndCheckoutNotFoundBranches(t *testing.T) {
+	env := newAccountTestEnv(t)
+	jar := testCookieJar{}
+	signUpTestCustomer(t, env.handler, jar, "shopper@example.com", "orchid-market-99")
+
+	for _, path := range []string{
+		"/orders/" + ssrTestAccountID,
+		"/account/addresses/" + ssrTestAccountID + "/edit",
+		"/checkout/confirm",
+		"/checkout/fake-pay",
+	} {
+		t.Run(path, func(t *testing.T) {
+			get, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, path, jar))
+			if err != nil {
+				t.Fatalf("Handle GET returned error: %v", err)
+			}
+			if get.StatusCode != http.StatusNotFound || get.Body == "" {
+				t.Fatalf("GET = %d body length %d, want 404 with a body", get.StatusCode, len(get.Body))
+			}
+
+			head, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodHead, path, jar))
+			if err != nil {
+				t.Fatalf("Handle HEAD returned error: %v", err)
+			}
+			if head.StatusCode != http.StatusNotFound {
+				t.Fatalf("HEAD status = %d, want %d", head.StatusCode, http.StatusNotFound)
+			}
+			if head.Body != "" {
+				t.Fatalf("HEAD body = %q, want empty", head.Body)
+			}
+		})
+	}
+}
+
+func TestAccountPagesSetPrivateNoStoreAndNoindex(t *testing.T) {
+	env := newAccountTestEnv(t)
+	jar := testCookieJar{}
+	signUpTestCustomer(t, env.handler, jar, "shopper@example.com", "orchid-market-99")
+	token := accountCSRFToken(t, env.handler, jar)
+	createResponse, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/addresses", url.Values{
+		customerCSRFFieldName: {token},
+		"full_name":           {"Anong Shopper"},
+		"line1":               {"123 Sukhumvit Rd"},
+		"city":                {"Bangkok"},
+		"region":              {"NY"},
+		"postal_code":         {"10110"},
+	}, jar))
+	if err != nil || createResponse.StatusCode != http.StatusSeeOther {
+		t.Fatalf("address create = %d, err %v, want 303", createResponse.StatusCode, err)
+	}
+	listResponse, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, "/account/addresses", jar))
+	if err != nil {
+		t.Fatalf("Handle addresses returned error: %v", err)
+	}
+	addressID := firstAddressIDFromBody(t, listResponse.Body)
+
+	anonymousPaths := []string{"/account/sign-in", "/account/sign-up"}
+	signedInPaths := []string{"/account", "/account/addresses", "/account/addresses/" + addressID + "/edit", "/account/payment-methods"}
+
+	for _, path := range append(anonymousPaths, signedInPaths...) {
+		t.Run(path, func(t *testing.T) {
+			requestJar := testCookieJar{}
+			if !strings.Contains(path, "sign-") {
+				requestJar = jar
+			}
+			response, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, path, requestJar))
+			if err != nil {
+				t.Fatalf("Handle returned error: %v", err)
+			}
+			if response.StatusCode != http.StatusOK {
+				t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
+			}
+			if got := response.Headers["Cache-Control"]; got != privatePageCacheControl {
+				t.Fatalf("Cache-Control = %q, want %q", got, privatePageCacheControl)
+			}
+			if got := response.Headers["X-Robots-Tag"]; got != "noindex, follow" {
+				t.Fatalf("X-Robots-Tag = %q, want noindex, follow", got)
+			}
+			assertBodyContains(t, response.Body, []string{`<meta name="robots" content="noindex, follow">`})
+
+			headResponse, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodHead, path, requestJar))
+			if err != nil {
+				t.Fatalf("HEAD Handle returned error: %v", err)
+			}
+			if headResponse.StatusCode != http.StatusOK || headResponse.Body != "" {
+				t.Fatalf("HEAD = status %d body %q, want 200 empty", headResponse.StatusCode, headResponse.Body)
+			}
+		})
+	}
+}
+
+func firstAddressIDFromBody(t *testing.T, body string) string {
+	t.Helper()
+	marker := `href="/account/addresses/`
+	start := strings.Index(body, marker)
+	if start < 0 {
+		t.Fatalf("no address edit link found in body: %q", body)
+	}
+	rest := body[start+len(marker):]
+	end := strings.Index(rest, "/edit")
+	if end < 0 {
+		t.Fatalf("address edit link is malformed in body: %q", body)
+	}
+	id := rest[:end]
+	if !accountIDPattern.MatchString(id) {
+		t.Fatalf("address id %q does not match the id pattern", id)
+	}
+	return id
+}
+
+func TestAddressLifecycle(t *testing.T) {
+	env := newAccountTestEnv(t)
+	jar := testCookieJar{}
+	signUpTestCustomer(t, env.handler, jar, "shopper@example.com", "orchid-market-99")
+
+	emptyList, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, "/account/addresses", jar))
+	if err != nil {
+		t.Fatalf("Handle addresses returned error: %v", err)
+	}
+	jar.update(t, emptyList)
+	assertBodyContains(t, emptyList.Body, []string{"No addresses yet.", `data-testid="address-form"`})
+	token := hiddenInputValue(t, emptyList.Body, customerCSRFFieldName)
+
+	invalidCreate, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/addresses", url.Values{
+		customerCSRFFieldName: {token},
+		"full_name":           {"Anong Shopper"},
+		"line1":               {"123 Sukhumvit Rd"},
+		"region":              {"NY"},
+		"postal_code":         {"10110"},
+	}, jar))
+	if err != nil {
+		t.Fatalf("Handle invalid create returned error: %v", err)
+	}
+	if invalidCreate.StatusCode != http.StatusBadRequest {
+		t.Fatalf("invalid create status = %d, want %d", invalidCreate.StatusCode, http.StatusBadRequest)
+	}
+	assertBodyContains(t, invalidCreate.Body, []string{invalidAddressError, `value="Anong Shopper"`})
+
+	create, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/addresses", url.Values{
+		customerCSRFFieldName: {token},
+		"full_name":           {"Anong Shopper"},
+		"line1":               {"123 Sukhumvit Rd"},
+		"line2":               {"Apt 4"},
+		"city":                {"Bangkok"},
+		"region":              {"NY"},
+		"postal_code":         {"10110"},
+		"phone":               {"+1 212 555 0100"},
+	}, jar))
+	if err != nil {
+		t.Fatalf("Handle create returned error: %v", err)
+	}
+	if create.StatusCode != http.StatusSeeOther || create.Headers["Location"] != "/account/addresses" {
+		t.Fatalf("create = %d %q, want 303 /account/addresses", create.StatusCode, create.Headers["Location"])
+	}
+
+	list, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, "/account/addresses", jar))
+	if err != nil {
+		t.Fatalf("Handle list returned error: %v", err)
+	}
+	assertBodyContains(t, list.Body, []string{`data-testid="address-row"`, "Anong Shopper", "123 Sukhumvit Rd", "Bangkok, NY 10110"})
+	addressID := firstAddressIDFromBody(t, list.Body)
+
+	editPage, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, "/account/addresses/"+addressID+"/edit", jar))
+	if err != nil {
+		t.Fatalf("Handle edit page returned error: %v", err)
+	}
+	if editPage.StatusCode != http.StatusOK {
+		t.Fatalf("edit page status = %d, want %d", editPage.StatusCode, http.StatusOK)
+	}
+	assertBodyContains(t, editPage.Body, []string{`data-testid="address-form"`, `value="Anong Shopper"`, `name="version" value="1"`})
+
+	update, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/addresses/"+addressID+"/update", url.Values{
+		customerCSRFFieldName: {token},
+		"version":             {"1"},
+		"full_name":           {"Anong Shopper"},
+		"line1":               {"123 Sukhumvit Rd"},
+		"city":                {"Chiang Mai"},
+		"region":              {"NY"},
+		"postal_code":         {"10110"},
+	}, jar))
+	if err != nil {
+		t.Fatalf("Handle update returned error: %v", err)
+	}
+	if update.StatusCode != http.StatusSeeOther {
+		t.Fatalf("update status = %d, want %d", update.StatusCode, http.StatusSeeOther)
+	}
+	updatedList, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, "/account/addresses", jar))
+	if err != nil {
+		t.Fatalf("Handle updated list returned error: %v", err)
+	}
+	assertBodyContains(t, updatedList.Body, []string{"Chiang Mai, NY 10110"})
+
+	staleUpdate, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/addresses/"+addressID+"/update", url.Values{
+		customerCSRFFieldName: {token},
+		"version":             {"1"},
+		"full_name":           {"Anong Shopper"},
+		"line1":               {"123 Sukhumvit Rd"},
+		"city":                {"Phuket"},
+		"region":              {"NY"},
+		"postal_code":         {"10110"},
+	}, jar))
+	if err != nil {
+		t.Fatalf("Handle stale update returned error: %v", err)
+	}
+	if staleUpdate.StatusCode != http.StatusConflict {
+		t.Fatalf("stale update status = %d, want %d", staleUpdate.StatusCode, http.StatusConflict)
+	}
+	assertBodyContains(t, staleUpdate.Body, []string{addressConflictError})
+
+	makeDefault, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/addresses/"+addressID+"/default", url.Values{
+		customerCSRFFieldName: {token},
+	}, jar))
+	if err != nil {
+		t.Fatalf("Handle default returned error: %v", err)
+	}
+	if makeDefault.StatusCode != http.StatusSeeOther {
+		t.Fatalf("default status = %d, want %d", makeDefault.StatusCode, http.StatusSeeOther)
+	}
+	defaultList, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, "/account/addresses", jar))
+	if err != nil {
+		t.Fatalf("Handle default list returned error: %v", err)
+	}
+	assertBodyContains(t, defaultList.Body, []string{">Default</span>"})
+	overview, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, "/account", jar))
+	if err != nil {
+		t.Fatalf("Handle overview returned error: %v", err)
+	}
+	assertBodyContains(t, overview.Body, []string{"123 Sukhumvit Rd"})
+
+	remove, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/addresses/"+addressID+"/remove", url.Values{
+		customerCSRFFieldName: {token},
+	}, jar))
+	if err != nil {
+		t.Fatalf("Handle remove returned error: %v", err)
+	}
+	if remove.StatusCode != http.StatusSeeOther {
+		t.Fatalf("remove status = %d, want %d", remove.StatusCode, http.StatusSeeOther)
+	}
+	removedList, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, "/account/addresses", jar))
+	if err != nil {
+		t.Fatalf("Handle removed list returned error: %v", err)
+	}
+	assertBodyContains(t, removedList.Body, []string{"No addresses yet."})
+	clearedOverview, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, "/account", jar))
+	if err != nil {
+		t.Fatalf("Handle cleared overview returned error: %v", err)
+	}
+	assertBodyContains(t, clearedOverview.Body, []string{"No default address yet."})
+
+	// Unknown but well-formed ids 404 (never 403).
+	missingEdit, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, "/account/addresses/"+ssrTestAccountID+"/edit", jar))
+	if err != nil {
+		t.Fatalf("Handle missing edit returned error: %v", err)
+	}
+	if missingEdit.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing edit status = %d, want %d", missingEdit.StatusCode, http.StatusNotFound)
+	}
+	missingDefault, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/addresses/"+ssrTestAccountID+"/default", url.Values{
+		customerCSRFFieldName: {token},
+	}, jar))
+	if err != nil {
+		t.Fatalf("Handle missing default returned error: %v", err)
+	}
+	if missingDefault.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing default status = %d, want %d", missingDefault.StatusCode, http.StatusNotFound)
+	}
+}
+
+func TestAddressCreateEnforcesLimitAndValidatedNext(t *testing.T) {
+	env := newAccountTestEnv(t)
+	jar := testCookieJar{}
+	signUpTestCustomer(t, env.handler, jar, "shopper@example.com", "orchid-market-99")
+	token := accountCSRFToken(t, env.handler, jar)
+
+	createForm := func(name string, next string) url.Values {
+		form := url.Values{
+			customerCSRFFieldName: {token},
+			"full_name":           {name},
+			"line1":               {"123 Sukhumvit Rd"},
+			"city":                {"Bangkok"},
+			"region":              {"NY"},
+			"postal_code":         {"10110"},
+		}
+		if next != "" {
+			form.Set("next", next)
+		}
+		return form
+	}
+
+	nextResponse, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/addresses", createForm("Anong 1", "/checkout"), jar))
+	if err != nil {
+		t.Fatalf("Handle next create returned error: %v", err)
+	}
+	if nextResponse.Headers["Location"] != "/checkout" {
+		t.Fatalf("next Location = %q, want /checkout", nextResponse.Headers["Location"])
+	}
+	badNextResponse, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/addresses", createForm("Anong 2", "https://evil.example"), jar))
+	if err != nil {
+		t.Fatalf("Handle bad-next create returned error: %v", err)
+	}
+	if badNextResponse.Headers["Location"] != "/account/addresses" {
+		t.Fatalf("bad next Location = %q, want fallback /account/addresses", badNextResponse.Headers["Location"])
+	}
+
+	for index := 3; index <= commerce.MaxAddressesPerCustomer; index++ {
+		response, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/addresses", createForm("Anong "+strconv.Itoa(index), ""), jar))
+		if err != nil {
+			t.Fatalf("Handle create %d returned error: %v", index, err)
+		}
+		if response.StatusCode != http.StatusSeeOther {
+			t.Fatalf("create %d status = %d, want %d", index, response.StatusCode, http.StatusSeeOther)
+		}
+	}
+
+	overLimit, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/addresses", createForm("Anong 11", ""), jar))
+	if err != nil {
+		t.Fatalf("Handle over-limit create returned error: %v", err)
+	}
+	if overLimit.StatusCode != http.StatusBadRequest {
+		t.Fatalf("over-limit status = %d, want %d", overLimit.StatusCode, http.StatusBadRequest)
+	}
+	assertBodyContains(t, overLimit.Body, []string{addressLimitError})
+}
+
+func TestPaymentMethodsLifecycle(t *testing.T) {
+	env := newAccountTestEnv(t)
+	jar := testCookieJar{}
+	signUpTestCustomer(t, env.handler, jar, "shopper@example.com", "orchid-market-99")
+	customerID := accountCustomerID(t, env, "shopper@example.com")
+
+	emptyPage, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, "/account/payment-methods", jar))
+	if err != nil {
+		t.Fatalf("Handle payment methods returned error: %v", err)
+	}
+	jar.update(t, emptyPage)
+	assertBodyContains(t, emptyPage.Body, []string{"No saved cards yet.", `action="/account/payment-methods/add"`, "We never see or store card numbers"})
+	token := hiddenInputValue(t, emptyPage.Body, customerCSRFFieldName)
+
+	addResponse, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/payment-methods/add", url.Values{
+		customerCSRFFieldName: {token},
+	}, jar))
+	if err != nil {
+		t.Fatalf("Handle add returned error: %v", err)
+	}
+	if addResponse.StatusCode != http.StatusSeeOther {
+		t.Fatalf("add status = %d, want %d", addResponse.StatusCode, http.StatusSeeOther)
+	}
+	setupSessionID := "cs_fake_setup_" + customerID
+	if got := addResponse.Headers["Location"]; got != "/checkout/fake-pay?session_id="+setupSessionID {
+		t.Fatalf("add Location = %q, want fake setup session URL", got)
+	}
+
+	customer, _, err := env.commerce.GetCustomerByID(context.Background(), customerID)
+	if err != nil || customer.StripeCustomerID != "cus_fake_"+customerID {
+		t.Fatalf("stripe customer id = %q err %v, want lazily-created cus_fake id", customer.StripeCustomerID, err)
+	}
+
+	successURL, err := env.payments.MarkSetupComplete(setupSessionID)
+	if err != nil {
+		t.Fatalf("MarkSetupComplete returned error: %v", err)
+	}
+	if !strings.HasSuffix(successURL, "/account/payment-methods?saved=1") {
+		t.Fatalf("setup success URL = %q, want /account/payment-methods?saved=1 suffix", successURL)
+	}
+
+	savedRequest := jarPageRequest(http.MethodGet, "/account/payment-methods", jar)
+	savedRequest.QueryStringParameters = map[string]string{"saved": "1"}
+	savedPage, err := env.handler.Handle(context.Background(), savedRequest)
+	if err != nil {
+		t.Fatalf("Handle saved page returned error: %v", err)
+	}
+	assertBodyContains(t, savedPage.Body, []string{
+		"Card saved.",
+		`data-testid="payment-method-row"`,
+		"Visa •••• 4242",
+		"Expires 12/2034",
+		`action="/account/payment-methods/pm_fake_visa_4242/remove"`,
+	})
+
+	removeResponse, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/payment-methods/pm_fake_visa_4242/remove", url.Values{
+		customerCSRFFieldName: {token},
+	}, jar))
+	if err != nil {
+		t.Fatalf("Handle remove returned error: %v", err)
+	}
+	if removeResponse.StatusCode != http.StatusSeeOther || removeResponse.Headers["Location"] != "/account/payment-methods" {
+		t.Fatalf("remove = %d %q, want 303 /account/payment-methods", removeResponse.StatusCode, removeResponse.Headers["Location"])
+	}
+	removedPage, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, "/account/payment-methods", jar))
+	if err != nil {
+		t.Fatalf("Handle removed page returned error: %v", err)
+	}
+	assertBodyContains(t, removedPage.Body, []string{"No saved cards yet."})
+
+	repeatRemove, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/payment-methods/pm_fake_visa_4242/remove", url.Values{
+		customerCSRFFieldName: {token},
+	}, jar))
+	if err != nil {
+		t.Fatalf("Handle repeat remove returned error: %v", err)
+	}
+	if repeatRemove.StatusCode != http.StatusNotFound {
+		t.Fatalf("repeat remove status = %d, want %d", repeatRemove.StatusCode, http.StatusNotFound)
+	}
+}
+
+func TestPaymentMethodRemoveIsOwnershipGuarded(t *testing.T) {
+	env := newAccountTestEnv(t)
+
+	// Customer A saves a card.
+	jarA := testCookieJar{}
+	signUpTestCustomer(t, env.handler, jarA, "first@example.com", "orchid-market-99")
+	customerAID := accountCustomerID(t, env, "first@example.com")
+	tokenA := accountCSRFToken(t, env.handler, jarA)
+	if _, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/payment-methods/add", url.Values{customerCSRFFieldName: {tokenA}}, jarA)); err != nil {
+		t.Fatalf("Handle add returned error: %v", err)
+	}
+	if _, err := env.payments.MarkSetupComplete("cs_fake_setup_" + customerAID); err != nil {
+		t.Fatalf("MarkSetupComplete returned error: %v", err)
+	}
+
+	// Customer B with no provider customer at all: 404, never 403.
+	jarB := testCookieJar{}
+	signUpTestCustomer(t, env.handler, jarB, "second@example.com", "orchid-market-99")
+	tokenB := accountCSRFToken(t, env.handler, jarB)
+	noProviderCustomer, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/payment-methods/pm_fake_visa_4242/remove", url.Values{customerCSRFFieldName: {tokenB}}, jarB))
+	if err != nil {
+		t.Fatalf("Handle foreign remove returned error: %v", err)
+	}
+	if noProviderCustomer.StatusCode != http.StatusNotFound {
+		t.Fatalf("foreign remove status = %d, want %d", noProviderCustomer.StatusCode, http.StatusNotFound)
+	}
+
+	// Customer B with a provider customer but no such card: still 404, and
+	// A's card survives.
+	if _, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/payment-methods/add", url.Values{customerCSRFFieldName: {tokenB}}, jarB)); err != nil {
+		t.Fatalf("Handle B add returned error: %v", err)
+	}
+	foreignRemove, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/payment-methods/pm_fake_visa_4242/remove", url.Values{customerCSRFFieldName: {tokenB}}, jarB))
+	if err != nil {
+		t.Fatalf("Handle foreign remove returned error: %v", err)
+	}
+	if foreignRemove.StatusCode != http.StatusNotFound {
+		t.Fatalf("foreign remove with provider customer = %d, want %d", foreignRemove.StatusCode, http.StatusNotFound)
+	}
+	methods, err := env.payments.ListPaymentMethods(context.Background(), "cus_fake_"+customerAID)
+	if err != nil || len(methods) != 1 {
+		t.Fatalf("customer A methods = %#v err %v, want the saved card untouched", methods, err)
+	}
+}
+
+func TestSignedInVisitorOnAuthPagesRedirectsToAccount(t *testing.T) {
+	env := newAccountTestEnv(t)
+	jar := testCookieJar{}
+	signUpTestCustomer(t, env.handler, jar, "shopper@example.com", "orchid-market-99")
+
+	for _, path := range []string{"/account/sign-in", "/account/sign-up"} {
+		for _, method := range []string{http.MethodGet, http.MethodPost} {
+			t.Run(method+" "+path, func(t *testing.T) {
+				var request events.APIGatewayV2HTTPRequest
+				if method == http.MethodPost {
+					request = jarFormPostRequest(path, url.Values{}, jar)
+				} else {
+					request = jarPageRequest(method, path, jar)
+				}
+				response, err := env.handler.Handle(context.Background(), request)
+				if err != nil {
+					t.Fatalf("Handle returned error: %v", err)
+				}
+				if response.StatusCode != http.StatusSeeOther || response.Headers["Location"] != "/account" {
+					t.Fatalf("response = %d %q, want 303 /account", response.StatusCode, response.Headers["Location"])
+				}
+			})
+		}
+	}
+}
+
+func TestAccountOverviewShowsRecentOrdersNewestFirst(t *testing.T) {
+	env := newAccountTestEnv(t)
+	jar := testCookieJar{}
+	signUpTestCustomer(t, env.handler, jar, "shopper@example.com", "orchid-market-99")
+	customerID := accountCustomerID(t, env, "shopper@example.com")
+
+	orderIDs := []string{
+		strings.Repeat("a", 25) + "1",
+		strings.Repeat("a", 25) + "2",
+		strings.Repeat("a", 25) + "3",
+		strings.Repeat("a", 25) + "4",
+	}
+	for index, orderID := range orderIDs {
+		if _, err := env.commerce.CreateOrder(context.Background(), commerce.Order{
+			ID:         orderID,
+			CustomerID: customerID,
+			Email:      "shopper@example.com",
+			Status:     commerce.OrderStatusPaid,
+			TotalCents: 5798 + index,
+			Currency:   "usd",
+			CreatedAt:  time.Date(2026, 6, 1+index, 9, 0, 0, 0, time.UTC),
+		}); err != nil {
+			t.Fatalf("CreateOrder %s returned error: %v", orderID, err)
+		}
+	}
+
+	response, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, "/account", jar))
+	if err != nil {
+		t.Fatalf("Handle /account returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("/account status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	assertBodyContains(t, response.Body, []string{
+		`href="/orders/` + orderIDs[3] + `"`,
+		`href="/orders/` + orderIDs[2] + `"`,
+		`href="/orders/` + orderIDs[1] + `"`,
+		"Paid",
+		"$58.01",
+		"Jun 4, 2026",
+	})
+	assertBodyOmits(t, response.Body, []string{orderIDs[0]})
+}
+
+func TestCustomerAuthMetricsRecorded(t *testing.T) {
+	env := newAccountTestEnv(t)
+	recorder := &testMetricRecorder{}
+	env.handler.metrics = recorder
+
+	signUpTestCustomer(t, env.handler, testCookieJar{}, "shopper@example.com", "orchid-market-99")
+	assertRecordedMetric(t, recorder, observability.MetricCustomerAuth, observability.UnitCount, map[string]string{
+		"Service":   "ssr",
+		"Operation": "sign_up",
+		"Outcome":   "success",
+	})
+
+	jar := testCookieJar{}
+	token := guestCSRFTokenFor(t, env.handler, jar, "/account/sign-in")
+	if _, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/sign-in", url.Values{
+		guestCSRFFieldName: {token},
+		"email":            {"shopper@example.com"},
+		"password":         {"wrong-password-11"},
+	}, jar)); err != nil {
+		t.Fatalf("Handle failed sign-in returned error: %v", err)
+	}
+	assertRecordedMetric(t, recorder, observability.MetricCustomerAuth, observability.UnitCount, map[string]string{
+		"Service":   "ssr",
+		"Operation": "sign_in",
+		"Outcome":   "invalid",
+	})
+}
+
+func TestHeaderAndFooterRenderStaticAccountLink(t *testing.T) {
+	handler := NewHandlerWithProductImagePlaceholderURL(routeMatrixStore(), "/images/placeholder-product.jpg")
+	for _, path := range []string{"/", "/story"} {
+		t.Run(path, func(t *testing.T) {
+			response, err := handler.Handle(context.Background(), pageRequest(http.MethodGet, path))
+			if err != nil {
+				t.Fatalf("Handle returned error: %v", err)
+			}
+			if response.StatusCode != http.StatusOK {
+				t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
+			}
+			assertBodyContains(t, response.Body, []string{
+				`href="/account">Account</a>`,
+				"Checkout is handled securely by Stripe. We never see or store card numbers.",
+			})
+		})
 	}
 }

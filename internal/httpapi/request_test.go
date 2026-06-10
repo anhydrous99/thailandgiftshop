@@ -94,6 +94,64 @@ func TestFormValuesDecodesBase64Bodies(t *testing.T) {
 	}
 }
 
+func TestRawBodyReturnsExactBytes(t *testing.T) {
+	tests := []struct {
+		name    string
+		request events.APIGatewayV2HTTPRequest
+		want    string
+		wantErr bool
+	}{
+		{
+			name:    "plain body passes through untouched",
+			request: events.APIGatewayV2HTTPRequest{Body: `{"id":"evt_1","amount":4200}`},
+			want:    `{"id":"evt_1","amount":4200}`,
+		},
+		{
+			name:    "empty body yields empty bytes",
+			request: events.APIGatewayV2HTTPRequest{},
+			want:    "",
+		},
+		{
+			name: "base64 body is decoded",
+			request: events.APIGatewayV2HTTPRequest{
+				Body:            base64.StdEncoding.EncodeToString([]byte("raw \x00 bytes")),
+				IsBase64Encoded: true,
+			},
+			want: "raw \x00 bytes",
+		},
+		{
+			name: "base64 markers in a plain body are not decoded",
+			request: events.APIGatewayV2HTTPRequest{
+				Body: base64.StdEncoding.EncodeToString([]byte("payload")),
+			},
+			want: base64.StdEncoding.EncodeToString([]byte("payload")),
+		},
+		{
+			name:    "invalid base64 errors",
+			request: events.APIGatewayV2HTTPRequest{Body: "%%%", IsBase64Encoded: true},
+			wantErr: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := RawBody(test.request)
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("RawBody error = nil, want error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("RawBody returned error: %v", err)
+			}
+			if string(got) != test.want {
+				t.Fatalf("RawBody = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestJSONBodyRejectsUnknownFields(t *testing.T) {
 	var target struct {
 		Name string `json:"name"`

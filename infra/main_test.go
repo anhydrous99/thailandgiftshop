@@ -10,7 +10,9 @@ import (
 	appenv "github.com/anhydrous99/thailandgiftshop/internal/appenv"
 	cartsession "github.com/anhydrous99/thailandgiftshop/internal/cart"
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
+	"github.com/anhydrous99/thailandgiftshop/internal/commerce"
 	appobservability "github.com/anhydrous99/thailandgiftshop/internal/observability"
+	"github.com/anhydrous99/thailandgiftshop/internal/payments"
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/assertions"
 	"github.com/aws/jsii-runtime-go"
@@ -150,33 +152,44 @@ func TestStackIncludesObservabilityResources(t *testing.T) {
 		},
 		"TopicArn": assertions.Match_AnyValue(),
 	})
-	template.ResourceCountIs(jsii.String("AWS::CloudWatch::Alarm"), jsii.Number(16))
+	template.ResourceCountIs(jsii.String("AWS::CloudWatch::Alarm"), jsii.Number(19))
 	template.AllResourcesProperties(jsii.String("AWS::CloudWatch::Alarm"), map[string]any{
 		"TreatMissingData": "notBreaching",
 	})
 
 	criticalAlarmNames := map[string]bool{
-		"ThailandGiftshop-CloudFront-5xxRate-High":   true,
-		"ThailandGiftshop-HttpApi-5xx-High":          true,
-		"ThailandGiftshop-SsrLambda-Errors":          true,
-		"ThailandGiftshop-AdminLambda-Errors":        true,
-		"ThailandGiftshop-Admin-OriginRejected":      true,
-		"ThailandGiftshop-CatalogWrite-Errors":       true,
-		"ThailandGiftshop-ProductImageUpload-Errors": true,
+		"ThailandGiftshop-CloudFront-5xxRate-High":    true,
+		"ThailandGiftshop-HttpApi-5xx-High":           true,
+		"ThailandGiftshop-SsrLambda-Errors":           true,
+		"ThailandGiftshop-AdminLambda-Errors":         true,
+		"ThailandGiftshop-Admin-OriginRejected":       true,
+		"ThailandGiftshop-CatalogWrite-Errors":        true,
+		"ThailandGiftshop-ProductImageUpload-Errors":  true,
+		"ThailandGiftshop-StripeWebhook-Errors":       true,
+		"ThailandGiftshop-CheckoutPayment-Errors":     true,
+		"ThailandGiftshop-StockAdjust-RollbackErrors": true,
 	}
 	assertCriticalAlarmActions(t, templateJSON, criticalAlarmNames)
 
-	appAlarmMetrics := map[string]string{
-		"ThailandGiftshop-Admin-OriginRejected":      appobservability.MetricAdminOriginRejected,
-		"ThailandGiftshop-CatalogWrite-Errors":       appobservability.MetricCatalogWrite,
-		"ThailandGiftshop-ProductImageUpload-Errors": appobservability.MetricProductImageUpload,
+	appAlarmMetrics := map[string]struct {
+		metricName string
+		service    string
+		outcomes   []string
+	}{
+		"ThailandGiftshop-Admin-OriginRejected":       {appobservability.MetricAdminOriginRejected, "admin", []string{"rejected"}},
+		"ThailandGiftshop-CatalogWrite-Errors":        {appobservability.MetricCatalogWrite, "admin", []string{"error"}},
+		"ThailandGiftshop-ProductImageUpload-Errors":  {appobservability.MetricProductImageUpload, "admin", []string{"error"}},
+		"ThailandGiftshop-StripeWebhook-Errors":       {appobservability.MetricStripeWebhook, "ssr", []string{"invalid_signature", "amount_mismatch", "paid_after_terminal", "error"}},
+		"ThailandGiftshop-CheckoutPayment-Errors":     {appobservability.MetricCheckoutPayment, "checkout", []string{"provider_error", "error"}},
+		"ThailandGiftshop-StockAdjust-RollbackErrors": {appobservability.MetricStockAdjust, "catalog", []string{"rollback_error"}},
 	}
-	for alarmName, metricName := range appAlarmMetrics {
+	for alarmName, expected := range appAlarmMetrics {
 		template.HasResourceProperties(jsii.String("AWS::CloudWatch::Alarm"), map[string]any{
 			"AlarmName": alarmName,
 		})
 		alarmText := templateValueString(t, cloudWatchAlarmProperties(t, templateJSON, alarmName))
-		for _, want := range []string{appobservability.Namespace, metricName, "Service", "admin"} {
+		wants := append([]string{appobservability.Namespace, expected.metricName, "Service", expected.service}, expected.outcomes...)
+		for _, want := range wants {
 			if !strings.Contains(alarmText, want) {
 				t.Fatalf("alarm %s missing %q: %s", alarmName, want, alarmText)
 			}
@@ -196,6 +209,13 @@ func TestStackIncludesObservabilityResources(t *testing.T) {
 		appobservability.MetricAdminLoginAttempt,
 		appobservability.MetricCatalogWrite,
 		appobservability.MetricProductImageUpload,
+		appobservability.MetricCustomerAuth,
+		appobservability.MetricCheckoutPayment,
+		appobservability.MetricStripeWebhook,
+		appobservability.MetricOrderTransition,
+		appobservability.MetricStockAdjust,
+		appobservability.MetricCommerceOperation,
+		appobservability.MetricCommerceOperationMs,
 		"Critical alarm actions publish to SNS; watchlist alarms remain dashboard-only.",
 	} {
 		if !strings.Contains(templateText, want) {
@@ -307,7 +327,7 @@ func TestStackIncludesAdminLambdaRoutesAndScopedPermissions(t *testing.T) {
 			t.Fatalf("admin lambda policy actions missing %s; got %v", action, adminActions)
 		}
 	}
-	for _, action := range []string{"dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:DeleteItem", "dynamodb:TransactWriteItems", "s3:PutObject"} {
+	for _, action := range []string{"s3:PutObject", "s3:DeleteObject*"} {
 		if containsAction(ssrActions, action) {
 			t.Fatalf("public SSR lambda must not include %s; got %v", action, ssrActions)
 		}
@@ -316,8 +336,19 @@ func TestStackIncludesAdminLambdaRoutesAndScopedPermissions(t *testing.T) {
 	if !policyForFunctionHasActionOnCatalogTable(t, templateJSON, "thailandgiftshop-admin", "dynamodb:TransactWriteItems") {
 		t.Fatalf("admin lambda policy must allow dynamodb:TransactWriteItems on the catalog table; got %v", adminActions)
 	}
-	if policyForFunctionHasActionOnCatalogTable(t, templateJSON, "thailandgiftshop-ssr", "dynamodb:TransactWriteItems") {
-		t.Fatalf("public SSR lambda must not allow dynamodb:TransactWriteItems on the catalog table; got %v", ssrActions)
+	// Checkout reserves and releases stock through the catalog store's
+	// versioned UpdateProduct transaction, so the public SSR lambda writes to
+	// the catalog and commerce tables — and nothing else.
+	for _, action := range []string{"dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:DeleteItem", "dynamodb:TransactWriteItems"} {
+		if !policyForFunctionHasActionOnCatalogTable(t, templateJSON, "thailandgiftshop-ssr", action) {
+			t.Fatalf("public SSR lambda must allow %s on the catalog table for stock adjustments; got %v", action, ssrActions)
+		}
+		if !policyForFunctionHasActionOnCommerceTable(t, templateJSON, "thailandgiftshop-ssr", action) {
+			t.Fatalf("public SSR lambda must allow %s on the commerce table; got %v", action, ssrActions)
+		}
+		if policyForFunctionHasActionOnAdminLoginAttemptsTable(t, templateJSON, "thailandgiftshop-ssr", action) {
+			t.Fatalf("public SSR lambda must not allow %s on the admin login attempts table; got %v", action, ssrActions)
+		}
 	}
 }
 
@@ -390,7 +421,7 @@ func TestStackIncludesAdminCloudFrontWAFRateLimits(t *testing.T) {
 						"ScopeDownStatement": map[string]any{
 							"AndStatement": map[string]any{
 								"Statements": assertions.Match_ArrayWith(&[]any{
-									byteMatchAssertion("UriPath", "/admin/login", "EXACTLY"),
+									urlDecodedPathMatchAssertion("/admin/login", "EXACTLY"),
 									byteMatchAssertion("Method", "POST", "EXACTLY"),
 								}),
 							},
@@ -416,6 +447,38 @@ func TestStackIncludesAdminCloudFrontWAFRateLimits(t *testing.T) {
 					}),
 				},
 			}),
+			assertions.Match_ObjectLike(&map[string]any{
+				"Name": "CustomerAuthPostRateLimit",
+				"Action": map[string]any{
+					"Block": map[string]any{
+						"CustomResponse": map[string]any{
+							"ResponseCode": 429,
+						},
+					},
+				},
+				"Statement": map[string]any{
+					"RateBasedStatement": assertions.Match_ObjectLike(&map[string]any{
+						"AggregateKeyType":    "IP",
+						"Limit":               100,
+						"EvaluationWindowSec": 300,
+						"ScopeDownStatement": map[string]any{
+							"AndStatement": map[string]any{
+								"Statements": assertions.Match_ArrayWith(&[]any{
+									assertions.Match_ObjectLike(&map[string]any{
+										"OrStatement": map[string]any{
+											"Statements": assertions.Match_ArrayWith(&[]any{
+												urlDecodedPathMatchAssertion("/account/sign-in", "EXACTLY"),
+												urlDecodedPathMatchAssertion("/account/sign-up", "EXACTLY"),
+											}),
+										},
+									}),
+									byteMatchAssertion("Method", "POST", "EXACTLY"),
+								}),
+							},
+						},
+					}),
+				},
+			}),
 		}),
 	})
 	template.HasResourceProperties(jsii.String("AWS::CloudFront::Distribution"), map[string]any{
@@ -427,13 +490,64 @@ func TestStackIncludesAdminCloudFrontWAFRateLimits(t *testing.T) {
 	})
 }
 
+func TestStackWiresWafObservability(t *testing.T) {
+	defer jsii.Close()
+
+	app := awscdk.NewApp(nil)
+	stack := NewThailandGiftshopStack(app, "TestStack", nil)
+	template := assertions.Template_FromStack(stack, nil)
+
+	// The Rule=ALL blocked-requests alarm keeps its pre-customer-auth ID and
+	// name (renaming would replace the alarm resource), but its description
+	// must say it covers every edge rule, not just admin traffic.
+	template.HasResourceProperties(jsii.String("AWS::CloudWatch::Alarm"), map[string]any{
+		"AlarmName":        "ThailandGiftshop-WAF-AdminBlocks",
+		"AlarmDescription": "WAF blocked requests across all edge rules (admin login, admin path, and customer auth) exceeded the normal operating threshold.",
+		"Threshold":        10,
+	})
+
+	// Each per-rule block metric needs dashboard visibility so an operator
+	// can attribute a Rule=ALL alarm to admin login, or customer auth bursts.
+	templateJSON := template.ToJSON()
+	dashboardBody := operationsDashboardBodyJSON(t, templateJSON)
+	for _, fragment := range []string{
+		"ThailandGiftshopAdminCloudFrontLoginPost",
+		"ThailandGiftshopAdminCloudFrontCustomerAuthPost",
+		"WAF customer auth blocks",
+	} {
+		if !strings.Contains(dashboardBody, fragment) {
+			t.Fatalf("operations dashboard body missing %q", fragment)
+		}
+	}
+}
+
+func operationsDashboardBodyJSON(t *testing.T, templateJSON *map[string]any) string {
+	t.Helper()
+
+	for _, resource := range templateResources(t, templateJSON) {
+		resourceMap := asStringMap(t, resource)
+		if resourceMap["Type"] != "AWS::CloudWatch::Dashboard" {
+			continue
+		}
+		properties := asStringMap(t, resourceMap["Properties"])
+		encoded, err := json.Marshal(properties["DashboardBody"])
+		if err != nil {
+			t.Fatalf("marshal dashboard body: %v", err)
+		}
+		return string(encoded)
+	}
+
+	t.Fatal("operations dashboard not found")
+	return ""
+}
+
 func TestStackWiresAdminCredentialsSecretReference(t *testing.T) {
 	defer jsii.Close()
 
 	app := awscdk.NewApp(nil)
 	stack := NewThailandGiftshopStack(app, "TestStack", nil)
 	template := assertions.Template_FromStack(stack, nil)
-	template.ResourceCountIs(jsii.String("AWS::SecretsManager::Secret"), jsii.Number(2))
+	template.ResourceCountIs(jsii.String("AWS::SecretsManager::Secret"), jsii.Number(3))
 
 	templateJSON := template.ToJSON()
 	adminVariables := lambdaEnvironmentVariables(t, templateJSON, "thailandgiftshop-admin")
@@ -681,6 +795,205 @@ func TestStackIncludesCatalogResources(t *testing.T) {
 	})
 }
 
+func TestStackIncludesCommerceTable(t *testing.T) {
+	defer jsii.Close()
+
+	app := awscdk.NewApp(nil)
+	stack := NewThailandGiftshopStack(app, "TestStack", nil)
+	template := assertions.Template_FromStack(stack, nil)
+
+	template.HasResource(jsii.String("AWS::DynamoDB::Table"), map[string]any{
+		"DeletionPolicy":      "Retain",
+		"UpdateReplacePolicy": "Retain",
+		"Properties": assertions.Match_ObjectLike(&map[string]any{
+			"TableName": commerceTableName,
+			"AttributeDefinitions": assertions.Match_ArrayWith(&[]any{
+				map[string]any{
+					"AttributeName": commercePartitionKeyName,
+					"AttributeType": "S",
+				},
+				map[string]any{
+					"AttributeName": commerceSortKeyName,
+					"AttributeType": "S",
+				},
+				map[string]any{
+					"AttributeName": commerceCustomerOrdersIndexPKName,
+					"AttributeType": "S",
+				},
+				map[string]any{
+					"AttributeName": commerceCustomerOrdersIndexSKName,
+					"AttributeType": "S",
+				},
+				map[string]any{
+					"AttributeName": commerceOrdersIndexPKName,
+					"AttributeType": "S",
+				},
+				map[string]any{
+					"AttributeName": commerceOrdersIndexSKName,
+					"AttributeType": "S",
+				},
+			}),
+			"BillingMode": "PAY_PER_REQUEST",
+			"GlobalSecondaryIndexes": assertions.Match_ArrayWith(&[]any{
+				assertions.Match_ObjectLike(&map[string]any{
+					"IndexName": commerce.DefaultCustomerOrdersIndexName,
+					"KeySchema": assertions.Match_ArrayWith(&[]any{
+						map[string]any{
+							"AttributeName": commerceCustomerOrdersIndexPKName,
+							"KeyType":       "HASH",
+						},
+						map[string]any{
+							"AttributeName": commerceCustomerOrdersIndexSKName,
+							"KeyType":       "RANGE",
+						},
+					}),
+					"Projection": map[string]any{
+						"ProjectionType": "ALL",
+					},
+				}),
+				assertions.Match_ObjectLike(&map[string]any{
+					"IndexName": commerce.DefaultOrdersIndexName,
+					"KeySchema": assertions.Match_ArrayWith(&[]any{
+						map[string]any{
+							"AttributeName": commerceOrdersIndexPKName,
+							"KeyType":       "HASH",
+						},
+						map[string]any{
+							"AttributeName": commerceOrdersIndexSKName,
+							"KeyType":       "RANGE",
+						},
+					}),
+					"Projection": map[string]any{
+						"ProjectionType": "ALL",
+					},
+				}),
+			}),
+			"KeySchema": assertions.Match_ArrayWith(&[]any{
+				map[string]any{
+					"AttributeName": commercePartitionKeyName,
+					"KeyType":       "HASH",
+				},
+				map[string]any{
+					"AttributeName": commerceSortKeyName,
+					"KeyType":       "RANGE",
+				},
+			}),
+			"PointInTimeRecoverySpecification": map[string]any{
+				"PointInTimeRecoveryEnabled": true,
+			},
+			"SSESpecification": map[string]any{
+				"SSEEnabled": true,
+			},
+			"TimeToLiveSpecification": map[string]any{
+				"AttributeName": commerceTTLAttributeName,
+				"Enabled":       true,
+			},
+		}),
+	})
+
+	templateJSON := template.ToJSON()
+	ssrVariables := lambdaEnvironmentVariables(t, templateJSON, "thailandgiftshop-ssr")
+	adminVariables := lambdaEnvironmentVariables(t, templateJSON, "thailandgiftshop-admin")
+	for name, variables := range map[string]map[string]any{
+		"thailandgiftshop-ssr":   ssrVariables,
+		"thailandgiftshop-admin": adminVariables,
+	} {
+		if _, found := variables[commerce.EnvTableName]; !found {
+			t.Fatalf("%s lambda missing %s env var: %#v", name, commerce.EnvTableName, variables)
+		}
+		if got := variables[commerce.EnvCustomerOrdersIndexName]; got != commerce.DefaultCustomerOrdersIndexName {
+			t.Fatalf("%s lambda %s = %v, want %q", name, commerce.EnvCustomerOrdersIndexName, got, commerce.DefaultCustomerOrdersIndexName)
+		}
+		if got := variables[commerce.EnvOrdersIndexName]; got != commerce.DefaultOrdersIndexName {
+			t.Fatalf("%s lambda %s = %v, want %q", name, commerce.EnvOrdersIndexName, got, commerce.DefaultOrdersIndexName)
+		}
+	}
+	if got := ssrVariables[payments.EnvPublicBaseURL]; got != payments.DefaultPublicBaseURL {
+		t.Fatalf("ssr lambda %s = %v, want %q", payments.EnvPublicBaseURL, got, payments.DefaultPublicBaseURL)
+	}
+	if _, found := adminVariables[payments.EnvPublicBaseURL]; found {
+		t.Fatalf("admin lambda must not receive %s; got %#v", payments.EnvPublicBaseURL, adminVariables)
+	}
+
+	for _, functionName := range []string{"thailandgiftshop-ssr", "thailandgiftshop-admin"} {
+		for _, action := range []string{"dynamodb:GetItem", "dynamodb:Query", "dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:DeleteItem", "dynamodb:BatchWriteItem", "dynamodb:TransactWriteItems"} {
+			if !policyForFunctionHasActionOnCommerceTable(t, templateJSON, functionName, action) {
+				t.Fatalf("%s lambda policy missing %s on the commerce table", functionName, action)
+			}
+		}
+	}
+
+	template.HasOutput(jsii.String("CommerceTableName"), map[string]any{
+		"Description": "DynamoDB table name for customers, carts, addresses, and orders",
+		"Value":       assertions.Match_AnyValue(),
+	})
+	template.HasOutput(jsii.String("CommerceTableArn"), map[string]any{
+		"Description": "DynamoDB table ARN for customers, carts, addresses, and orders",
+		"Value":       assertions.Match_AnyValue(),
+	})
+	template.HasOutput(jsii.String("CommerceCustomerOrdersIndexName"), map[string]any{
+		"Value": commerce.DefaultCustomerOrdersIndexName,
+	})
+	template.HasOutput(jsii.String("CommerceOrdersIndexName"), map[string]any{
+		"Value": commerce.DefaultOrdersIndexName,
+	})
+}
+
+func TestStackIncludesCustomerSessionSecret(t *testing.T) {
+	defer jsii.Close()
+
+	app := awscdk.NewApp(nil)
+	stack := NewThailandGiftshopStack(app, "TestStack", nil)
+	template := assertions.Template_FromStack(stack, nil)
+
+	template.HasResourceProperties(jsii.String("AWS::SecretsManager::Secret"), map[string]any{
+		"Description": "Signing secret for thailandgiftshop.com customer session cookies",
+		"GenerateSecretString": map[string]any{
+			"ExcludePunctuation": true,
+			"PasswordLength":     64,
+		},
+	})
+
+	templateJSON := template.ToJSON()
+	ssrVariables := lambdaEnvironmentVariables(t, templateJSON, "thailandgiftshop-ssr")
+	sessionSecret, found := ssrVariables[commerce.EnvSessionSecret]
+	if !found {
+		t.Fatalf("ssr lambda missing %s env var: %#v", commerce.EnvSessionSecret, ssrVariables)
+	}
+	if value := templateValueString(t, sessionSecret); !strings.Contains(value, "CustomerSessionSecret") || !strings.Contains(value, "SecretString") {
+		t.Fatalf("customer session secret reference = %s, want generated CustomerSessionSecret SecretString", value)
+	}
+
+	adminVariables := lambdaEnvironmentVariables(t, templateJSON, "thailandgiftshop-admin")
+	if _, found := adminVariables[commerce.EnvSessionSecret]; found {
+		t.Fatalf("admin lambda must not receive %s; got %#v", commerce.EnvSessionSecret, adminVariables)
+	}
+}
+
+func TestStackWiresStripeCredentialsSecretReference(t *testing.T) {
+	defer jsii.Close()
+
+	app := awscdk.NewApp(nil)
+	stack := NewThailandGiftshopStack(app, "TestStack", nil)
+	template := assertions.Template_FromStack(stack, nil)
+
+	templateJSON := template.ToJSON()
+	ssrVariables := lambdaEnvironmentVariables(t, templateJSON, "thailandgiftshop-ssr")
+	secretReference := templateValueString(t, ssrVariables[payments.EnvStripeCredentialsSecretJSON])
+	if !strings.Contains(secretReference, stripeCredentialsSecretName) || !strings.Contains(secretReference, "SecretString") {
+		t.Fatalf("stripe credentials reference = %q, want dynamic reference to named Secrets Manager JSON secret", secretReference)
+	}
+
+	// The admin lambda needs the same credentials: canceling a pending order
+	// verifies and expires its Stripe checkout session first, and without the
+	// provider that session-expiry guard is silently skipped.
+	adminVariables := lambdaEnvironmentVariables(t, templateJSON, "thailandgiftshop-admin")
+	adminReference := templateValueString(t, adminVariables[payments.EnvStripeCredentialsSecretJSON])
+	if !strings.Contains(adminReference, stripeCredentialsSecretName) || !strings.Contains(adminReference, "SecretString") {
+		t.Fatalf("admin stripe credentials reference = %q, want dynamic reference to named Secrets Manager JSON secret", adminReference)
+	}
+}
+
 func TestStackIncludesStaticAssetsDistribution(t *testing.T) {
 	defer jsii.Close()
 
@@ -808,6 +1121,26 @@ func TestStackIncludesStaticAssetsDistribution(t *testing.T) {
 			},
 		},
 	})
+	template.HasResourceProperties(jsii.String("AWS::CloudFront::ResponseHeadersPolicy"), map[string]any{
+		"ResponseHeadersPolicyConfig": map[string]any{
+			"SecurityHeadersConfig": map[string]any{
+				"ContentSecurityPolicy": map[string]any{
+					"ContentSecurityPolicy": assertions.Match_StringLikeRegexp(jsii.String(`form-action 'self'[^;]*checkout\.stripe\.com`)),
+					"Override":              true,
+				},
+			},
+		},
+	})
+	template.HasResourceProperties(jsii.String("AWS::CloudFront::ResponseHeadersPolicy"), map[string]any{
+		"ResponseHeadersPolicyConfig": map[string]any{
+			"SecurityHeadersConfig": map[string]any{
+				"ContentSecurityPolicy": map[string]any{
+					"ContentSecurityPolicy": assertions.Match_StringLikeRegexp(jsii.String(`script-src 'self'; style-src 'self'`)),
+					"Override":              true,
+				},
+			},
+		},
+	})
 
 	template.ResourceCountIs(jsii.String("AWS::CloudFront::Function"), jsii.Number(1))
 	template.HasResourceProperties(jsii.String("AWS::CloudFront::Function"), map[string]any{
@@ -903,6 +1236,7 @@ func TestStackIncludesStaticAssetsDistribution(t *testing.T) {
 					"Content-Type",
 					"HX-Request",
 					"X-CSRF-Token",
+					"Stripe-Signature",
 				}),
 			},
 		},
@@ -919,6 +1253,7 @@ func TestStackIncludesStaticAssetsDistribution(t *testing.T) {
 					"CookieBehavior": "whitelist",
 					"Cookies": assertions.Match_ArrayEquals(&[]any{
 						cartsession.CookieName,
+						commerce.SessionCookieName,
 					}),
 				},
 				"QueryStringsConfig": map[string]any{
@@ -1132,32 +1467,24 @@ func policyActionsForFunction(t *testing.T, templateJSON *map[string]any, functi
 func policyForFunctionHasActionOnCatalogTable(t *testing.T, templateJSON *map[string]any, functionName string, expectedAction string) bool {
 	t.Helper()
 
-	resources := templateResources(t, templateJSON)
-	roleID := lambdaRoleID(t, resources, functionName)
-	for _, resource := range resources {
-		resourceMap := asStringMap(t, resource)
-		if resourceMap["Type"] != "AWS::IAM::Policy" {
-			continue
-		}
-		properties := asStringMap(t, resourceMap["Properties"])
-		if !policyAppliesToRole(properties["Roles"], roleID) {
-			continue
-		}
-		policyDocument := asStringMap(t, properties["PolicyDocument"])
-		for _, statement := range asSlice(t, policyDocument["Statement"]) {
-			statementMap := asStringMap(t, statement)
-			if containsAction(policyStatementActions(t, statementMap["Action"]), expectedAction) && statementResourceReferencesCatalogTable(t, statementMap["Resource"]) {
-				return true
-			}
-		}
-	}
+	return policyForFunctionHasActionOnResource(t, templateJSON, functionName, expectedAction, catalogTableName, "CatalogTable")
+}
 
-	return false
+func policyForFunctionHasActionOnCommerceTable(t *testing.T, templateJSON *map[string]any, functionName string, expectedAction string) bool {
+	t.Helper()
+
+	return policyForFunctionHasActionOnResource(t, templateJSON, functionName, expectedAction, commerceTableName, "CommerceTable")
 }
 
 func policyForFunctionHasActionOnAdminLoginAttemptsTable(t *testing.T, templateJSON *map[string]any, functionName string, expectedAction string) bool {
 	t.Helper()
 
+	return policyForFunctionHasActionOnResource(t, templateJSON, functionName, expectedAction, "AdminLoginAttemptsTable")
+}
+
+func policyForFunctionHasActionOnResource(t *testing.T, templateJSON *map[string]any, functionName string, expectedAction string, resourceMarkers ...string) bool {
+	t.Helper()
+
 	resources := templateResources(t, templateJSON)
 	roleID := lambdaRoleID(t, resources, functionName)
 	for _, resource := range resources {
@@ -1172,7 +1499,7 @@ func policyForFunctionHasActionOnAdminLoginAttemptsTable(t *testing.T, templateJ
 		policyDocument := asStringMap(t, properties["PolicyDocument"])
 		for _, statement := range asSlice(t, policyDocument["Statement"]) {
 			statementMap := asStringMap(t, statement)
-			if containsAction(policyStatementActions(t, statementMap["Action"]), expectedAction) && statementResourceReferencesAdminLoginAttemptsTable(t, statementMap["Resource"]) {
+			if containsAction(policyStatementActions(t, statementMap["Action"]), expectedAction) && statementResourceReferencesAny(t, statementMap["Resource"], resourceMarkers) {
 				return true
 			}
 		}
@@ -1181,52 +1508,20 @@ func policyForFunctionHasActionOnAdminLoginAttemptsTable(t *testing.T, templateJ
 	return false
 }
 
-func statementResourceReferencesCatalogTable(t *testing.T, value any) bool {
+func statementResourceReferencesAny(t *testing.T, value any, markers []string) bool {
 	t.Helper()
 
-	switch resource := value.(type) {
-	case string:
-		return strings.Contains(resource, catalogTableName)
-	case []any:
-		for _, item := range resource {
-			if statementResourceReferencesCatalogTable(t, item) {
-				return true
-			}
-		}
-		return false
-	case map[string]any:
-		encoded, err := json.Marshal(resource)
-		if err != nil {
-			t.Fatalf("marshal policy resource: %v", err)
-		}
-		return strings.Contains(string(encoded), catalogTableName) || strings.Contains(string(encoded), "CatalogTable")
-	default:
-		return false
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("marshal policy resource: %v", err)
 	}
-}
-
-func statementResourceReferencesAdminLoginAttemptsTable(t *testing.T, value any) bool {
-	t.Helper()
-
-	switch resource := value.(type) {
-	case string:
-		return strings.Contains(resource, "AdminLoginAttemptsTable")
-	case []any:
-		for _, item := range resource {
-			if statementResourceReferencesAdminLoginAttemptsTable(t, item) {
-				return true
-			}
+	for _, marker := range markers {
+		if strings.Contains(string(encoded), marker) {
+			return true
 		}
-		return false
-	case map[string]any:
-		encoded, err := json.Marshal(resource)
-		if err != nil {
-			t.Fatalf("marshal policy resource: %v", err)
-		}
-		return strings.Contains(string(encoded), "AdminLoginAttemptsTable")
-	default:
-		return false
 	}
+
+	return false
 }
 
 func byteMatchAssertion(fieldName string, search string, positionalConstraint string) any {
@@ -1237,6 +1532,28 @@ func byteMatchAssertion(fieldName string, search string, positionalConstraint st
 			},
 			"SearchString":         search,
 			"PositionalConstraint": positionalConstraint,
+			"TextTransformations": []any{
+				map[string]any{"Priority": 0, "Type": "NONE"},
+			},
+		},
+	})
+}
+
+// urlDecodedPathMatchAssertion asserts a URI-path byte match that URL-decodes
+// the path before comparing, so percent-encoded spellings of rate-limited
+// auth paths cannot sidestep the edge rate rules.
+func urlDecodedPathMatchAssertion(search string, positionalConstraint string) any {
+	return assertions.Match_ObjectLike(&map[string]any{
+		"ByteMatchStatement": map[string]any{
+			"FieldToMatch": map[string]any{
+				"UriPath": map[string]any{},
+			},
+			"SearchString":         search,
+			"PositionalConstraint": positionalConstraint,
+			"TextTransformations": []any{
+				map[string]any{"Priority": 0, "Type": "URL_DECODE"},
+				map[string]any{"Priority": 1, "Type": "NONE"},
+			},
 		},
 	})
 }

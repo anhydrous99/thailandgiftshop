@@ -131,16 +131,96 @@ var storyMetadata = sync.OnceValue(func() seoMetadata {
 var cartMetadata = sync.OnceValue(func() seoMetadata {
 	return noindexMetadata(
 		"Cart | Thailand Gift Shop",
-		"Review quantities for your Thai gift-shop finds before checkout review.",
+		"Review quantities for your Thai gift-shop finds before secure Stripe checkout.",
 		"/cart",
 	)
 })
 
 var checkoutMetadata = sync.OnceValue(func() seoMetadata {
 	return noindexMetadata(
-		"Checkout Review | Thailand Gift Shop",
-		"Confirm your current cart summary; no customer details, payment details, or order are collected here.",
+		"Checkout | Thailand Gift Shop",
+		"Choose a shipping address and continue to secure Stripe payment for your Thai gift-shop finds.",
 		"/checkout",
+	)
+})
+
+var checkoutConfirmMetadata = sync.OnceValue(func() seoMetadata {
+	return noindexMetadata(
+		"Payment processing | Thailand Gift Shop",
+		"We are confirming your Stripe payment. This page refreshes on its own.",
+		"/checkout/confirm",
+	)
+})
+
+var fakePayMetadata = sync.OnceValue(func() seoMetadata {
+	return noindexMetadata(
+		"Demo payment | Thailand Gift Shop",
+		"Demo payment page for local runs. No real charge is made.",
+		"/checkout/fake-pay",
+	)
+})
+
+var ordersMetadata = sync.OnceValue(func() seoMetadata {
+	return noindexMetadata(
+		"Orders | Thailand Gift Shop",
+		"Track the status, totals, and shipping of your Thailand Gift Shop orders.",
+		"/orders",
+	)
+})
+
+func orderDetailMetadata(orderID string) seoMetadata {
+	return noindexMetadata(
+		"Order "+orderID+" | Thailand Gift Shop",
+		"Order status, items, shipping address, and tracking for your Thailand Gift Shop order.",
+		"/orders/"+orderID,
+	)
+}
+
+var signInMetadata = sync.OnceValue(func() seoMetadata {
+	return noindexMetadata(
+		"Sign in | Thailand Gift Shop",
+		"Sign in to your Thailand Gift Shop account to check orders, addresses, and saved cards.",
+		"/account/sign-in",
+	)
+})
+
+var signUpMetadata = sync.OnceValue(func() seoMetadata {
+	return noindexMetadata(
+		"Create account | Thailand Gift Shop",
+		"Create a Thailand Gift Shop account to check out, track orders, and save addresses.",
+		"/account/sign-up",
+	)
+})
+
+var accountMetadata = sync.OnceValue(func() seoMetadata {
+	return noindexMetadata(
+		"Account | Thailand Gift Shop",
+		"Manage your Thailand Gift Shop account: recent orders, default address, and password.",
+		"/account",
+	)
+})
+
+var addressesMetadata = sync.OnceValue(func() seoMetadata {
+	return noindexMetadata(
+		"Addresses | Thailand Gift Shop",
+		"Save and manage the shipping addresses for your Thailand Gift Shop orders.",
+		"/account/addresses",
+	)
+})
+
+func addressEditMetadata(addressID string) seoMetadata {
+	return noindexMetadata(
+		"Edit address | Thailand Gift Shop",
+		"Update a saved shipping address for your Thailand Gift Shop orders.",
+		"/account/addresses/"+addressID+"/edit",
+	)
+}
+
+var paymentMethodsMetadata = sync.OnceValue(func() seoMetadata {
+	return noindexMetadata(
+		"Saved cards | Thailand Gift Shop",
+		"Manage the cards saved with Stripe for faster Thailand Gift Shop checkout.",
+		"/account/payment-methods",
 	)
 })
 
@@ -174,6 +254,30 @@ func categoryDetailBreadcrumbs(category catalog.Category) []breadcrumbItem {
 
 func storyBreadcrumbs() []breadcrumbItem {
 	return []breadcrumbItem{homeBreadcrumb(), {Name: "Our Story", Path: "/story"}}
+}
+
+func accountBreadcrumbs() []breadcrumbItem {
+	return []breadcrumbItem{homeBreadcrumb(), {Name: "Account", Path: "/account"}}
+}
+
+func addressesBreadcrumbs() []breadcrumbItem {
+	return []breadcrumbItem{homeBreadcrumb(), {Name: "Account", Path: "/account"}, {Name: "Addresses", Path: "/account/addresses"}}
+}
+
+func paymentMethodsBreadcrumbs() []breadcrumbItem {
+	return []breadcrumbItem{homeBreadcrumb(), {Name: "Account", Path: "/account"}, {Name: "Saved cards", Path: "/account/payment-methods"}}
+}
+
+func checkoutBreadcrumbs() []breadcrumbItem {
+	return []breadcrumbItem{homeBreadcrumb(), {Name: "Cart", Path: "/cart"}, {Name: "Checkout", Path: "/checkout"}}
+}
+
+func ordersBreadcrumbs() []breadcrumbItem {
+	return []breadcrumbItem{homeBreadcrumb(), {Name: "Account", Path: "/account"}, {Name: "Orders", Path: "/orders"}}
+}
+
+func orderDetailBreadcrumbs(orderID string) []breadcrumbItem {
+	return []breadcrumbItem{homeBreadcrumb(), {Name: "Account", Path: "/account"}, {Name: "Orders", Path: "/orders"}, {Name: "Order " + orderID, Path: "/orders/" + orderID}}
 }
 
 func breadcrumbJSONLD(breadcrumbs []breadcrumbItem) map[string]any {
@@ -233,7 +337,7 @@ func canonicalURL(pathOrURL string) string {
 func normalizeMetaDescription(description string) string {
 	description = strings.Join(strings.Fields(description), " ")
 	if description == "" {
-		return "Browse Thailand Gift Shop for Thai gift-shop finds and review-only checkout."
+		return "Browse Thailand Gift Shop for Thai snacks, souvenirs, pantry favorites, and small keepsakes."
 	}
 	return description
 }
@@ -292,12 +396,28 @@ func sitemapLastMod(updatedAt time.Time) string {
 }
 
 func seoHeadersForRoute(kind pageKind) map[string]string {
-	switch kind {
-	case pageCart, pageCheckout:
+	// Every customer-account route — pages, auth forms, and POST redirects —
+	// is private and never edge-cached.
+	if isAccountRoute(kind) {
 		return map[string]string{
 			"Cache-Control": privatePageCacheControl,
 			"X-Robots-Tag":  "noindex, follow",
 		}
+	}
+	if isCheckoutFlowRoute(kind) {
+		return map[string]string{
+			"Cache-Control": privatePageCacheControl,
+			"X-Robots-Tag":  "noindex, follow",
+		}
+	}
+	switch kind {
+	case pageCart:
+		return map[string]string{
+			"Cache-Control": privatePageCacheControl,
+			"X-Robots-Tag":  "noindex, follow",
+		}
+	case pageStripeWebhook:
+		return map[string]string{"Cache-Control": "no-store"}
 	case pageRobotsTxt, pageSitemapXML:
 		return map[string]string{"Cache-Control": seoDiscoveryCacheControl}
 	case pageHome, pageProducts, pageProductDetail, pageCategories, pageCategoryDetail, pageStory:

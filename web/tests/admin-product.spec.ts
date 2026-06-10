@@ -3,7 +3,7 @@ import path from 'node:path';
 
 const adminPassword = 'admin-product-password';
 const fixtureImage = path.join(process.cwd(), 'tests/fixtures/test-shirt.webp');
-const excludedControlNames = ['Account', 'Search', 'Filter', 'Sort'];
+const excludedControlNames = ['Search', 'Filter', 'Sort'];
 
 type ProductFlowData = {
   name: string;

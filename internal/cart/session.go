@@ -45,11 +45,16 @@ type Cart struct {
 type DecodeResult struct {
 	Cart       Cart
 	NeedsClear bool
+	// Mirror reports that the cookie was written as a signed-in customer's
+	// write-through mirror of the server cart, not as anonymous shopping
+	// state. Cookies signed before the flag existed decode as Mirror=false.
+	Mirror bool
 }
 
 type cookiePayload struct {
 	Version  int    `json:"version"`
 	IssuedAt int64  `json:"iat"`
+	Mirror   bool   `json:"mirror,omitempty"`
 	Lines    []Line `json:"lines"`
 }
 
@@ -158,11 +163,68 @@ func (c Cart) LineCount() int {
 	return len(c.lines)
 }
 
-func EncodeCookie(c Cart, secret string) (string, error) {
-	return encodeCookieAt(c, secret, time.Now())
+// Merge combines a signed-in customer's server cart with an anonymous cookie
+// cart: per lineKey(slug, variantID) quantity = max(server, cookie), capped at
+// MaxQuantity; union of keys, server order first, truncated at MaxLineItems.
+func Merge(server, cookie Cart) Cart {
+	capacity := min(len(server.lines)+len(cookie.lines), MaxLineItems)
+	merged := make([]Line, 0, capacity)
+	indexes := make(map[string]int, capacity)
+
+	for _, line := range server.lines {
+		if len(merged) >= MaxLineItems {
+			break
+		}
+		indexes[lineKey(line)] = len(merged)
+		merged = append(merged, Line{Slug: line.Slug, VariantID: line.VariantID, Quantity: capQuantity(line.Quantity)})
+	}
+	for _, line := range cookie.lines {
+		if index, ok := indexes[lineKey(line)]; ok {
+			merged[index].Quantity = capQuantity(max(merged[index].Quantity, line.Quantity))
+			continue
+		}
+		if len(merged) >= MaxLineItems {
+			continue
+		}
+		indexes[lineKey(line)] = len(merged)
+		merged = append(merged, Line{Slug: line.Slug, VariantID: line.VariantID, Quantity: capQuantity(line.Quantity)})
+	}
+
+	return Cart{lines: merged}
 }
 
-func encodeCookieAt(c Cart, secret string, now time.Time) (string, error) {
+func EncodeCookie(c Cart, secret string) (string, error) {
+	return encodeCookieAt(c, secret, time.Now(), false)
+}
+
+// EncodeMirrorCookie encodes a signed-in customer's write-through mirror of
+// the server cart. Mirror cookies decode with DecodeResult.Mirror set so
+// merge-on-login can tell a dead echo of server-cart state apart from genuine
+// anonymous shopping.
+func EncodeMirrorCookie(c Cart, secret string) (string, error) {
+	return encodeCookieAt(c, secret, time.Now(), true)
+}
+
+// EncodeMirrorCookieTruncated encodes the mirror, dropping trailing lines
+// until the payload fits MaxEncodedCookieLength. The server cart stays
+// authoritative for signed-in customers, so a truncated mirror only makes the
+// header label undercount until the next /cart render re-syncs it; it must
+// never fail a request the way an authoritative anonymous cookie would.
+func EncodeMirrorCookieTruncated(c Cart, secret string) (string, error) {
+	lines := c.lines
+	for {
+		encoded, err := EncodeMirrorCookie(Cart{lines: lines}, secret)
+		if err == nil || !errors.Is(err, ErrCookieTooLarge) {
+			return encoded, err
+		}
+		if len(lines) == 0 {
+			return "", err
+		}
+		lines = lines[:len(lines)-1]
+	}
+}
+
+func encodeCookieAt(c Cart, secret string, now time.Time, mirror bool) (string, error) {
 	normalized, err := normalizeLines(c.lines, true, false)
 	if err != nil {
 		return "", err
@@ -171,6 +233,7 @@ func encodeCookieAt(c Cart, secret string, now time.Time) (string, error) {
 	jsonPayload, err := json.Marshal(cookiePayload{
 		Version:  payloadVersion,
 		IssuedAt: now.UTC().Unix(),
+		Mirror:   mirror,
 		Lines:    normalized.lines,
 	})
 	if err != nil {
@@ -229,7 +292,7 @@ func decodeCookieAt(value string, secret string, now time.Time) DecodeResult {
 		return invalidDecodeResult()
 	}
 
-	return DecodeResult{Cart: normalized}
+	return DecodeResult{Cart: normalized, Mirror: payload.Mirror}
 }
 
 func invalidDecodeResult() DecodeResult {

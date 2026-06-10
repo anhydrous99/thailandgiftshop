@@ -14,6 +14,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.103.2
 	github.com/aws/constructs-go/constructs/v10 v10.6.0
 	github.com/aws/jsii-runtime-go v1.132.0
+	github.com/stripe/stripe-go/v82 v82.5.1
 	golang.org/x/crypto v0.52.0
 )
 

@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-const excludedControlNames = ['Account', 'Search', 'Filter', 'Sort'];
+const excludedControlNames = ['Search', 'Filter', 'Sort'];
 
 async function expectExcludedControlsAbsent(page: Page) {
   for (const name of excludedControlNames) {

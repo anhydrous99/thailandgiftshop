@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -153,6 +154,13 @@ func TestREADMEAdminBootstrapDocsUsePlaceholdersOnly(t *testing.T) {
 		"ADMIN_CREDENTIALS_SECRET_JSON",
 		"CATALOG_DEMO_STORE=1",
 		"without a live AWS account",
+		"STRIPE_CREDENTIALS_SECRET_JSON",
+		"CUSTOMER_SESSION_SECRET",
+		"thailandgiftshop/stripe/credentials",
+		"\"secret_key\":\"<sk-test-key>\"",
+		"\"webhook_signing_secret\":\"<whsec>\"",
+		"\"secret_key\":\"<sk-live-or-test-key>\"",
+		"\"webhook_signing_secret\":\"<whsec-placeholder>\"",
 	}
 	for _, requiredText := range required {
 		if !strings.Contains(content, requiredText) {
@@ -162,6 +170,22 @@ func TestREADMEAdminBootstrapDocsUsePlaceholdersOnly(t *testing.T) {
 
 	if strings.Contains(content, "presigned URL") {
 		t.Fatal("README.md contains a presigned URL reference in admin bootstrap docs")
+	}
+
+	// Real-looking secret material must never land in the README: Stripe
+	// secret keys, Stripe webhook signing secrets followed by token
+	// characters (the bare `whsec_` prefix in prose is fine), and bcrypt
+	// hashes. Docs must use <placeholder> forms instead.
+	forbidden := []*regexp.Regexp{
+		regexp.MustCompile(`sk_live_`),
+		regexp.MustCompile(`sk_test_[0-9A-Za-z]{8,}`),
+		regexp.MustCompile(`whsec_[0-9A-Za-z]{8,}`),
+		regexp.MustCompile(`\$2[aby]\$\d{2}\$`),
+	}
+	for _, pattern := range forbidden {
+		if match := pattern.FindString(content); match != "" {
+			t.Fatalf("README.md contains real-looking secret material %q (pattern %q); use a <placeholder> instead", match, pattern)
+		}
 	}
 }
 

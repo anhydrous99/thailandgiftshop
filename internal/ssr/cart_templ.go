@@ -47,7 +47,7 @@ func cartPage(vm cartPageViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<main><section class=\"px-5 pt-10 pb-12 sm:px-8 lg:pt-14 lg:pb-16\"><div class=\"mx-auto w-full max-w-7xl\"><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Gift bag</p><h1 class=\"mt-3 font-display text-5xl font-bold leading-none tracking-tight text-flag-blue sm:text-6xl\">Cart</h1><p class=\"mt-5 max-w-3xl text-lg leading-8 text-muted\">Review quantities for your Thai gift-shop finds before checkout review.</p></div></section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<main><section class=\"px-5 pt-10 pb-12 sm:px-8 lg:pt-14 lg:pb-16\"><div class=\"mx-auto w-full max-w-7xl\"><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Gift bag</p><h1 class=\"mt-3 font-display text-5xl font-bold leading-none tracking-tight text-flag-blue sm:text-6xl\">Cart</h1><p class=\"mt-5 max-w-3xl text-lg leading-8 text-muted\">Review quantities for your Thai gift-shop finds before secure Stripe checkout.</p></div></section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -330,17 +330,17 @@ func cartPage(vm cartPageViewModel) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "</p></div><p class=\"mt-3 text-sm leading-6 text-white/70\">Shipping, tax, and payment are not collected on this review-only checkout flow.</p><div class=\"mt-6 grid gap-3\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "</p></div><p class=\"mt-3 text-sm leading-6 text-white/70\">Payment is processed by Stripe at checkout. Shipping is free while we launch; tax is not collected yet.</p><div class=\"mt-6 grid gap-3\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if hasUnavailableCartLines(vm.Lines) {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "<p class=\"border-l-4 border-flag-red bg-flag-red/20 px-4 py-3 text-sm font-semibold leading-6 text-white\">Remove unavailable sizes before checkout review.</p>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "<p class=\"border-l-4 border-flag-red bg-flag-red/20 px-4 py-3 text-sm font-semibold leading-6 text-white\">Remove unavailable sizes before checkout.</p>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "<a href=\"/checkout\" class=\"inline-flex h-12 items-center justify-center bg-flag-red px-6 text-sm font-bold text-white transition hover:bg-flag-red-deep focus-visible:outline-white\">Review checkout</a> ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "<a href=\"/checkout\" class=\"inline-flex h-12 items-center justify-center bg-flag-red px-6 text-sm font-bold text-white transition hover:bg-flag-red-deep focus-visible:outline-white\">Check out</a> ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
