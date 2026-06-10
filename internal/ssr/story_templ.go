@@ -37,7 +37,7 @@ func storyPage(vm storyPageViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<body class=\"min-h-screen bg-[#F8F4EE] text-[#17172A] antialiased\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<body class=\"min-h-screen bg-paper text-ink antialiased\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -45,7 +45,7 @@ func storyPage(vm storyPageViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<main><section class=\"border-b border-[#2D2A4A]/10 bg-white px-5 py-14 sm:px-8 lg:py-18\"><div class=\"mx-auto w-full max-w-7xl\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<main><section class=\"px-5 pt-10 pb-12 sm:px-8 lg:pt-14 lg:pb-16\"><div class=\"mx-auto w-full max-w-7xl\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -53,7 +53,23 @@ func storyPage(vm storyPageViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<p class=\"text-sm font-black uppercase tracking-wide text-[#A51931]\">Bangkok gift shop online</p><h1 class=\"mt-3 text-5xl font-black leading-none text-[#2D2A4A] sm:text-6xl\">Our Story</h1><p class=\"mt-5 max-w-3xl text-lg leading-8 text-[#4C4A62]\">Thai snacks, souvenirs, textiles, pantry items, decor, wellness, and small keepsakes.</p></div></section><section class=\"mx-auto w-full max-w-7xl px-5 py-14 sm:px-8 lg:py-20\"><div class=\"max-w-3xl rounded-lg border border-[#2D2A4A]/15 bg-white p-6 shadow-sm sm:p-8\"><p class=\"text-lg leading-8 text-[#4C4A62]\">Thailand Gift Shop is a Bangkok gift shop online for Thai snacks, souvenirs, textiles, pantry items, decor, wellness, and small keepsakes.</p><p class=\"mt-5 text-lg leading-8 text-[#4C4A62]\">Each aisle is shaped for calm browsing: clear categories, strong product images, concise details, and slug-based links that work without JavaScript.</p><p class=\"mt-5 text-lg leading-8 text-[#4C4A62]\">The shop point of view is market-bright and practical, rooted in the colors, textures, pantry flavors, and compact keepsakes travelers remember from Bangkok gift shops.</p><p class=\"mt-5 text-lg leading-8 text-[#4C4A62]\">Checkout is review-only for now: no payment is collected yet, and shipping and tax are confirmed later.</p></div></section></main>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Bangkok gift shop online</p><h1 class=\"mt-3 font-display text-5xl font-bold leading-none tracking-tight text-flag-blue sm:text-6xl\">Our Story</h1><p class=\"mt-5 max-w-3xl text-lg leading-8 text-muted\">Thai snacks, souvenirs, textiles, pantry items, decor, wellness, and small keepsakes.</p></div></section>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = flagBand("h-3").Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<section class=\"mx-auto w-full max-w-7xl px-5 py-12 sm:px-8 lg:py-16\"><div class=\"max-w-3xl\"><p class=\"border-l-4 border-flag-red pl-5 text-xl leading-9 text-ink\">Thailand Gift Shop is a Bangkok gift shop online for Thai snacks, souvenirs, textiles, pantry items, decor, wellness, and small keepsakes.</p><div class=\"my-8 w-24\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = flagBand("h-3").Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</div><p class=\"text-lg leading-8 text-muted\">Each aisle is shaped for calm browsing: clear categories, strong product images, concise details, and slug-based links that work without JavaScript.</p><p class=\"mt-5 text-lg leading-8 text-muted\">The shop point of view is market-bright and practical, rooted in the colors, textures, pantry flavors, and compact keepsakes travelers remember from Bangkok gift shops.</p><p class=\"mt-5 text-lg leading-8 text-muted\">Checkout is review-only for now: no payment is collected yet, and shipping and tax are confirmed later.</p></div></section></main>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -61,7 +77,7 @@ func storyPage(vm storyPageViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

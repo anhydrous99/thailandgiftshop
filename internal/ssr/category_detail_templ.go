@@ -37,7 +37,7 @@ func categoryDetailPage(vm categoryDetailPageViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<body class=\"min-h-screen bg-[#F8F4EE] text-[#17172A] antialiased\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<body class=\"min-h-screen bg-paper text-ink antialiased\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -45,7 +45,7 @@ func categoryDetailPage(vm categoryDetailPageViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<main><section class=\"border-b border-[#2D2A4A]/10 bg-white px-5 py-14 sm:px-8 lg:py-18\"><div class=\"mx-auto w-full max-w-7xl\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<main><section class=\"px-5 pt-10 pb-12 sm:px-8 lg:pt-14 lg:pb-16\"><div class=\"mx-auto w-full max-w-7xl\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -53,43 +53,59 @@ func categoryDetailPage(vm categoryDetailPageViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<a href=\"/categories\" class=\"text-sm font-black text-[#A51931] transition hover:text-[#831426]\">Back to categories</a><h1 class=\"mt-5 text-5xl font-black leading-none text-[#2D2A4A] sm:text-6xl\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<a href=\"/categories\" class=\"text-sm font-bold text-flag-red transition hover:text-flag-red-deep hover:underline hover:underline-offset-4\">Back to categories</a><h1 class=\"mt-5 font-display text-5xl font-bold leading-none tracking-tight text-flag-blue sm:text-6xl\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(vm.Category.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/category_detail.templ`, Line: 14, Col: 101}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/category_detail.templ`, Line: 14, Col: 128}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</h1><p class=\"mt-5 max-w-3xl text-lg leading-8 text-[#4C4A62]\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</h1><p class=\"mt-5 max-w-3xl text-lg leading-8 text-muted\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(vm.Category.Description)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/category_detail.templ`, Line: 15, Col: 90}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/category_detail.templ`, Line: 15, Col: 86}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</p></div></section><section class=\"mx-auto w-full max-w-7xl px-5 py-14 sm:px-8 lg:py-20\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</p></div></section>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = flagBand("h-3").Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<section class=\"mx-auto w-full max-w-7xl px-5 py-12 sm:px-8 lg:py-16\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if len(vm.Products) == 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<section class=\"rounded-lg border border-dashed border-[#2D2A4A]/25 bg-white p-8 text-center shadow-sm\"><h2 class=\"text-xl font-bold text-[#2D2A4A]\">No products are available in this category yet.</h2><p class=\"mt-2 text-sm leading-6 text-[#4C4A62]\">Check back soon for more Thai gift-shop finds in this aisle.</p></section>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<section class=\"border-2 border-dashed border-flag-blue/25 bg-paper p-10 text-center\"><div class=\"mx-auto w-16\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = flagBand("h-1.5").Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</div><h2 class=\"mt-5 font-display text-xl font-bold text-flag-blue\">No products are available in this category yet.</h2><p class=\"mt-2 text-sm leading-6 text-muted\">Check back soon for more Thai gift-shop finds in this aisle.</p></section>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<section aria-label=\"Category products\" class=\"grid gap-5 sm:grid-cols-2 lg:grid-cols-4\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<section aria-label=\"Category products\" class=\"grid gap-5 sm:grid-cols-2 lg:grid-cols-4\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -99,54 +115,54 @@ func categoryDetailPage(vm categoryDetailPageViewModel) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</section>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</section>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
 		if len(vm.RelatedCategories) > 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<section aria-label=\"More categories\" class=\"mt-10 rounded-lg border border-[#2D2A4A]/15 bg-white p-5 shadow-sm sm:p-6\"><p class=\"text-sm font-black uppercase tracking-wide text-[#A51931]\">More aisles</p><h2 class=\"mt-2 text-3xl font-black text-[#2D2A4A] sm:text-4xl\">Browse more Thai gift-shop categories</h2><div class=\"mt-5 flex flex-wrap gap-2\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<section aria-label=\"More categories\" class=\"mt-12 bg-flag-white p-6 sm:p-8\"><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">More aisles</p><h2 class=\"mt-2 font-display text-3xl font-bold tracking-tight text-flag-blue sm:text-4xl\">Browse more Thai gift-shop categories</h2><div class=\"mt-5 flex flex-wrap gap-2\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			for _, category := range vm.RelatedCategories {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<a href=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<a href=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var4 templ.SafeURL
 				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinURLErrs("/categories/" + category.Slug)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/category_detail.templ`, Line: 37, Col: 49}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/category_detail.templ`, Line: 41, Col: 49}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "\" class=\"inline-flex rounded-full border border-[#2D2A4A]/15 bg-[#F8F4EE] px-3 py-1 text-xs font-black text-[#2D2A4A] shadow-sm transition hover:border-[#A51931]/30 hover:text-[#A51931]\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "\" class=\"inline-flex border border-flag-blue/20 bg-paper px-3 py-1.5 text-xs font-semibold text-flag-blue transition hover:border-flag-red hover:text-flag-red\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var5 string
 				templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(category.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/category_detail.templ`, Line: 37, Col: 252}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/category_detail.templ`, Line: 41, Col: 225}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</a>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</a>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</div></section>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</div></section>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</section></main>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</section></main>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -154,7 +170,7 @@ func categoryDetailPage(vm categoryDetailPageViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

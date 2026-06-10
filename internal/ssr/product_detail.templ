@@ -4,40 +4,43 @@ templ productDetailPage(vm productDetailPageViewModel) {
 	<!DOCTYPE html>
 	<html lang="en" class="scroll-smooth">
 		@siteHead(vm.Metadata)
-		<body class="min-h-screen bg-[#F8F4EE] text-[#17172A] antialiased">
+		<body class="min-h-screen bg-paper text-ink antialiased">
 			@siteHeader("page", vm.HeaderCartLabel)
 			<main>
-				<section class="mx-auto grid w-full max-w-7xl gap-8 px-5 py-14 sm:px-8 lg:grid-cols-[1fr_0.9fr] lg:py-20">
-					<div class="overflow-hidden rounded-lg border border-[#2D2A4A]/15 bg-white shadow-sm">
-						<img class="aspect-[4/3] w-full bg-[#F4F5F8] object-cover" src={ vm.Product.DisplayImageURL(vm.ProductImagePlaceholderURL) } alt={ vm.Product.Name }/>
+				<section class="mx-auto grid w-full max-w-7xl gap-8 px-5 py-12 sm:px-8 lg:grid-cols-[1fr_0.9fr] lg:py-16">
+					<div class="relative self-start border border-flag-blue/15 bg-paper">
+						<img class="aspect-[4/3] w-full bg-flag-white object-cover" src={ vm.Product.DisplayImageURL(vm.ProductImagePlaceholderURL) } alt={ vm.Product.Name }/>
+						<div class="absolute inset-y-0 left-0">
+							@flagEdge("w-3")
+						</div>
 					</div>
 					<div class="self-center">
 						@breadcrumbNav(vm.Breadcrumbs)
-						<a href="/products" class="text-sm font-black text-[#A51931] transition hover:text-[#831426]">Back to products</a>
-						<h1 class="mt-5 text-5xl font-black leading-none text-[#2D2A4A] sm:text-6xl">{ vm.Product.Name }</h1>
-						<p class="mt-6 inline-flex rounded-full bg-white px-4 py-2 text-xl font-black text-[#A51931] shadow-sm">{ formatPrice(vm.Product.PriceCents) }</p>
-						<p class="mt-6 text-lg leading-8 text-[#4C4A62]">{ vm.Product.Description }</p>
+						<a href="/products" class="text-sm font-bold text-flag-red transition hover:text-flag-red-deep hover:underline hover:underline-offset-4">Back to products</a>
+						<h1 class="mt-5 font-display text-5xl font-bold leading-none tracking-tight text-flag-blue sm:text-6xl">{ vm.Product.Name }</h1>
+						<p class="mt-6 font-display text-2xl font-bold tabular-nums text-flag-red">{ formatPrice(vm.Product.PriceCents) }</p>
+						<p class="mt-6 text-lg leading-8 text-muted">{ vm.Product.Description }</p>
 						if len(vm.Categories) > 0 {
 							<div class="mt-6 flex flex-wrap gap-2" aria-label="Product categories">
 								for _, category := range vm.Categories {
-									<a href={ "/categories/" + category.Slug } class="inline-flex rounded-full border border-[#2D2A4A]/15 bg-white px-3 py-1 text-xs font-black text-[#2D2A4A] shadow-sm transition hover:border-[#A51931]/30 hover:text-[#A51931]">{ category.Name }</a>
+									<a href={ "/categories/" + category.Slug } class="inline-flex border border-flag-blue/20 bg-paper px-3 py-1.5 text-xs font-semibold text-flag-blue transition hover:border-flag-red hover:text-flag-red">{ category.Name }</a>
 								}
 							</div>
 						}
 						if vm.Product.OutOfStock() {
-							<div class="mt-6 rounded-lg border border-[#A51931]/20 bg-[#A51931]/10 p-5">
-								<p class="inline-flex rounded-full bg-white px-4 py-2 text-sm font-black text-[#A51931] shadow-sm">Out of stock</p>
-								<p class="mt-4 text-sm font-bold leading-6 text-[#4C4A62]">This item cannot be added to cart right now.</p>
+							<div class="mt-6 border-l-4 border-flag-red bg-flag-red/10 p-5">
+								<p class="inline-flex items-center gap-1.5 border border-flag-red/25 bg-paper px-2.5 py-1 text-xs font-semibold text-flag-red"><span aria-hidden="true" class="h-1.5 w-1.5 bg-flag-red"></span>Out of stock</p>
+								<p class="mt-4 text-sm leading-6 text-muted">This item cannot be added to cart right now.</p>
 							</div>
 						} else {
-							<div class="mt-6 rounded-lg border border-[#2D2A4A]/15 bg-white p-5 shadow-sm">
-								<p class="inline-flex rounded-full bg-[#2D2A4A]/10 px-4 py-2 text-sm font-black text-[#2D2A4A]">In stock</p>
+							<div class="mt-6 border border-flag-blue/15 bg-paper p-5">
+								<p class="inline-flex items-center gap-1.5 border border-flag-blue/20 bg-flag-white px-2.5 py-1 text-xs font-semibold text-flag-blue"><span aria-hidden="true" class="h-1.5 w-1.5 bg-flag-blue"></span>In stock</p>
 								<form method="POST" action="/cart/items" class="mt-5 grid gap-4 sm:grid-cols-[1fr_auto_auto] sm:items-end">
 									<input type="hidden" name="slug" value={ vm.Product.Slug }/>
 									if vm.Product.UsesVariants() {
-										<label class="block text-sm font-black text-[#2D2A4A]">
+										<label class="block text-xs font-medium text-muted">
 											<span class="block">Size</span>
-											<select data-testid="variant-select" class="mt-2 h-12 w-full rounded-lg border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-base font-black text-[#17172A] shadow-sm focus:border-[#A51931] focus:outline-none focus:ring-2 focus:ring-[#A51931]/20" name="variant_id" required>
+											<select data-testid="variant-select" class="mt-2 h-12 w-full border border-flag-blue/25 bg-flag-white px-4 text-base font-medium text-ink transition focus:border-flag-blue focus:bg-paper" name="variant_id" required>
 												<option value="">Select a size</option>
 												for _, variant := range vm.Product.ActiveVariants() {
 													if variant.StockQuantity > 0 {
@@ -49,13 +52,13 @@ templ productDetailPage(vm productDetailPageViewModel) {
 											</select>
 										</label>
 									}
-									<label class="block text-sm font-black text-[#2D2A4A]">
+									<label class="block text-xs font-medium text-muted">
 										<span class="block">Quantity</span>
-										<input class="mt-2 h-12 w-28 rounded-lg border border-[#2D2A4A]/20 bg-[#F8F4EE] px-4 text-base font-black text-[#17172A] shadow-sm focus:border-[#A51931] focus:outline-none focus:ring-2 focus:ring-[#A51931]/20" type="number" name="quantity" value="1" min="1" max={ cartQuantityLimit(vm.Product) }/>
+										<input class="mt-2 h-12 w-28 border border-flag-blue/25 bg-flag-white px-4 text-base font-medium text-ink transition focus:border-flag-blue focus:bg-paper" type="number" name="quantity" value="1" min="1" max={ cartQuantityLimit(vm.Product) }/>
 									</label>
-									<button type="submit" class="inline-flex h-12 items-center justify-center rounded-full bg-[#A51931] px-6 text-sm font-black text-white shadow-sm transition hover:bg-[#831426] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2D2A4A]">Add to cart</button>
+									<button type="submit" class="inline-flex h-12 items-center justify-center bg-flag-red px-6 text-sm font-bold text-white transition hover:bg-flag-red-deep">Add to cart</button>
 								</form>
-								<p class="mt-5 text-sm leading-6 text-[#4C4A62]">Adding this item starts a cart review. No payment is collected yet, shipping and tax are not included, and Stripe payment processing will be added later.</p>
+								<p class="mt-5 text-sm leading-6 text-muted">Adding this item starts a cart review. No payment is collected yet, shipping and tax are not included, and Stripe payment processing will be added later.</p>
 							</div>
 						}
 					</div>
