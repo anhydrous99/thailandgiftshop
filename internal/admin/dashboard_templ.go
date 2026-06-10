@@ -138,14 +138,14 @@ func adminDashboardPage(vm adminDashboardViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<div class=\"mx-auto flex min-h-16 w-full max-w-7xl flex-col gap-4 px-5 pb-4 pt-7 sm:px-8 md:flex-row md:items-center md:justify-between\"><a href=\"/admin\" aria-label=\"Thailand Gift Shop admin dashboard\" class=\"flex min-w-0 items-center gap-3\"><img class=\"h-10 w-auto max-w-[52vw] sm:h-12 sm:max-w-[240px]\" src=\"/static/logo.svg\" alt=\"Thailand Gift Shop\"> <span class=\"hidden border border-flag-blue/20 bg-flag-white px-2 py-0.5 text-xs font-semibold uppercase tracking-eyebrow text-flag-blue sm:inline\">Admin</span></a><div class=\"flex flex-col gap-3 sm:flex-row sm:items-center\"><nav data-testid=\"admin-nav\" aria-label=\"Admin navigation\" class=\"flex flex-wrap gap-2 text-sm font-medium text-flag-blue\"><a data-testid=\"admin-nav-dashboard\" aria-current=\"page\" href=\"/admin\" class=\"inline-flex h-10 items-center justify-center bg-flag-blue px-4 text-white transition hover:bg-ink\">Dashboard</a> <a data-testid=\"admin-nav-products\" href=\"/admin/products\" class=\"inline-flex h-10 items-center justify-center border border-flag-blue/20 bg-paper px-4 transition hover:border-flag-red hover:text-flag-red\">Products</a> <a data-testid=\"admin-nav-categories\" href=\"/admin/categories\" class=\"inline-flex h-10 items-center justify-center border border-flag-blue/20 bg-paper px-4 transition hover:border-flag-red hover:text-flag-red\">Categories</a></nav><form method=\"post\" action=\"/admin/logout\" class=\"flex\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<div class=\"mx-auto flex min-h-16 w-full max-w-7xl flex-col gap-4 px-5 pb-4 pt-7 sm:px-8 md:flex-row md:items-center md:justify-between\"><a href=\"/admin\" aria-label=\"Thailand Gift Shop admin dashboard\" class=\"flex min-w-0 items-center gap-3\"><img class=\"h-8 w-8 shrink-0 sm:h-9 sm:w-9\" src=\"/static/logo.svg\" alt=\"\"> <span class=\"truncate font-display text-lg font-bold tracking-tight text-ink\">Thailand Gift Shop</span> <span class=\"hidden border border-flag-blue/20 bg-flag-white px-2 py-0.5 text-xs font-semibold uppercase tracking-eyebrow text-flag-blue sm:inline\">Admin</span></a><div class=\"flex flex-col gap-3 sm:flex-row sm:items-center\"><nav data-testid=\"admin-nav\" aria-label=\"Admin navigation\" class=\"flex flex-wrap gap-2 text-sm font-medium text-flag-blue\"><a data-testid=\"admin-nav-dashboard\" aria-current=\"page\" href=\"/admin\" class=\"inline-flex h-10 items-center justify-center bg-flag-blue px-4 text-white transition hover:bg-ink\">Dashboard</a> <a data-testid=\"admin-nav-products\" href=\"/admin/products\" class=\"inline-flex h-10 items-center justify-center border border-flag-blue/20 bg-paper px-4 transition hover:border-flag-red hover:text-flag-red\">Products</a> <a data-testid=\"admin-nav-categories\" href=\"/admin/categories\" class=\"inline-flex h-10 items-center justify-center border border-flag-blue/20 bg-paper px-4 transition hover:border-flag-red hover:text-flag-red\">Categories</a></nav><form method=\"post\" action=\"/admin/logout\" class=\"flex\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var7 string
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(vm.CSRFValue)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/dashboard.templ`, Line: 53, Col: 67}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/dashboard.templ`, Line: 54, Col: 67}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
 		if templ_7745c5c3_Err != nil {
@@ -166,7 +166,7 @@ func adminDashboardPage(vm adminDashboardViewModel) templ.Component {
 		var templ_7745c5c3_Var8 string
 		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(vm.TotalProducts))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/dashboard.templ`, Line: 79, Col: 152}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/dashboard.templ`, Line: 80, Col: 152}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 		if templ_7745c5c3_Err != nil {
@@ -179,7 +179,7 @@ func adminDashboardPage(vm adminDashboardViewModel) templ.Component {
 		var templ_7745c5c3_Var9 string
 		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(vm.ActiveProducts))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/dashboard.templ`, Line: 85, Col: 159}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/dashboard.templ`, Line: 86, Col: 159}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 		if templ_7745c5c3_Err != nil {
@@ -192,7 +192,7 @@ func adminDashboardPage(vm adminDashboardViewModel) templ.Component {
 		var templ_7745c5c3_Var10 string
 		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(vm.DraftProducts))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/dashboard.templ`, Line: 89, Col: 157}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/dashboard.templ`, Line: 90, Col: 157}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 		if templ_7745c5c3_Err != nil {
@@ -205,7 +205,7 @@ func adminDashboardPage(vm adminDashboardViewModel) templ.Component {
 		var templ_7745c5c3_Var11 string
 		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(vm.ArchivedProducts))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/dashboard.templ`, Line: 93, Col: 163}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/dashboard.templ`, Line: 94, Col: 163}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 		if templ_7745c5c3_Err != nil {
@@ -218,7 +218,7 @@ func adminDashboardPage(vm adminDashboardViewModel) templ.Component {
 		var templ_7745c5c3_Var12 string
 		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(vm.Categories))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/dashboard.templ`, Line: 97, Col: 150}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/dashboard.templ`, Line: 98, Col: 150}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 		if templ_7745c5c3_Err != nil {
@@ -231,7 +231,7 @@ func adminDashboardPage(vm adminDashboardViewModel) templ.Component {
 		var templ_7745c5c3_Var13 string
 		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(vm.LowStockVariants))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/dashboard.templ`, Line: 103, Col: 156}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/dashboard.templ`, Line: 104, Col: 156}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 		if templ_7745c5c3_Err != nil {
@@ -244,7 +244,7 @@ func adminDashboardPage(vm adminDashboardViewModel) templ.Component {
 		var templ_7745c5c3_Var14 string
 		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(vm.UploadFailures))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/dashboard.templ`, Line: 111, Col: 160}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/dashboard.templ`, Line: 112, Col: 160}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 		if templ_7745c5c3_Err != nil {
