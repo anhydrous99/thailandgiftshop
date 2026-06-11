@@ -192,6 +192,22 @@ var signUpMetadata = sync.OnceValue(func() seoMetadata {
 	)
 })
 
+var passwordResetRequestMetadata = sync.OnceValue(func() seoMetadata {
+	return noindexMetadata(
+		"Reset password | Thailand Gift Shop",
+		"Request a password reset link for your Thailand Gift Shop account.",
+		"/account/password-reset",
+	)
+})
+
+var passwordResetConfirmMetadata = sync.OnceValue(func() seoMetadata {
+	return noindexMetadata(
+		"Choose new password | Thailand Gift Shop",
+		"Choose a new password for your Thailand Gift Shop account.",
+		"/account/password-reset/confirm",
+	)
+})
+
 var accountMetadata = sync.OnceValue(func() seoMetadata {
 	return noindexMetadata(
 		"Account | Thailand Gift Shop",

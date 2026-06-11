@@ -12,6 +12,8 @@ var (
 	_ = checkoutPageViewModel{}
 	_ = signInPageData{}
 	_ = signUpPageData{}
+	_ = passwordResetRequestPageData{}
+	_ = passwordResetConfirmPageData{}
 	_ = accountPageData{}
 	_ = addressesPageData{}
 	_ = addressEditPageData{}
@@ -123,6 +125,7 @@ type signInPageData struct {
 	Email           string
 	ReturnTo        string
 	ErrorMessage    string
+	SuccessMessage  string
 }
 
 type signUpPageData struct {
@@ -132,6 +135,23 @@ type signUpPageData struct {
 	GuestCSRFToken  string
 	Email           string
 	ReturnTo        string
+	ErrorMessage    string
+}
+
+type passwordResetRequestPageData struct {
+	Metadata        seoMetadata
+	HeaderCartLabel string
+	GuestCSRFToken  string
+	Email           string
+	Sent            bool
+	ErrorMessage    string
+}
+
+type passwordResetConfirmPageData struct {
+	Metadata        seoMetadata
+	HeaderCartLabel string
+	GuestCSRFToken  string
+	Token           string
 	ErrorMessage    string
 }
 

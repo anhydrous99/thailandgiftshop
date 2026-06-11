@@ -15,6 +15,9 @@ templ signInPage(vm signInPageData) {
 						if vm.ErrorMessage != "" {
 							<p role="alert" class="mt-5 border-l-4 border-flag-red bg-flag-red/10 px-4 py-3 text-sm font-semibold text-flag-red">{ vm.ErrorMessage }</p>
 						}
+						if vm.SuccessMessage != "" {
+							<p role="status" class="mt-5 border-l-4 border-flag-blue bg-flag-blue/10 px-4 py-3 text-sm font-semibold text-flag-blue">{ vm.SuccessMessage }</p>
+						}
 						<form method="post" action="/account/sign-in" data-testid="signin-form" class="mt-6 grid gap-4">
 							<input type="hidden" name="guest_csrf_token" value={ vm.GuestCSRFToken }/>
 							if vm.ReturnTo != "" {
@@ -30,7 +33,7 @@ templ signInPage(vm signInPageData) {
 							</label>
 							<button type="submit" class="inline-flex h-12 items-center justify-center bg-flag-red px-6 text-sm font-bold text-white transition hover:bg-flag-red-deep">Sign in</button>
 						</form>
-						<p class="mt-5 text-sm leading-6 text-muted">Forgot your password? Reset is not available yet — write to us and we will help.</p>
+						<p class="mt-5 text-sm leading-6 text-muted">Forgot your password? <a href="/account/password-reset" class="font-bold text-flag-red transition hover:text-flag-red-deep hover:underline hover:underline-offset-4">Reset it by email</a></p>
 						<p class="mt-3 text-sm leading-6 text-muted">New here? <a href="/account/sign-up" class="font-bold text-flag-red transition hover:text-flag-red-deep hover:underline hover:underline-offset-4">Create an account</a></p>
 					</div>
 				</div>
