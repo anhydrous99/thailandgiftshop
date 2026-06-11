@@ -2,16 +2,20 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/anhydrous99/thailandgiftshop/internal/admin"
+	"github.com/anhydrous99/thailandgiftshop/internal/appenv"
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
 	"github.com/anhydrous99/thailandgiftshop/internal/commerce"
+	"github.com/anhydrous99/thailandgiftshop/internal/email"
 	"github.com/anhydrous99/thailandgiftshop/internal/payments"
 	"github.com/anhydrous99/thailandgiftshop/internal/ssr"
 	"github.com/aws/aws-lambda-go/events"
@@ -37,16 +41,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	mux := http.NewServeMux()
-	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir(staticDir))))
-	mux.Handle("/images/", http.StripPrefix("/images/", http.FileServer(http.Dir(imageDir))))
-	mux.HandleFunc("/", func(responseWriter http.ResponseWriter, request *http.Request) {
-		if request.URL.Path == "/admin" || strings.HasPrefix(request.URL.Path, "/admin/") {
-			handleAdmin(handlers.admin, responseWriter, request)
-			return
-		}
-		handleSSR(handlers.ssr, responseWriter, request)
-	})
+	mux := newDevServerMux(handlers, staticDir, imageDir)
 
 	log.Printf("serving local SSR site at http://%s", address)
 	if err := http.ListenAndServe(address, mux); err != nil {
@@ -54,12 +49,30 @@ func main() {
 	}
 }
 
+func newDevServerMux(handlers devServerHandlers, staticDir string, imageDir string) *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir(staticDir))))
+	mux.Handle("/images/", http.StripPrefix("/images/", http.FileServer(http.Dir(imageDir))))
+	mux.HandleFunc("/__test/emails", handlers.handleFakeEmails)
+	mux.HandleFunc("/__test/emails/clear", handlers.handleClearFakeEmails)
+	mux.HandleFunc("/", func(responseWriter http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/admin" || strings.HasPrefix(request.URL.Path, "/admin/") {
+			handleAdmin(handlers.admin, responseWriter, request)
+			return
+		}
+		handleSSR(handlers.ssr, responseWriter, request)
+	})
+	return mux
+}
+
 type devServerHandlers struct {
-	ssr   *ssr.Handler
-	admin *admin.Handler
+	ssr        *ssr.Handler
+	admin      *admin.Handler
+	fakeEmails *email.FakeSender
 }
 
 func newDevServerHandlers(ctx context.Context) (devServerHandlers, error) {
+	fakeEmails := newDevServerFakeEmailSender()
 	if os.Getenv(envDemoCatalogStore) == "1" {
 		// One shared commerce store and fake payment provider back both
 		// Lambdas, so orders placed on the storefront show up in the admin
@@ -73,8 +86,9 @@ func newDevServerHandlers(ctx context.Context) (devServerHandlers, error) {
 			return devServerHandlers{}, err
 		}
 		return devServerHandlers{
-			ssr:   ssr.NewLocalDemoHandler(store, commerceStore, provider),
-			admin: admin.NewLocalDemoHandler(credentials, store, commerceStore, store, provider),
+			ssr:        ssr.NewLocalDemoHandlerWithEmailSender(store, commerceStore, provider, fakeEmails),
+			admin:      admin.NewLocalDemoHandlerWithEmailSender(credentials, store, commerceStore, store, provider, fakeEmails),
+			fakeEmails: fakeEmails,
 		}, nil
 	}
 
@@ -86,7 +100,92 @@ func newDevServerHandlers(ctx context.Context) (devServerHandlers, error) {
 	if err != nil {
 		return devServerHandlers{}, err
 	}
-	return devServerHandlers{ssr: ssrHandler, admin: adminHandler}, nil
+	return devServerHandlers{ssr: ssrHandler, admin: adminHandler, fakeEmails: fakeEmails}, nil
+}
+
+func newDevServerFakeEmailSender() *email.FakeSender {
+	if !fakeEmailCaptureEnvironmentEnabled() {
+		return nil
+	}
+	fakeEmails := email.NewFakeSender()
+	email.UseFakeSenderForEnvironment(fakeEmails)
+	return fakeEmails
+}
+
+func fakeEmailCaptureEnvironmentEnabled() bool {
+	return !appenv.IsProduction() && strings.EqualFold(strings.TrimSpace(os.Getenv(email.EnvSenderMode)), email.SenderKindFake)
+}
+
+type fakeEmailCaptureMessage struct {
+	ID        string    `json:"id"`
+	To        string    `json:"to"`
+	Subject   string    `json:"subject"`
+	Text      string    `json:"text"`
+	HTML      string    `json:"html"`
+	Kind      string    `json:"kind"`
+	EventKey  string    `json:"eventKey"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+func (handlers devServerHandlers) handleFakeEmails(responseWriter http.ResponseWriter, request *http.Request) {
+	if !handlers.fakeEmailCaptureEnabled() {
+		http.NotFound(responseWriter, request)
+		return
+	}
+	if request.Method != http.MethodGet {
+		responseWriter.Header().Set("Allow", http.MethodGet)
+		http.Error(responseWriter, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+
+	writeFakeEmailCaptureJSON(responseWriter, sanitizedFakeEmailCaptureMessages(handlers.fakeEmails.List()))
+}
+
+func (handlers devServerHandlers) handleClearFakeEmails(responseWriter http.ResponseWriter, request *http.Request) {
+	if !handlers.fakeEmailCaptureEnabled() {
+		http.NotFound(responseWriter, request)
+		return
+	}
+	if request.Method != http.MethodPost {
+		responseWriter.Header().Set("Allow", http.MethodPost)
+		http.Error(responseWriter, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+
+	if recipient := strings.TrimSpace(request.URL.Query().Get("to")); recipient != "" {
+		handlers.fakeEmails.ClearRecipient(recipient)
+	} else {
+		handlers.fakeEmails.Clear()
+	}
+	responseWriter.WriteHeader(http.StatusNoContent)
+}
+
+func (handlers devServerHandlers) fakeEmailCaptureEnabled() bool {
+	return handlers.fakeEmails != nil && fakeEmailCaptureEnvironmentEnabled()
+}
+
+func sanitizedFakeEmailCaptureMessages(messages []email.Message) []fakeEmailCaptureMessage {
+	capturedMessages := make([]fakeEmailCaptureMessage, 0, len(messages))
+	for _, message := range messages {
+		capturedMessages = append(capturedMessages, fakeEmailCaptureMessage{
+			ID:        message.ID,
+			To:        message.To,
+			Subject:   message.Subject,
+			Text:      message.Text,
+			HTML:      message.HTML,
+			Kind:      message.Kind,
+			EventKey:  message.EventKey,
+			CreatedAt: message.CreatedAt,
+		})
+	}
+	return capturedMessages
+}
+
+func writeFakeEmailCaptureJSON(responseWriter http.ResponseWriter, messages []fakeEmailCaptureMessage) {
+	responseWriter.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(responseWriter).Encode(messages); err != nil {
+		http.Error(responseWriter, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+	}
 }
 
 func newDevServerHandler(ctx context.Context) (*ssr.Handler, error) {

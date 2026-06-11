@@ -2,15 +2,20 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/anhydrous99/thailandgiftshop/internal/appenv"
 	"github.com/anhydrous99/thailandgiftshop/internal/cart"
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
+	"github.com/anhydrous99/thailandgiftshop/internal/email"
 	"github.com/anhydrous99/thailandgiftshop/internal/ssr"
 )
 
@@ -108,6 +113,170 @@ func TestDevserverWritesApiResponseCookies(t *testing.T) {
 	}
 	if !strings.Contains(setCookies[0], cart.CookieName+"=") || !strings.Contains(setCookies[0], "HttpOnly") {
 		t.Fatalf("Set-Cookie = %q, want serialized cart cookie", setCookies[0])
+	}
+}
+
+func TestFakeEmailCaptureEndpoint(t *testing.T) {
+	t.Setenv(appenv.EnvAppEnvironment, "development")
+	t.Setenv(email.EnvSenderMode, email.SenderKindFake)
+	now := time.Date(2026, 6, 11, 10, 30, 0, 0, time.UTC)
+	fakeSender := email.NewFakeSenderWithClock(func() time.Time { return now })
+	sent, err := fakeSender.Send(context.Background(), email.Message{
+		To:       "shopper@example.test",
+		Subject:  "Order email",
+		Text:     "Plain text body",
+		HTML:     "<p>HTML body</p>",
+		Kind:     email.MessageKindOrderPlaced,
+		EventKey: "order:order_123:placed",
+	})
+	if err != nil {
+		t.Fatalf("Send returned error: %v", err)
+	}
+	email.UseFakeSenderForEnvironment(fakeSender)
+	t.Cleanup(func() { email.UseFakeSenderForEnvironment(nil) })
+	configuredSender, err := email.NewSenderFromEnvironment(context.Background())
+	if err != nil {
+		t.Fatalf("NewSenderFromEnvironment returned error: %v", err)
+	}
+	if configuredSender != fakeSender {
+		t.Fatalf("configured fake sender = %p, want shared devserver sender %p", configuredSender, fakeSender)
+	}
+	mux := newDevServerMux(devServerHandlers{fakeEmails: fakeSender}, t.TempDir(), t.TempDir())
+
+	getRequest := httptest.NewRequest(http.MethodGet, "/__test/emails", nil)
+	getRequest.Header.Set("Cookie", "session=must-not-appear")
+	getRequest.Header.Set("Authorization", "Bearer must-not-appear")
+	getRecorder := httptest.NewRecorder()
+	mux.ServeHTTP(getRecorder, getRequest)
+
+	getResponse := getRecorder.Result()
+	if getResponse.StatusCode != http.StatusOK {
+		t.Fatalf("GET status = %d, want %d", getResponse.StatusCode, http.StatusOK)
+	}
+	if contentType := getResponse.Header.Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("GET Content-Type = %q, want application/json", contentType)
+	}
+	body := readDevserverResponseBody(t, getResponse)
+	for _, forbidden := range []string{"must-not-appear", "Cookie", "Authorization"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("GET body contains forbidden capture data %q: %s", forbidden, body)
+		}
+	}
+	var messages []map[string]string
+	if err := json.Unmarshal([]byte(body), &messages); err != nil {
+		t.Fatalf("decode GET body: %v", err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("message count = %d, want 1", len(messages))
+	}
+	assertFakeEmailCaptureFields(t, messages[0])
+	if got := messages[0]["id"]; got != sent.ID {
+		t.Fatalf("id = %q, want %q", got, sent.ID)
+	}
+	if got := messages[0]["to"]; got != "shopper@example.test" {
+		t.Fatalf("to = %q, want shopper@example.test", got)
+	}
+	if got := messages[0]["kind"]; got != email.MessageKindOrderPlaced {
+		t.Fatalf("kind = %q, want %q", got, email.MessageKindOrderPlaced)
+	}
+	if got := messages[0]["eventKey"]; got != "order:order_123:placed" {
+		t.Fatalf("eventKey = %q, want order:order_123:placed", got)
+	}
+	if got := messages[0]["createdAt"]; got != now.Format(time.RFC3339) {
+		t.Fatalf("createdAt = %q, want %q", got, now.Format(time.RFC3339))
+	}
+	otherSent, err := fakeSender.Send(context.Background(), email.Message{
+		To:       "other@example.test",
+		Subject:  "Other order email",
+		Text:     "Other plain text body",
+		HTML:     "<p>Other HTML body</p>",
+		Kind:     email.MessageKindOrderPlaced,
+		EventKey: "order:order_456:placed",
+	})
+	if err != nil {
+		t.Fatalf("Send other returned error: %v", err)
+	}
+
+	scopedClearRecorder := httptest.NewRecorder()
+	mux.ServeHTTP(scopedClearRecorder, httptest.NewRequest(http.MethodPost, "/__test/emails/clear?to=shopper@example.test", nil))
+	if scopedClearRecorder.Result().StatusCode != http.StatusNoContent {
+		t.Fatalf("scoped clear status = %d, want %d", scopedClearRecorder.Result().StatusCode, http.StatusNoContent)
+	}
+
+	afterScopedClearRecorder := httptest.NewRecorder()
+	mux.ServeHTTP(afterScopedClearRecorder, httptest.NewRequest(http.MethodGet, "/__test/emails", nil))
+	var afterScopedClear []map[string]string
+	if err := json.Unmarshal([]byte(readDevserverResponseBody(t, afterScopedClearRecorder.Result())), &afterScopedClear); err != nil {
+		t.Fatalf("decode after scoped clear body: %v", err)
+	}
+	if len(afterScopedClear) != 1 || afterScopedClear[0]["id"] != otherSent.ID {
+		t.Fatalf("after scoped clear messages = %#v, want only other recipient", afterScopedClear)
+	}
+
+	clearRecorder := httptest.NewRecorder()
+	mux.ServeHTTP(clearRecorder, httptest.NewRequest(http.MethodPost, "/__test/emails/clear", nil))
+	if clearRecorder.Result().StatusCode != http.StatusNoContent {
+		t.Fatalf("clear status = %d, want %d", clearRecorder.Result().StatusCode, http.StatusNoContent)
+	}
+
+	afterClearRecorder := httptest.NewRecorder()
+	mux.ServeHTTP(afterClearRecorder, httptest.NewRequest(http.MethodGet, "/__test/emails", nil))
+	var afterClear []map[string]string
+	if err := json.Unmarshal([]byte(readDevserverResponseBody(t, afterClearRecorder.Result())), &afterClear); err != nil {
+		t.Fatalf("decode after clear body: %v", err)
+	}
+	if len(afterClear) != 0 {
+		t.Fatalf("after clear message count = %d, want 0", len(afterClear))
+	}
+
+	t.Setenv(email.EnvSenderMode, email.SenderKindSES)
+	for _, endpoint := range []struct {
+		method string
+		path   string
+	}{
+		{method: http.MethodGet, path: "/__test/emails"},
+		{method: http.MethodPost, path: "/__test/emails/clear"},
+	} {
+		recorder := httptest.NewRecorder()
+		mux.ServeHTTP(recorder, httptest.NewRequest(endpoint.method, endpoint.path, nil))
+		if recorder.Result().StatusCode != http.StatusNotFound {
+			t.Fatalf("%s %s status in non-fake mode = %d, want %d", endpoint.method, endpoint.path, recorder.Result().StatusCode, http.StatusNotFound)
+		}
+	}
+}
+
+func TestFakeEmailCaptureEndpointProductionGuard(t *testing.T) {
+	t.Setenv(appenv.EnvAppEnvironment, appenv.EnvironmentProduction)
+	t.Setenv(email.EnvSenderMode, email.SenderKindFake)
+	fakeSender := email.NewFakeSender()
+	_, err := fakeSender.Send(context.Background(), email.Message{
+		To:      "shopper@example.test",
+		Subject: "Sensitive fake message",
+		Text:    "production guard must hide this",
+		HTML:    "<p>production guard must hide this</p>",
+		Kind:    email.MessageKindPasswordReset,
+	})
+	if err != nil {
+		t.Fatalf("Send returned error: %v", err)
+	}
+	mux := newDevServerMux(devServerHandlers{fakeEmails: fakeSender}, t.TempDir(), t.TempDir())
+
+	for _, endpoint := range []struct {
+		method string
+		path   string
+	}{
+		{method: http.MethodGet, path: "/__test/emails"},
+		{method: http.MethodPost, path: "/__test/emails/clear"},
+	} {
+		recorder := httptest.NewRecorder()
+		mux.ServeHTTP(recorder, httptest.NewRequest(endpoint.method, endpoint.path, nil))
+		response := recorder.Result()
+		if response.StatusCode != http.StatusNotFound {
+			t.Fatalf("%s %s status = %d, want %d", endpoint.method, endpoint.path, response.StatusCode, http.StatusNotFound)
+		}
+		if body := readDevserverResponseBody(t, response); strings.Contains(body, "Sensitive fake message") {
+			t.Fatalf("%s %s body exposed captured message: %s", endpoint.method, endpoint.path, body)
+		}
 	}
 }
 
@@ -221,4 +390,35 @@ func devserverCookieValue(t *testing.T, cookieHeader string) string {
 	}
 	t.Fatalf("cart cookie missing from %q", cookieHeader)
 	return ""
+}
+
+func readDevserverResponseBody(t *testing.T, response *http.Response) string {
+	t.Helper()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	return string(body)
+}
+
+func assertFakeEmailCaptureFields(t *testing.T, message map[string]string) {
+	t.Helper()
+	allowedFields := map[string]bool{
+		"id":        true,
+		"to":        true,
+		"subject":   true,
+		"text":      true,
+		"html":      true,
+		"kind":      true,
+		"eventKey":  true,
+		"createdAt": true,
+	}
+	if len(message) != len(allowedFields) {
+		t.Fatalf("field count = %d, want %d: %#v", len(message), len(allowedFields), message)
+	}
+	for field := range message {
+		if !allowedFields[field] {
+			t.Fatalf("unexpected field %q in fake email capture message", field)
+		}
+	}
 }
