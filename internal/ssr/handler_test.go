@@ -19,6 +19,7 @@ import (
 	"github.com/anhydrous99/thailandgiftshop/internal/cart"
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
 	"github.com/anhydrous99/thailandgiftshop/internal/commerce"
+	"github.com/anhydrous99/thailandgiftshop/internal/email"
 	"github.com/anhydrous99/thailandgiftshop/internal/httpapi"
 	"github.com/anhydrous99/thailandgiftshop/internal/observability"
 	"github.com/anhydrous99/thailandgiftshop/internal/payments"
@@ -3935,6 +3936,7 @@ func TestHomeIgnoresLegacyFallbackGreetingQuery(t *testing.T) {
 type accountTestEnv struct {
 	handler  *Handler
 	commerce *commerce.MemoryStore
+	email    *email.FakeSender
 	payments *payments.FakeProvider
 	catalog  *catalog.MemoryStore
 }
@@ -3953,7 +3955,11 @@ func newAccountTestEnvWithProducts(t *testing.T, products []catalog.Product) acc
 	provider := payments.NewFakeProvider()
 	handler := NewLocalDemoHandler(catalogStore, commerceStore, provider)
 	handler.passwordHashCost = bcrypt.MinCost
-	return accountTestEnv{handler: handler, commerce: commerceStore, payments: provider, catalog: catalogStore}
+	fakeEmail, ok := handler.emailSender.(*email.FakeSender)
+	if !ok {
+		t.Fatalf("handler email sender = %T, want *email.FakeSender", handler.emailSender)
+	}
+	return accountTestEnv{handler: handler, commerce: commerceStore, email: fakeEmail, payments: provider, catalog: catalogStore}
 }
 
 func accountTestCatalogProducts() []catalog.Product {
@@ -4289,7 +4295,7 @@ func TestSignUpPageRendersFormWithGuestCSRF(t *testing.T) {
 	}
 }
 
-func TestSignInPageRendersResetDeferralCopyAndReturnTo(t *testing.T) {
+func TestSignInPageRendersPasswordResetLinkAndReturnTo(t *testing.T) {
 	env := newAccountTestEnv(t)
 	request := pageRequest(http.MethodGet, "/account/sign-in")
 	request.QueryStringParameters = map[string]string{"return_to": "/cart"}
@@ -4303,7 +4309,8 @@ func TestSignInPageRendersResetDeferralCopyAndReturnTo(t *testing.T) {
 	assertBodyContains(t, response.Body, []string{
 		`data-testid="signin-form"`,
 		`action="/account/sign-in"`,
-		`Forgot your password? Reset is not available yet`,
+		`href="/account/password-reset"`,
+		`Reset it by email`,
 		`name="return_to" value="/cart"`,
 		`href="/account/sign-up"`,
 	})
