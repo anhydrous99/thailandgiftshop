@@ -12,6 +12,7 @@ import (
 
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
 	"github.com/anhydrous99/thailandgiftshop/internal/commerce"
+	"github.com/anhydrous99/thailandgiftshop/internal/email"
 	"github.com/anhydrous99/thailandgiftshop/internal/payments"
 	"github.com/aws/aws-lambda-go/events"
 )
@@ -326,6 +327,38 @@ func TestAdminOrderAdvanceMovesPaidThroughShippedToDelivered(t *testing.T) {
 	}
 }
 
+func TestAdminOrderAdvanceSendsStatusEmailsWithoutDuplicates(t *testing.T) {
+	handler, commerceStore, _, currentTime := newOrdersTestHandler(t)
+	sender := email.NewFakeSenderWithClock(func() time.Time { return *currentTime })
+	handler.emailSender = sender
+	order := createTestOrder(t, commerceStore, adminTestOrder(testOrderID(1), commerce.OrderStatusPaid, currentTime.Add(-10*time.Minute)))
+
+	response := authenticatedProductPost(t, handler, "/admin/orders/"+order.ID+"/advance", url.Values{"to_status": {"shipped"}})
+	if response.StatusCode != http.StatusSeeOther {
+		t.Fatalf("advance to shipped status = %d, want %d", response.StatusCode, http.StatusSeeOther)
+	}
+	shipped := getTestOrder(t, commerceStore, order.ID)
+	shippedKey := fmt.Sprintf("order:%s:status:%s:%s:v%d", order.ID, commerce.OrderStatusPaid, commerce.OrderStatusShipped, shipped.Version)
+	assertAdminEmailMessages(t, sender, []adminEmailWant{{kind: email.MessageKindOrderStatusChange, key: shippedKey, to: order.Email}})
+
+	duplicate := authenticatedProductPost(t, handler, "/admin/orders/"+order.ID+"/advance", url.Values{"to_status": {"shipped"}})
+	if duplicate.StatusCode != http.StatusBadRequest {
+		t.Fatalf("duplicate shipped status = %d, want %d", duplicate.StatusCode, http.StatusBadRequest)
+	}
+	assertAdminEmailMessages(t, sender, []adminEmailWant{{kind: email.MessageKindOrderStatusChange, key: shippedKey, to: order.Email}})
+
+	response = authenticatedProductPost(t, handler, "/admin/orders/"+order.ID+"/advance", url.Values{"to_status": {"delivered"}})
+	if response.StatusCode != http.StatusSeeOther {
+		t.Fatalf("advance to delivered status = %d, want %d", response.StatusCode, http.StatusSeeOther)
+	}
+	delivered := getTestOrder(t, commerceStore, order.ID)
+	deliveredKey := fmt.Sprintf("order:%s:status:%s:%s:v%d", order.ID, commerce.OrderStatusShipped, commerce.OrderStatusDelivered, delivered.Version)
+	assertAdminEmailMessages(t, sender, []adminEmailWant{
+		{kind: email.MessageKindOrderStatusChange, key: shippedKey, to: order.Email},
+		{kind: email.MessageKindOrderStatusChange, key: deliveredKey, to: order.Email},
+	})
+}
+
 func TestAdminOrderAdvanceRejectsIllegalTransitions(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -406,6 +439,76 @@ func TestAdminOrderTrackingTransitionsPaidToShipped(t *testing.T) {
 	}
 }
 
+func TestAdminOrderTrackingSendsEmailForChangedTrackingOnly(t *testing.T) {
+	handler, commerceStore, _, currentTime := newOrdersTestHandler(t)
+	sender := email.NewFakeSenderWithClock(func() time.Time { return *currentTime })
+	handler.emailSender = sender
+	order := createTestOrder(t, commerceStore, adminTestOrder(testOrderID(1), commerce.OrderStatusPaid, currentTime.Add(-10*time.Minute)))
+
+	response := authenticatedProductPost(t, handler, "/admin/orders/"+order.ID+"/tracking", url.Values{
+		"carrier":         {" Thailand Post "},
+		"tracking_number": {" TH1234567890 "},
+	})
+	if response.StatusCode != http.StatusSeeOther {
+		t.Fatalf("tracking status = %d, want %d; body = %q", response.StatusCode, http.StatusSeeOther, response.Body)
+	}
+	shipped := getTestOrder(t, commerceStore, order.ID)
+	trackingKey := fmt.Sprintf("order:%s:tracking:v%d", order.ID, shipped.Version)
+	assertAdminEmailMessages(t, sender, []adminEmailWant{{kind: email.MessageKindTrackingUpdate, key: trackingKey, to: order.Email}})
+	message := sender.Messages()[0]
+	if !strings.Contains(message.Text, "Thailand Post") || !strings.Contains(message.Text, "TH1234567890") || !strings.Contains(message.Text, "/orders/"+order.ID) {
+		t.Fatalf("tracking email missing carrier, number, or order URL: %#v", message)
+	}
+
+	repeated := authenticatedProductPost(t, handler, "/admin/orders/"+order.ID+"/tracking", url.Values{
+		"carrier":         {"Thailand Post"},
+		"tracking_number": {"TH1234567890"},
+	})
+	if repeated.StatusCode != http.StatusSeeOther {
+		t.Fatalf("repeated tracking status = %d, want %d; body = %q", repeated.StatusCode, http.StatusSeeOther, repeated.Body)
+	}
+	assertAdminEmailMessages(t, sender, []adminEmailWant{{kind: email.MessageKindTrackingUpdate, key: trackingKey, to: order.Email}})
+
+	changed := authenticatedProductPost(t, handler, "/admin/orders/"+order.ID+"/tracking", url.Values{
+		"carrier":         {"Thailand Post"},
+		"tracking_number": {"TH9999999999"},
+	})
+	if changed.StatusCode != http.StatusSeeOther {
+		t.Fatalf("changed tracking status = %d, want %d; body = %q", changed.StatusCode, http.StatusSeeOther, changed.Body)
+	}
+	updated := getTestOrder(t, commerceStore, order.ID)
+	changedKey := fmt.Sprintf("order:%s:tracking:v%d", order.ID, updated.Version)
+	assertAdminEmailMessages(t, sender, []adminEmailWant{
+		{kind: email.MessageKindTrackingUpdate, key: trackingKey, to: order.Email},
+		{kind: email.MessageKindTrackingUpdate, key: changedKey, to: order.Email},
+	})
+}
+
+func TestAdminGuestOrderEmailsUseConfirmURL(t *testing.T) {
+	handler, commerceStore, _, currentTime := newOrdersTestHandler(t)
+	sender := email.NewFakeSenderWithClock(func() time.Time { return *currentTime })
+	handler.emailSender = sender
+	order := createTestOrder(t, commerceStore, adminGuestTestOrder(testOrderID(1), commerce.OrderStatusPaid, currentTime.Add(-10*time.Minute)))
+
+	tracking := authenticatedProductPost(t, handler, "/admin/orders/"+order.ID+"/tracking", url.Values{
+		"carrier":         {"Thailand Post"},
+		"tracking_number": {"TH1234567890"},
+	})
+	if tracking.StatusCode != http.StatusSeeOther {
+		t.Fatalf("tracking status = %d, want %d; body = %q", tracking.StatusCode, http.StatusSeeOther, tracking.Body)
+	}
+	shipped := getTestOrder(t, commerceStore, order.ID)
+	trackingKey := fmt.Sprintf("order:%s:tracking:v%d", order.ID, shipped.Version)
+	assertAdminEmailMessages(t, sender, []adminEmailWant{{kind: email.MessageKindTrackingUpdate, key: trackingKey, to: order.Email}})
+	message := sender.Messages()[0]
+	if !strings.Contains(message.Text, "/checkout/confirm?session_id=") || !strings.Contains(message.HTML, "/checkout/confirm?session_id=") {
+		t.Fatalf("guest tracking email missing confirm URL")
+	}
+	if strings.Contains(message.Text, "/orders/"+order.ID) || strings.Contains(message.HTML, "/orders/"+order.ID) {
+		t.Fatalf("guest tracking email contains tokenless order detail URL")
+	}
+}
+
 func TestAdminOrderTrackingValidatesFieldsAndStatus(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -418,8 +521,8 @@ func TestAdminOrderTrackingValidatesFieldsAndStatus(t *testing.T) {
 		{name: "missing carrier", from: commerce.OrderStatusPaid, carrier: "", number: "TH123", wantStatus: http.StatusBadRequest, wantError: "Carrier is required"},
 		{name: "missing number", from: commerce.OrderStatusPaid, carrier: "Thailand Post", number: "", wantStatus: http.StatusBadRequest, wantError: "Tracking number is required"},
 		{name: "carrier too long", from: commerce.OrderStatusPaid, carrier: strings.Repeat("x", 101), number: "TH123", wantStatus: http.StatusBadRequest, wantError: "Carrier is required"},
-		{name: "pending order", from: commerce.OrderStatusPendingPayment, carrier: "Thailand Post", number: "TH123", wantStatus: http.StatusConflict, wantError: "Tracking can only be added to paid orders."},
-		{name: "delivered order", from: commerce.OrderStatusDelivered, carrier: "Thailand Post", number: "TH123", wantStatus: http.StatusConflict, wantError: "Tracking can only be added to paid orders."},
+		{name: "pending order", from: commerce.OrderStatusPendingPayment, carrier: "Thailand Post", number: "TH123", wantStatus: http.StatusConflict, wantError: "Tracking can only be added to paid or shipped orders."},
+		{name: "delivered order", from: commerce.OrderStatusDelivered, carrier: "Thailand Post", number: "TH123", wantStatus: http.StatusConflict, wantError: "Tracking can only be added to paid or shipped orders."},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -465,6 +568,89 @@ func TestAdminOrderCancelFromPendingReleasesStock(t *testing.T) {
 		t.Fatalf("history tail = %+v, want canceled by admin", lastEvent)
 	}
 	assertVariantStock(t, catalogStore, testOrderVariantStock+testOrderLineQuantity)
+}
+
+func TestAdminOrderCancelAndRefundUseCheckoutEmailsWithoutAdminDuplicates(t *testing.T) {
+	handler, commerceStore, _, currentTime := newOrdersTestHandler(t)
+	handler.payments = payments.NewFakeProvider()
+	sender := email.NewFakeSenderWithClock(func() time.Time { return *currentTime })
+	handler.emailSender = sender
+	cancelOrder := createTestOrder(t, commerceStore, adminTestOrder(testOrderID(1), commerce.OrderStatusPendingPayment, *currentTime))
+	refundOrder := createTestOrder(t, commerceStore, adminTestOrder(testOrderID(2), commerce.OrderStatusPaid, *currentTime))
+
+	cancel := authenticatedProductPost(t, handler, "/admin/orders/"+cancelOrder.ID+"/cancel", url.Values{})
+	if cancel.StatusCode != http.StatusSeeOther {
+		t.Fatalf("cancel status = %d, want %d; body = %q", cancel.StatusCode, http.StatusSeeOther, cancel.Body)
+	}
+	canceled := getTestOrder(t, commerceStore, cancelOrder.ID)
+	cancelKey := fmt.Sprintf("order:%s:status:%s:%s:v%d", cancelOrder.ID, commerce.OrderStatusPendingPayment, commerce.OrderStatusCanceled, cancelOrder.Version+1)
+	assertAdminEmailMessages(t, sender, []adminEmailWant{{kind: email.MessageKindOrderStatusChange, key: cancelKey, to: cancelOrder.Email}})
+	if canceled.Status != commerce.OrderStatusCanceled {
+		t.Fatalf("canceled status = %q, want canceled", canceled.Status)
+	}
+
+	refund := authenticatedProductPost(t, handler, "/admin/orders/"+refundOrder.ID+"/refund", url.Values{})
+	if refund.StatusCode != http.StatusSeeOther {
+		t.Fatalf("refund status = %d, want %d; body = %q", refund.StatusCode, http.StatusSeeOther, refund.Body)
+	}
+	refunded := getTestOrder(t, commerceStore, refundOrder.ID)
+	refundPendingKey := fmt.Sprintf("order:%s:status:%s:%s:v%d", refundOrder.ID, commerce.OrderStatusPaid, commerce.OrderStatusRefundPending, refundOrder.Version+1)
+	refundedKey := fmt.Sprintf("order:%s:status:%s:%s:v%d", refundOrder.ID, commerce.OrderStatusRefundPending, commerce.OrderStatusRefunded, refundOrder.Version+2)
+	assertAdminEmailMessages(t, sender, []adminEmailWant{
+		{kind: email.MessageKindOrderStatusChange, key: cancelKey, to: cancelOrder.Email},
+		{kind: email.MessageKindOrderStatusChange, key: refundPendingKey, to: refundOrder.Email},
+		{kind: email.MessageKindOrderStatusChange, key: refundedKey, to: refundOrder.Email},
+	})
+	if refunded.Status != commerce.OrderStatusRefunded {
+		t.Fatalf("refunded status = %q, want refunded", refunded.Status)
+	}
+}
+
+func TestAdminOrderEmailFailurePreservesMutation(t *testing.T) {
+	handler, commerceStore, _, currentTime := newOrdersTestHandler(t)
+	hooks := &adminEmailHookStore{Store: commerceStore}
+	handler.commerce = hooks
+	failingSender := &adminFailingEmailSender{err: errors.New("ses rejected recipient")}
+	handler.emailSender = failingSender
+	advanceOrder := createTestOrder(t, commerceStore, adminTestOrder(testOrderID(1), commerce.OrderStatusPaid, *currentTime))
+	trackingOrder := createTestOrder(t, commerceStore, adminTestOrder(testOrderID(2), commerce.OrderStatusPaid, *currentTime))
+
+	advance := authenticatedProductPost(t, handler, "/admin/orders/"+advanceOrder.ID+"/advance", url.Values{"to_status": {"shipped"}})
+	if advance.StatusCode != http.StatusSeeOther {
+		t.Fatalf("advance status = %d, want %d; body = %q", advance.StatusCode, http.StatusSeeOther, advance.Body)
+	}
+	advanced := getTestOrder(t, commerceStore, advanceOrder.ID)
+	advanceKey := fmt.Sprintf("order:%s:status:%s:%s:v%d", advanceOrder.ID, commerce.OrderStatusPaid, commerce.OrderStatusShipped, advanced.Version)
+	if advanced.Status != commerce.OrderStatusShipped {
+		t.Fatalf("advanced status = %q, want shipped despite email failure", advanced.Status)
+	}
+
+	tracking := authenticatedProductPost(t, handler, "/admin/orders/"+trackingOrder.ID+"/tracking", url.Values{
+		"carrier":         {"Thailand Post"},
+		"tracking_number": {"TH1234567890"},
+	})
+	if tracking.StatusCode != http.StatusSeeOther {
+		t.Fatalf("tracking status = %d, want %d; body = %q", tracking.StatusCode, http.StatusSeeOther, tracking.Body)
+	}
+	tracked := getTestOrder(t, commerceStore, trackingOrder.ID)
+	trackingKey := fmt.Sprintf("order:%s:tracking:v%d", trackingOrder.ID, tracked.Version)
+	if tracked.Status != commerce.OrderStatusShipped || tracked.TrackingCarrier != "Thailand Post" || tracked.TrackingNumber != "TH1234567890" {
+		t.Fatalf("tracked order = %#v, want shipped with tracking despite email failure", tracked)
+	}
+	if failingSender.calls != 2 {
+		t.Fatalf("failing sender calls = %d, want 2", failingSender.calls)
+	}
+	if len(hooks.failedEmailEvents) != 2 {
+		t.Fatalf("failed email events = %#v, want status and tracking failures", hooks.failedEmailEvents)
+	}
+	if hooks.failedEmailEvents[0].key != advanceKey || hooks.failedEmailEvents[1].key != trackingKey {
+		t.Fatalf("failed event keys = %#v, want %q then %q", hooks.failedEmailEvents, advanceKey, trackingKey)
+	}
+	for _, failure := range hooks.failedEmailEvents {
+		if failure.reason != "ses rejected recipient" {
+			t.Fatalf("failed event reason = %q, want metadata-only sender error", failure.reason)
+		}
+	}
 }
 
 func TestAdminOrderCancelFromPaidIsRefused(t *testing.T) {
@@ -796,6 +982,55 @@ func getTestOrder(t *testing.T, store *commerce.MemoryStore, orderID string) com
 		t.Fatalf("order %q not found", orderID)
 	}
 	return order
+}
+
+type adminEmailWant struct {
+	kind string
+	key  string
+	to   string
+}
+
+func assertAdminEmailMessages(t *testing.T, sender *email.FakeSender, want []adminEmailWant) {
+	t.Helper()
+	messages := sender.Messages()
+	if len(messages) != len(want) {
+		t.Fatalf("email messages = %d (%#v), want %d", len(messages), messages, len(want))
+	}
+	for i, message := range messages {
+		if message.Kind != want[i].kind || message.EventKey != want[i].key || message.To != want[i].to {
+			t.Fatalf("message[%d] = kind %q key %q to %q, want %q %q %q", i, message.Kind, message.EventKey, message.To, want[i].kind, want[i].key, want[i].to)
+		}
+	}
+}
+
+type adminFailingEmailSender struct {
+	err   error
+	calls int
+}
+
+func (s *adminFailingEmailSender) Kind() string { return "failing" }
+
+func (s *adminFailingEmailSender) Send(ctx context.Context, message email.Message) (email.Message, error) {
+	_ = ctx
+	_ = message
+	s.calls++
+	return email.Message{}, s.err
+}
+
+type adminEmailHookStore struct {
+	commerce.Store
+	failedEmailEvents []adminFailedEmailEvent
+}
+
+type adminFailedEmailEvent struct {
+	orderID string
+	key     string
+	reason  string
+}
+
+func (s *adminEmailHookStore) MarkEmailEventFailed(ctx context.Context, orderID string, key string, failedAt time.Time, reason string) error {
+	s.failedEmailEvents = append(s.failedEmailEvents, adminFailedEmailEvent{orderID: orderID, key: key, reason: reason})
+	return s.Store.MarkEmailEventFailed(ctx, orderID, key, failedAt, reason)
 }
 
 func assertVariantStock(t *testing.T, store *catalog.MemoryStore, want int) {

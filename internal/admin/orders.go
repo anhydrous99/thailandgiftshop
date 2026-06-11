@@ -226,9 +226,11 @@ func (h *Handler) advanceOrder(ctx context.Context, request events.APIGatewayV2H
 	case commerce.OrderStatusDelivered:
 		patch.DeliveredAt = &now
 	}
-	if _, err := h.commerceStore().TransitionOrder(ctx, order.ID, order.Status, target, patch); err != nil {
+	updated, err := h.commerceStore().TransitionOrder(ctx, order.ID, order.Status, target, patch)
+	if err != nil {
 		return h.orderWriteError(ctx, order, csrfValue, cookies, "orders: advance", err)
 	}
+	h.checkoutService().NotifyOrderStatusChanged(ctx, updated, order.Status, target)
 	return adminRedirectResponse(http.StatusSeeOther, adminOrderDetailPath(order.ID)+"?saved=advanced", nil)
 }
 
@@ -237,8 +239,8 @@ func (h *Handler) setOrderTracking(ctx context.Context, request events.APIGatewa
 	if err != nil {
 		return adminHTMLResponse(http.StatusBadRequest, "Invalid form", nil, nil)
 	}
-	if order.Status != commerce.OrderStatusPaid {
-		return h.orderDetailErrorResponse(ctx, order, csrfValue, cookies, []string{"Tracking can only be added to paid orders."}, http.StatusConflict)
+	if order.Status != commerce.OrderStatusPaid && order.Status != commerce.OrderStatusShipped {
+		return h.orderDetailErrorResponse(ctx, order, csrfValue, cookies, []string{"Tracking can only be added to paid or shipped orders."}, http.StatusConflict)
 	}
 	carrier := strings.TrimSpace(values.Get("carrier"))
 	trackingNumber := strings.TrimSpace(values.Get("tracking_number"))
@@ -252,16 +254,23 @@ func (h *Handler) setOrderTracking(ctx context.Context, request events.APIGatewa
 	if len(errorsList) > 0 {
 		return h.orderDetailErrorResponse(ctx, order, csrfValue, cookies, errorsList, http.StatusBadRequest)
 	}
+	if order.TrackingCarrier == carrier && order.TrackingNumber == trackingNumber {
+		return adminRedirectResponse(http.StatusSeeOther, adminOrderDetailPath(order.ID)+"?saved=shipped", nil)
+	}
 	now := h.currentTime().UTC()
-	patch := commerce.OrderPatch{
-		Actor:           commerce.OrderActorAdmin,
-		TrackingCarrier: &carrier,
-		TrackingNumber:  &trackingNumber,
-		ShippedAt:       &now,
+	patch := commerce.OrderPatch{Actor: commerce.OrderActorAdmin, TrackingCarrier: &carrier, TrackingNumber: &trackingNumber}
+	var updated commerce.Order
+	var writeErr error
+	if order.Status == commerce.OrderStatusPaid {
+		patch.ShippedAt = &now
+		updated, writeErr = h.commerceStore().TransitionOrder(ctx, order.ID, commerce.OrderStatusPaid, commerce.OrderStatusShipped, patch)
+	} else {
+		updated, writeErr = h.commerceStore().PatchOrder(ctx, order.ID, commerce.OrderStatusShipped, order.Version, patch)
 	}
-	if _, err := h.commerceStore().TransitionOrder(ctx, order.ID, commerce.OrderStatusPaid, commerce.OrderStatusShipped, patch); err != nil {
-		return h.orderWriteError(ctx, order, csrfValue, cookies, "orders: save tracking", err)
+	if writeErr != nil {
+		return h.orderWriteError(ctx, order, csrfValue, cookies, "orders: save tracking", writeErr)
 	}
+	h.checkoutService().NotifyTrackingUpdated(ctx, updated)
 	return adminRedirectResponse(http.StatusSeeOther, adminOrderDetailPath(order.ID)+"?saved=shipped", nil)
 }
 
@@ -273,11 +282,13 @@ func (h *Handler) setOrderTracking(ctx context.Context, request events.APIGatewa
 // (checkout.ErrRefundProviderUnavailable — refunds move money).
 func (h *Handler) checkoutService() *checkout.Service {
 	return &checkout.Service{
-		Commerce: h.commerceStore(),
-		Payments: h.payments,
-		Stock:    h.stock,
-		Metrics:  h.metrics,
-		Now:      h.now,
+		Commerce:    h.commerceStore(),
+		Payments:    h.payments,
+		Stock:       h.stock,
+		Metrics:     h.metrics,
+		EmailSender: h.emailSender,
+		BaseURL:     payments.PublicBaseURLFromEnvironment(),
+		Now:         h.now,
 	}
 }
 
@@ -398,7 +409,7 @@ func (h *Handler) adminOrderDetailView(order commerce.Order, csrfValue string) a
 		Order:            order,
 		Overdue:          adminOrderOverdue(order, h.currentTime()),
 		AdvanceTargets:   adminAdvanceTargets(order.Status),
-		ShowTrackingForm: order.Status == commerce.OrderStatusPaid,
+		ShowTrackingForm: order.Status == commerce.OrderStatusPaid || order.Status == commerce.OrderStatusShipped,
 		ShowCancelForm:   order.Status == commerce.OrderStatusPendingPayment,
 		ShowRefundForm:   adminOrderRefundable(order.Status),
 		RefundRetry:      order.Status == commerce.OrderStatusRefundFailed,

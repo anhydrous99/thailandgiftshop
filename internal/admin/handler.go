@@ -15,6 +15,7 @@ import (
 
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
 	"github.com/anhydrous99/thailandgiftshop/internal/commerce"
+	"github.com/anhydrous99/thailandgiftshop/internal/email"
 	"github.com/anhydrous99/thailandgiftshop/internal/httpapi"
 	"github.com/anhydrous99/thailandgiftshop/internal/observability"
 	"github.com/anhydrous99/thailandgiftshop/internal/payments"
@@ -52,6 +53,7 @@ type Handler struct {
 	commerce           commerce.Store
 	stock              catalog.StockStore
 	payments           payments.Provider
+	emailSender        email.Sender
 	uploads            productImageUploads
 	loginThrottle      adminLoginThrottle
 	metrics            observability.Recorder
@@ -81,11 +83,19 @@ func NewHandlerWithCredentialsAndCatalog(credentials Credentials, adminStore cat
 }
 
 func NewLocalDemoHandler(credentials Credentials, adminStore catalog.AdminStore, commerceStore commerce.Store, stockStore catalog.StockStore, paymentsProvider payments.Provider) *Handler {
+	return NewLocalDemoHandlerWithEmailSender(credentials, adminStore, commerceStore, stockStore, paymentsProvider, nil)
+}
+
+func NewLocalDemoHandlerWithEmailSender(credentials Credentials, adminStore catalog.AdminStore, commerceStore commerce.Store, stockStore catalog.StockStore, paymentsProvider payments.Provider, emailSender email.Sender) *Handler {
+	if emailSender == nil {
+		emailSender = email.NewFakeSender()
+	}
 	handler := NewHandlerWithCredentialsAndCatalog(credentials, adminStore)
 	handler.uploads = localProductImageUploads{}
 	handler.commerce = commerceStore
 	handler.stock = stockStore
 	handler.payments = paymentsProvider
+	handler.emailSender = emailSender
 	return handler
 }
 
@@ -110,11 +120,16 @@ func NewHandlerFromEnvironment(ctx context.Context) (*Handler, error) {
 	if err != nil {
 		return nil, err
 	}
+	emailSender, err := email.NewSenderFromEnvironment(ctx)
+	if err != nil {
+		return nil, err
+	}
 	handler := NewHandlerWithCredentialsAndCatalog(credentials, adminStore)
 	// Mark the cold-start credentials with a reload deadline so a later rotation
 	// is picked up within adminCredentialsTTL on this warm container.
 	handler.storeCredentials(credentials)
 	handler.commerce = commerceStore
+	handler.emailSender = emailSender
 	// The catalog admin store doubles as the stock store (both the Dynamo and
 	// memory implementations satisfy catalog.StockStore), so admin order
 	// cancellations release stock through the same versioned write path.
