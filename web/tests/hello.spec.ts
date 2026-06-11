@@ -9,6 +9,26 @@ async function expectExcludedControlsAbsent(page: Page) {
   }
 }
 
+async function expectHomeBuildingBannerVisible(page: Page) {
+  const banner = page.getByTestId('home-building-banner');
+
+  await expect(banner).toBeVisible();
+  await expect(banner).toBeInViewport();
+  await expect(banner).toContainText('This page is being built.');
+  await expect(banner).toContainText('We are still preparing the shop experience.');
+
+  const bannerPrecedesHeroHeading = await banner.evaluate((element) => {
+    const heroHeading = document.querySelector('h1');
+
+    return (
+      heroHeading !== null &&
+      Boolean(element.compareDocumentPosition(heroHeading) & Node.DOCUMENT_POSITION_FOLLOWING)
+    );
+  });
+
+  expect(bannerPrecedesHeroHeading).toBe(true);
+}
+
 test('home page assets, nav anchors, cart link, and aisle category route work end-to-end', async ({ page }) => {
   const htmxResponsePromise = page.waitForResponse((response) =>
     response.url().endsWith('/static/vendor/htmx.min.js') && response.status() === 200,
@@ -43,6 +63,7 @@ test('home page assets, nav anchors, cart link, and aisle category route work en
   await expect(mainNavigation.getByRole('link', { name: 'Categories', exact: true })).toHaveAttribute('href', '#categories');
   await expect(mainNavigation.getByRole('link', { name: 'Story', exact: true })).toHaveAttribute('href', '#story');
   await expect(mainNavigation.getByRole('link', { name: 'Cart', exact: true })).toHaveAttribute('href', '/cart');
+  await expectHomeBuildingBannerVisible(page);
   await expect(page.getByRole('heading', { name: 'Thailand Gift Shop', level: 1 })).toBeVisible();
   await expect(page.getByText('Bangkok gift shop online')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Latest products' })).toBeVisible();
@@ -67,6 +88,7 @@ test.describe('without JavaScript', () => {
     expect(cssResponse.headers()['content-type']).toContain('text/css');
 
     await expect(page.getByRole('navigation', { name: 'Main navigation' })).toBeVisible();
+    await expectHomeBuildingBannerVisible(page);
     await expect(page.getByRole('heading', { name: 'Thailand Gift Shop', level: 1 })).toBeVisible();
     await expect(page.getByText('Bangkok gift shop online')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Latest products' })).toBeVisible();

@@ -47,7 +47,15 @@ func home(vm homePageViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<main><section class=\"bg-flag-blue text-white\"><div class=\"mx-auto grid w-full max-w-7xl lg:grid-cols-[1.05fr_0.95fr]\"><div class=\"px-5 py-14 sm:px-8 lg:py-24\"><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-white\">Bangkok gift shop online</p><h1 class=\"mt-4 font-display text-6xl font-bold leading-[0.92] tracking-tight text-white sm:text-7xl lg:text-8xl\">Thailand Gift Shop</h1><p class=\"mt-6 max-w-2xl text-lg leading-8 text-white/85\">Thai snacks, souvenirs, textiles, home accents, and small keepsakes inspired by the gift shops travelers browse around Bangkok.</p><div class=\"mt-8 flex flex-wrap gap-3\"><a href=\"#latest\" class=\"inline-flex h-12 items-center justify-center bg-flag-red px-6 text-sm font-bold text-white transition hover:bg-flag-red-deep focus-visible:outline-white\">Shop latest finds</a> <a href=\"#shop-aisles\" class=\"inline-flex h-12 items-center justify-center border-2 border-white/60 px-6 text-sm font-bold text-white transition hover:bg-white hover:text-flag-blue focus-visible:outline-white\">Browse aisles</a></div><ul class=\"mt-10 grid max-w-2xl gap-4 text-sm font-medium text-white/90 sm:grid-cols-3\"><li class=\"border-l-4 border-flag-red pl-4\">Thai snack favorites</li><li class=\"border-l-4 border-flag-white pl-4\">Souvenirs and keepsakes</li><li class=\"border-l-4 border-gold pl-4\">Textiles and home accents</li></ul></div><div class=\"relative hidden lg:block\"><picture><source srcset=\"/static/home-hero.webp\" type=\"image/webp\"> <img class=\"absolute inset-0 h-full w-full object-cover\" src=\"/static/home-hero.png\" alt=\"\" aria-hidden=\"true\" width=\"1600\" height=\"900\" fetchpriority=\"high\"></picture><div class=\"absolute inset-y-0 left-0\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<main><section data-testid=\"home-building-banner\" aria-label=\"Home page status\" class=\"border-b-2 border-ink bg-flag-white\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = flagBand("h-3").Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<div class=\"mx-auto w-full max-w-7xl px-5 py-5 sm:px-8\"><div class=\"grid gap-4 border-2 border-ink bg-paper p-5 shadow-lift sm:grid-cols-[auto_1fr] sm:items-center sm:p-6\"><span aria-hidden=\"true\" class=\"flex h-14 w-14 items-center justify-center bg-flag-blue font-display text-3xl font-bold text-white\">!</span><div><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Shop status</p><p class=\"mt-2 font-display text-3xl font-bold leading-tight text-flag-blue sm:text-4xl\">This page is being built.</p><p class=\"mt-2 text-base font-medium leading-7 text-muted\">We are still preparing the shop experience.</p></div></div></div></section><section class=\"bg-flag-blue text-white\"><div class=\"mx-auto grid w-full max-w-7xl lg:grid-cols-[1.05fr_0.95fr]\"><div class=\"px-5 py-14 sm:px-8 lg:py-24\"><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-white\">Bangkok gift shop online</p><h1 class=\"mt-4 font-display text-6xl font-bold leading-[0.92] tracking-tight text-white sm:text-7xl lg:text-8xl\">Thailand Gift Shop</h1><p class=\"mt-6 max-w-2xl text-lg leading-8 text-white/85\">Thai snacks, souvenirs, textiles, home accents, and small keepsakes inspired by the gift shops travelers browse around Bangkok.</p><div class=\"mt-8 flex flex-wrap gap-3\"><a href=\"#latest\" class=\"inline-flex h-12 items-center justify-center bg-flag-red px-6 text-sm font-bold text-white transition hover:bg-flag-red-deep focus-visible:outline-white\">Shop latest finds</a> <a href=\"#shop-aisles\" class=\"inline-flex h-12 items-center justify-center border-2 border-white/60 px-6 text-sm font-bold text-white transition hover:bg-white hover:text-flag-blue focus-visible:outline-white\">Browse aisles</a></div><ul class=\"mt-10 grid max-w-2xl gap-4 text-sm font-medium text-white/90 sm:grid-cols-3\"><li class=\"border-l-4 border-flag-red pl-4\">Thai snack favorites</li><li class=\"border-l-4 border-flag-white pl-4\">Souvenirs and keepsakes</li><li class=\"border-l-4 border-gold pl-4\">Textiles and home accents</li></ul></div><div class=\"relative hidden lg:block\"><picture><source srcset=\"/static/home-hero.webp\" type=\"image/webp\"> <img class=\"absolute inset-0 h-full w-full object-cover\" src=\"/static/home-hero.png\" alt=\"\" aria-hidden=\"true\" width=\"1600\" height=\"900\" fetchpriority=\"high\"></picture><div class=\"absolute inset-y-0 left-0\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -55,7 +63,7 @@ func home(vm homePageViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</div></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</div></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -63,12 +71,12 @@ func home(vm homePageViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</section><section id=\"latest\" class=\"mx-auto w-full max-w-7xl px-5 py-14 sm:px-8 lg:py-20\"><div class=\"mb-10 flex flex-col gap-4 md:flex-row md:items-end md:justify-between\"><div><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Just added</p><h2 class=\"mt-2 font-display text-3xl font-bold tracking-tight text-flag-blue sm:text-4xl\">Latest products</h2><span aria-hidden=\"true\" class=\"mt-4 block h-1 w-16 bg-flag-red\"></span></div><p class=\"max-w-2xl text-base leading-7 text-muted\">New arrivals appear here first, with compact details that make browsing fast and confident.</p></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</section><section id=\"latest\" class=\"mx-auto w-full max-w-7xl px-5 py-14 sm:px-8 lg:py-20\"><div class=\"mb-10 flex flex-col gap-4 md:flex-row md:items-end md:justify-between\"><div><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Just added</p><h2 class=\"mt-2 font-display text-3xl font-bold tracking-tight text-flag-blue sm:text-4xl\">Latest products</h2><span aria-hidden=\"true\" class=\"mt-4 block h-1 w-16 bg-flag-red\"></span></div><p class=\"max-w-2xl text-base leading-7 text-muted\">New arrivals appear here first, with compact details that make browsing fast and confident.</p></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if len(vm.Products) == 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<section class=\"border-2 border-dashed border-flag-blue/25 bg-paper p-10 text-center\"><div class=\"mx-auto w-16\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<section class=\"border-2 border-dashed border-flag-blue/25 bg-paper p-10 text-center\"><div class=\"mx-auto w-16\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -76,12 +84,12 @@ func home(vm homePageViewModel) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</div><h2 class=\"mt-5 font-display text-xl font-bold text-flag-blue\">No products are available yet.</h2><p class=\"mt-2 text-sm leading-6 text-muted\">Check back soon for Thai gift-shop finds.</p></section>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</div><h2 class=\"mt-5 font-display text-xl font-bold text-flag-blue\">No products are available yet.</h2><p class=\"mt-2 text-sm leading-6 text-muted\">Check back soon for Thai gift-shop finds.</p></section>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<section aria-label=\"Latest added products\" class=\"grid gap-5 sm:grid-cols-2 lg:grid-cols-4\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<section aria-label=\"Latest added products\" class=\"grid gap-5 sm:grid-cols-2 lg:grid-cols-4\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -91,17 +99,17 @@ func home(vm homePageViewModel) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</section>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</section>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</section><section id=\"shop-aisles\" class=\"bg-flag-white py-14 lg:py-20\"><div class=\"mx-auto w-full max-w-7xl px-5 sm:px-8\"><div class=\"grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-start\"><div><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Shop aisles</p><h2 class=\"mt-2 font-display text-3xl font-bold tracking-tight text-flag-blue sm:text-4xl\">Browse like you are at a Bangkok gift shop.</h2><span aria-hidden=\"true\" class=\"mt-4 block h-1 w-16 bg-flag-red\"></span><p class=\"mt-4 text-base leading-7 text-muted\">Move through familiar shelves of snacks, souvenirs, textiles, decor, and wellness finds.</p></div><div class=\"grid gap-4 sm:grid-cols-3\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</section><section id=\"shop-aisles\" class=\"bg-flag-white py-14 lg:py-20\"><div class=\"mx-auto w-full max-w-7xl px-5 sm:px-8\"><div class=\"grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-start\"><div><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Shop aisles</p><h2 class=\"mt-2 font-display text-3xl font-bold tracking-tight text-flag-blue sm:text-4xl\">Browse like you are at a Bangkok gift shop.</h2><span aria-hidden=\"true\" class=\"mt-4 block h-1 w-16 bg-flag-red\"></span><p class=\"mt-4 text-base leading-7 text-muted\">Move through familiar shelves of snacks, souvenirs, textiles, decor, and wellness finds.</p></div><div class=\"grid gap-4 sm:grid-cols-3\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if len(vm.FeaturedCategories) == 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<section class=\"border-2 border-dashed border-flag-blue/25 bg-paper p-5 sm:col-span-3\"><h3 class=\"font-display text-lg font-bold text-flag-blue\">Aisles are being prepared.</h3><p class=\"mt-3 text-sm leading-6 text-muted\">Check back soon for active Thai gift-shop categories.</p></section>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<section class=\"border-2 border-dashed border-flag-blue/25 bg-paper p-5 sm:col-span-3\"><h3 class=\"font-display text-lg font-bold text-flag-blue\">Aisles are being prepared.</h3><p class=\"mt-3 text-sm leading-6 text-muted\">Check back soon for active Thai gift-shop categories.</p></section>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -113,12 +121,12 @@ func home(vm homePageViewModel) templ.Component {
 				}
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</div></div></div></section><section id=\"categories\" class=\"mx-auto w-full max-w-7xl px-5 py-14 sm:px-8 lg:py-20\"><div class=\"mb-8 max-w-3xl\"><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Shop categories</p><h2 class=\"mt-2 font-display text-3xl font-bold tracking-tight text-flag-blue sm:text-4xl\">Clear categories for Thai gift-shop finds.</h2><span aria-hidden=\"true\" class=\"mt-4 block h-1 w-16 bg-flag-red\"></span></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</div></div></div></section><section id=\"categories\" class=\"mx-auto w-full max-w-7xl px-5 py-14 sm:px-8 lg:py-20\"><div class=\"mb-8 max-w-3xl\"><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Shop categories</p><h2 class=\"mt-2 font-display text-3xl font-bold tracking-tight text-flag-blue sm:text-4xl\">Clear categories for Thai gift-shop finds.</h2><span aria-hidden=\"true\" class=\"mt-4 block h-1 w-16 bg-flag-red\"></span></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if len(vm.Categories) == 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<section class=\"border-2 border-dashed border-flag-blue/25 bg-paper p-10 text-center\"><div class=\"mx-auto w-16\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<section class=\"border-2 border-dashed border-flag-blue/25 bg-paper p-10 text-center\"><div class=\"mx-auto w-16\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -126,12 +134,12 @@ func home(vm homePageViewModel) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</div><h2 class=\"mt-5 font-display text-xl font-bold text-flag-blue\">No categories are available yet.</h2><p class=\"mt-2 text-sm leading-6 text-muted\">Check back soon for more Thai gift-shop aisles.</p></section>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</div><h2 class=\"mt-5 font-display text-xl font-bold text-flag-blue\">No categories are available yet.</h2><p class=\"mt-2 text-sm leading-6 text-muted\">Check back soon for more Thai gift-shop aisles.</p></section>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<div class=\"grid gap-4 sm:grid-cols-2 lg:grid-cols-4\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<div class=\"grid gap-4 sm:grid-cols-2 lg:grid-cols-4\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -141,12 +149,12 @@ func home(vm homePageViewModel) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</section><section id=\"story\" class=\"bg-flag-blue text-white\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</section><section id=\"story\" class=\"bg-flag-blue text-white\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -154,7 +162,7 @@ func home(vm homePageViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<div class=\"mx-auto grid w-full max-w-7xl gap-8 px-5 py-14 sm:px-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-center lg:py-20\"><div><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-white\">Gift shop point of view</p><h2 class=\"mt-2 font-display text-3xl font-bold tracking-tight sm:text-4xl\">An online Thai gift shop shaped by Bangkok color, craft, flavor, and easy browsing.</h2></div><div class=\"border-l-4 border-flag-red pl-5\"><p class=\"text-base leading-8 text-white/80\">Every section is built to move shoppers quickly from aisle to product: clear categories, strong imagery, concise details, and a brand system grounded in the Thai flag.</p></div></div></section></main>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<div class=\"mx-auto grid w-full max-w-7xl gap-8 px-5 py-14 sm:px-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-center lg:py-20\"><div><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-white\">Gift shop point of view</p><h2 class=\"mt-2 font-display text-3xl font-bold tracking-tight sm:text-4xl\">An online Thai gift shop shaped by Bangkok color, craft, flavor, and easy browsing.</h2></div><div class=\"border-l-4 border-flag-red pl-5\"><p class=\"text-base leading-8 text-white/80\">Every section is built to move shoppers quickly from aisle to product: clear categories, strong imagery, concise details, and a brand system grounded in the Thai flag.</p></div></div></section></main>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -162,7 +170,7 @@ func home(vm homePageViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "</body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -191,46 +199,46 @@ func homeAisleCard(category catalog.Category) templ.Component {
 			templ_7745c5c3_Var2 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<a data-testid=\"home-aisle-card\" href=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<a data-testid=\"home-aisle-card\" href=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var3 templ.SafeURL
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinURLErrs("/categories/" + category.Slug)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/home.templ`, Line: 130, Col: 71}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/home.templ`, Line: 143, Col: 71}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\" class=\"group block border border-flag-blue/15 bg-paper transition hover:border-flag-blue hover:shadow-lift\"><span aria-hidden=\"true\" class=\"block h-1.5 bg-flag-red\"></span> <span class=\"block p-5\"><span class=\"block font-display text-lg font-medium text-flag-blue\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "\" class=\"group block border border-flag-blue/15 bg-paper transition hover:border-flag-blue hover:shadow-lift\"><span aria-hidden=\"true\" class=\"block h-1.5 bg-flag-red\"></span> <span class=\"block p-5\"><span class=\"block font-display text-lg font-medium text-flag-blue\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(category.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/home.templ`, Line: 133, Col: 86}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/home.templ`, Line: 146, Col: 86}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "</span> <span class=\"mt-3 block text-sm leading-6 text-muted\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "</span> <span class=\"mt-3 block text-sm leading-6 text-muted\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(category.Description)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/home.templ`, Line: 134, Col: 79}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/home.templ`, Line: 147, Col: 79}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "</span></span></a>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</span></span></a>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
