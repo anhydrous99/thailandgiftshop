@@ -21,12 +21,14 @@ import (
 // SHA-256 hash names the session row. Fixed 30-day expiry, no rolling renewal.
 const customerSessionTTL = 30 * 24 * time.Hour
 const guestCSRFTTL = 2 * time.Hour
+const passwordResetTTL = 30 * time.Minute
 const customerSignedValueVersion = 1
 
 var customerSessionPurpose = []byte("tgs-customer-session")
 var customerCSRFPurpose = []byte("tgs-customer-csrf")
 var customerGuestCSRFPurpose = []byte("tgs-customer-guest-csrf")
 var customerOrdersCursorPurpose = []byte("tgs-orders-cursor")
+var customerPasswordResetPurpose = []byte("customer_password_reset")
 
 const customerCSRFFieldName = "csrf_token"
 const guestCSRFFieldName = "guest_csrf_token"
@@ -51,6 +53,13 @@ type guestCSRFPayload struct {
 	Version   int    `json:"version"`
 	Nonce     string `json:"nonce"`
 	ExpiresAt int64  `json:"expires_at"`
+}
+
+type passwordResetTokenPayload struct {
+	Version    int    `json:"version"`
+	CustomerID string `json:"customer_id"`
+	Token      string `json:"token"`
+	ExpiresAt  int64  `json:"expires_at"`
 }
 
 // customerSession resolves the signed-in customer for a request. It never
@@ -276,6 +285,11 @@ func (h *Handler) validGuestCSRF(request events.APIGatewayV2HTTPRequest) bool {
 }
 
 func hashCustomerSessionToken(token string) string {
+	digest := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(digest[:])
+}
+
+func hashPasswordResetToken(token string) string {
 	digest := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(digest[:])
 }

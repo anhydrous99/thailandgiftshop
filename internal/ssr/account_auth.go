@@ -5,14 +5,17 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/anhydrous99/thailandgiftshop/internal/cart"
 	"github.com/anhydrous99/thailandgiftshop/internal/commerce"
+	"github.com/anhydrous99/thailandgiftshop/internal/email"
 	"github.com/anhydrous99/thailandgiftshop/internal/httpapi"
 	"github.com/anhydrous99/thailandgiftshop/internal/observability"
+	"github.com/anhydrous99/thailandgiftshop/internal/signedtoken"
 	"github.com/aws/aws-lambda-go/events"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -48,11 +51,14 @@ const invalidEmailError = "Enter a valid email address."
 const invalidPasswordError = "Use a password between 8 and 72 characters."
 const expiredFormError = "This form expired. Please try again."
 const throttledBody = "Too many attempts. Try again later."
+const passwordResetSentCopy = "If an account uses that email, we sent a reset link."
+const passwordResetInvalidCopy = "This reset link is invalid or expired."
 
 const (
 	authOperationSignUp         = "sign_up"
 	authOperationSignIn         = "sign_in"
 	authOperationPasswordChange = "password_change"
+	authOperationPasswordReset  = "password_reset"
 
 	authOutcomeSuccess   = "success"
 	authOutcomeInvalid   = "invalid"
@@ -69,6 +75,10 @@ func (h *Handler) handleAccountRoute(ctx context.Context, request events.APIGate
 		return h.handleSignUpRoute(ctx, request)
 	case pageAccountSignIn:
 		return h.handleSignInRoute(ctx, request)
+	case pageAccountPasswordReset:
+		return h.handlePasswordResetRequestRoute(ctx, request)
+	case pageAccountPasswordResetConfirm:
+		return h.handlePasswordResetConfirmRoute(ctx, request)
 	case pageAccountSignOut:
 		return h.handleSignOut(ctx, request)
 	}
@@ -245,11 +255,19 @@ func (h *Handler) handleSignInRoute(ctx context.Context, request events.APIGatew
 	}
 	if method != http.MethodPost {
 		return h.signInPageResponse(ctx, request, http.StatusOK, signInPageData{
-			ReturnTo: sanitizedReturnTo(request.QueryStringParameters[returnToFieldName], ""),
+			ReturnTo:       sanitizedReturnTo(request.QueryStringParameters[returnToFieldName], ""),
+			SuccessMessage: signInSuccessMessage(request),
 		}, "")
 	}
 
 	return h.handleSignInSubmit(ctx, request)
+}
+
+func signInSuccessMessage(request events.APIGatewayV2HTTPRequest) string {
+	if request.QueryStringParameters["password_reset"] == "1" {
+		return "Password reset. Sign in with your new password."
+	}
+	return ""
 }
 
 func (h *Handler) handleSignInSubmit(ctx context.Context, request events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
@@ -324,6 +342,229 @@ func (h *Handler) handleSignInSubmit(ctx context.Context, request events.APIGate
 	}
 
 	return h.finishCustomerAuth(ctx, request, pageAccountSignIn, authOperationSignIn, customer.ID, returnTo)
+}
+
+func (h *Handler) handlePasswordResetRequestRoute(ctx context.Context, request events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
+	method := httpapi.Method(request)
+	if method != http.MethodPost {
+		return h.passwordResetRequestPageResponse(ctx, request, http.StatusOK, passwordResetRequestPageData{
+			Sent: request.QueryStringParameters["sent"] == "1",
+		}, "")
+	}
+	return h.handlePasswordResetRequestSubmit(ctx, request)
+}
+
+func (h *Handler) handlePasswordResetRequestSubmit(ctx context.Context, request events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
+	form, err := httpapi.FormValues(request)
+	if err != nil {
+		return accountHTMLResponse(http.StatusBadRequest, "Bad request", pageAccountPasswordReset, nil)
+	}
+	emailAddress := strings.TrimSpace(form.Get("email"))
+	rerender := passwordResetRequestPageData{Email: emailAddress}
+	if !h.validGuestCSRF(request) {
+		rerender.ErrorMessage = expiredFormError
+		return h.passwordResetRequestPageResponse(ctx, request, http.StatusForbidden, rerender, "")
+	}
+	guestToken := form.Get(guestCSRFFieldName)
+	if !validCustomerEmail(emailAddress) {
+		rerender.ErrorMessage = invalidEmailError
+		return h.passwordResetRequestPageResponse(ctx, request, http.StatusBadRequest, rerender, guestToken)
+	}
+	if h.commerce == nil || h.emailSender == nil {
+		logAccountError("password reset: dependencies", errors.New("commerce store or email sender not configured"))
+		h.recordCustomerAuth(authOperationPasswordReset, authOutcomeError)
+		return accountHTMLResponse(http.StatusInternalServerError, "Internal server error", pageAccountPasswordReset, nil)
+	}
+
+	now := h.currentTime().UTC()
+	normalizedEmail := commerce.NormalizeEmail(emailAddress)
+	ipKey := commerce.ThrottleKey("PASSWORD_RESET_IP", customerLoginClient(request), h.customerSessionSecret)
+	emailKey := commerce.ThrottleKey("PASSWORD_RESET_EMAIL", normalizedEmail, h.customerSessionSecret)
+	ipDecision, err := h.commerce.ReserveLoginAttempt(ctx, ipKey, now)
+	if err != nil {
+		logAccountError("password reset: reserve ip throttle attempt", err)
+		h.recordCustomerAuth(authOperationPasswordReset, authOutcomeError)
+		return accountHTMLResponse(http.StatusInternalServerError, "Internal server error", pageAccountPasswordReset, nil)
+	}
+	emailDecision, err := h.commerce.ReserveLoginAttempt(ctx, emailKey, now)
+	if err != nil {
+		logAccountError("password reset: reserve email throttle attempt", err)
+		h.recordCustomerAuth(authOperationPasswordReset, authOutcomeError)
+		return accountHTMLResponse(http.StatusInternalServerError, "Internal server error", pageAccountPasswordReset, nil)
+	}
+	if !ipDecision.Allowed || !emailDecision.Allowed {
+		h.recordCustomerAuth(authOperationPasswordReset, authOutcomeThrottled)
+		return customerThrottleResponse(pageAccountPasswordReset, now, ipDecision, emailDecision)
+	}
+
+	customer, found, err := h.commerce.GetCustomerByEmail(ctx, normalizedEmail)
+	if err != nil {
+		logAccountError("password reset: lookup customer", err)
+		h.recordCustomerAuth(authOperationPasswordReset, authOutcomeError)
+		return accountHTMLResponse(http.StatusInternalServerError, "Internal server error", pageAccountPasswordReset, nil)
+	}
+	if found {
+		if err := h.issuePasswordResetEmail(ctx, customer, now); err != nil {
+			logAccountError("password reset: issue email", err)
+			h.recordCustomerAuth(authOperationPasswordReset, authOutcomeError)
+			return accountSeeOther("/account/password-reset?sent=1", pageAccountPasswordReset, nil)
+		}
+	}
+
+	h.recordCustomerAuth(authOperationPasswordReset, authOutcomeSuccess)
+	return accountSeeOther("/account/password-reset?sent=1", pageAccountPasswordReset, nil)
+}
+
+func (h *Handler) issuePasswordResetEmail(ctx context.Context, customer commerce.Customer, now time.Time) error {
+	rawToken, err := signedtoken.RandomToken(32)
+	if err != nil {
+		return err
+	}
+	expiresAt := now.UTC().Add(passwordResetTTL)
+	signedValue, err := signedtoken.Encode(passwordResetTokenPayload{
+		Version:    customerSignedValueVersion,
+		CustomerID: customer.ID,
+		Token:      rawToken,
+		ExpiresAt:  expiresAt.Unix(),
+	}, h.customerSessionSecret, customerPasswordResetPurpose)
+	if err != nil {
+		return err
+	}
+	if err := h.commerce.PutPasswordResetToken(ctx, commerce.PasswordResetToken{
+		CustomerID: customer.ID,
+		TokenHash:  hashPasswordResetToken(rawToken),
+		CreatedAt:  now.UTC(),
+		ExpiresAt:  expiresAt,
+		Version:    1,
+	}); err != nil {
+		return err
+	}
+
+	resetLink := h.resetBaseURL() + "/account/password-reset/confirm?token=" + url.QueryEscape(signedValue)
+	_, err = h.emailSender.Send(ctx, email.BuildPasswordReset(customer.Email, resetLink))
+	return err
+}
+
+func (h *Handler) handlePasswordResetConfirmRoute(ctx context.Context, request events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
+	if httpapi.Method(request) == http.MethodPost {
+		return h.handlePasswordResetConfirmSubmit(ctx, request)
+	}
+	tokenValue := strings.TrimSpace(request.QueryStringParameters["token"])
+	if _, ok := h.validatePasswordResetToken(ctx, tokenValue); !ok {
+		return h.passwordResetConfirmPageResponse(ctx, request, http.StatusBadRequest, passwordResetConfirmPageData{ErrorMessage: passwordResetInvalidCopy}, "")
+	}
+	return h.passwordResetConfirmPageResponse(ctx, request, http.StatusOK, passwordResetConfirmPageData{Token: tokenValue}, "")
+}
+
+func (h *Handler) handlePasswordResetConfirmSubmit(ctx context.Context, request events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
+	form, err := httpapi.FormValues(request)
+	if err != nil {
+		return accountHTMLResponse(http.StatusBadRequest, "Bad request", pageAccountPasswordResetConfirm, nil)
+	}
+	tokenValue := strings.TrimSpace(form.Get("token"))
+	renderData := passwordResetConfirmPageData{Token: tokenValue}
+	if !h.validGuestCSRF(request) {
+		renderData.ErrorMessage = expiredFormError
+		return h.passwordResetConfirmPageResponse(ctx, request, http.StatusForbidden, renderData, "")
+	}
+	guestToken := form.Get(guestCSRFFieldName)
+	newPassword := form.Get("new_password")
+	if !validCustomerPassword(newPassword) {
+		renderData.ErrorMessage = invalidPasswordError
+		return h.passwordResetConfirmPageResponse(ctx, request, http.StatusBadRequest, renderData, guestToken)
+	}
+	payload, ok := h.decodePasswordResetToken(tokenValue)
+	if !ok || h.commerce == nil {
+		renderData.ErrorMessage = passwordResetInvalidCopy
+		return h.passwordResetConfirmPageResponse(ctx, request, http.StatusBadRequest, renderData, guestToken)
+	}
+
+	now := h.currentTime().UTC()
+	if _, found, err := h.commerce.ConsumePasswordResetToken(ctx, payload.CustomerID, hashPasswordResetToken(payload.Token), now); err != nil {
+		logAccountError("password reset: consume token", err)
+		h.recordCustomerAuth(authOperationPasswordReset, authOutcomeError)
+		return accountHTMLResponse(http.StatusInternalServerError, "Internal server error", pageAccountPasswordResetConfirm, nil)
+	} else if !found {
+		renderData.ErrorMessage = passwordResetInvalidCopy
+		return h.passwordResetConfirmPageResponse(ctx, request, http.StatusBadRequest, renderData, guestToken)
+	}
+
+	customer, found, err := h.commerce.GetCustomerByID(ctx, payload.CustomerID)
+	if err != nil {
+		logAccountError("password reset: load customer", err)
+		h.recordCustomerAuth(authOperationPasswordReset, authOutcomeError)
+		return accountHTMLResponse(http.StatusInternalServerError, "Internal server error", pageAccountPasswordResetConfirm, nil)
+	}
+	if !found {
+		renderData.ErrorMessage = passwordResetInvalidCopy
+		return h.passwordResetConfirmPageResponse(ctx, request, http.StatusBadRequest, renderData, guestToken)
+	}
+	newHash, err := bcrypt.GenerateFromPassword([]byte(newPassword), h.passwordCost())
+	if err != nil {
+		logAccountError("password reset: hash password", err)
+		h.recordCustomerAuth(authOperationPasswordReset, authOutcomeError)
+		return accountHTMLResponse(http.StatusInternalServerError, "Internal server error", pageAccountPasswordResetConfirm, nil)
+	}
+	if err := h.commerce.DeleteAllSessions(ctx, customer.ID); err != nil {
+		logAccountError("password reset: revoke sessions", err)
+		h.recordCustomerAuth(authOperationPasswordReset, authOutcomeError)
+		return accountHTMLResponse(http.StatusInternalServerError, "Internal server error", pageAccountPasswordResetConfirm, nil)
+	}
+	if err := h.commerce.UpdatePassword(ctx, customer.ID, string(newHash), customer.Version); err != nil {
+		if errors.Is(err, commerce.ErrVersionConflict) {
+			renderData.ErrorMessage = "Your account changed in another window. Request a new reset link."
+			return h.passwordResetConfirmPageResponse(ctx, request, http.StatusConflict, renderData, guestToken)
+		}
+		logAccountError("password reset: update password", err)
+		h.recordCustomerAuth(authOperationPasswordReset, authOutcomeError)
+		return accountHTMLResponse(http.StatusInternalServerError, "Internal server error", pageAccountPasswordResetConfirm, nil)
+	}
+	if err := h.commerce.DeletePasswordResetToken(ctx, customer.ID); err != nil {
+		logAccountError("password reset: delete token", err)
+		h.recordCustomerAuth(authOperationPasswordReset, authOutcomeError)
+		return accountHTMLResponse(http.StatusInternalServerError, "Internal server error", pageAccountPasswordResetConfirm, nil)
+	}
+
+	h.recordCustomerAuth(authOperationPasswordReset, authOutcomeSuccess)
+	return accountSeeOther("/account/sign-in?password_reset=1", pageAccountPasswordResetConfirm, []string{
+		clearCustomerSessionCookie().String(),
+		clearCustomerCSRFCookie().String(),
+	})
+}
+
+func (h *Handler) validatePasswordResetToken(ctx context.Context, tokenValue string) (passwordResetTokenPayload, bool) {
+	payload, ok := h.decodePasswordResetToken(tokenValue)
+	if !ok || h.commerce == nil {
+		return passwordResetTokenPayload{}, false
+	}
+	if _, found, err := h.commerce.ValidatePasswordResetToken(ctx, payload.CustomerID, hashPasswordResetToken(payload.Token), h.currentTime().UTC()); err != nil || !found {
+		if err != nil {
+			logAccountError("password reset: validate token", err)
+		}
+		return passwordResetTokenPayload{}, false
+	}
+	return payload, true
+}
+
+func (h *Handler) decodePasswordResetToken(tokenValue string) (passwordResetTokenPayload, bool) {
+	var payload passwordResetTokenPayload
+	if !signedtoken.Decode(tokenValue, h.customerSessionSecret, customerPasswordResetPurpose, &payload) {
+		return passwordResetTokenPayload{}, false
+	}
+	if payload.Version != customerSignedValueVersion || payload.CustomerID == "" || payload.Token == "" {
+		return passwordResetTokenPayload{}, false
+	}
+	if !h.currentTime().UTC().Before(time.Unix(payload.ExpiresAt, 0)) {
+		return passwordResetTokenPayload{}, false
+	}
+	return payload, true
+}
+
+func (h *Handler) resetBaseURL() string {
+	if h.passwordResetBaseURL != "" {
+		return h.passwordResetBaseURL
+	}
+	return passwordResetPublicBaseURLFromEnvironment()
 }
 
 // finishCustomerAuth runs the shared sign-in/sign-up tail: a fresh
@@ -545,6 +786,54 @@ func (h *Handler) signInPageResponse(ctx context.Context, request events.APIGate
 	}
 
 	return accountHTMLResponse(statusCode, maybeEmptyBody(httpapi.Method(request), body.String()), pageAccountSignIn, cookies)
+}
+
+func (h *Handler) passwordResetRequestPageResponse(ctx context.Context, request events.APIGatewayV2HTTPRequest, statusCode int, vm passwordResetRequestPageData, guestToken string) events.APIGatewayV2HTTPResponse {
+	cookies := []string(nil)
+	if guestToken == "" {
+		minted, cookie, err := h.mintGuestCSRF()
+		if err != nil {
+			logAccountError("password reset: mint guest csrf", err)
+			return accountHTMLResponse(http.StatusInternalServerError, "Internal server error", pageAccountPasswordReset, nil)
+		}
+		guestToken = minted
+		cookies = []string{cookie}
+	}
+	vm.Metadata = passwordResetRequestMetadata()
+	vm.HeaderCartLabel = h.cartNavigation(request)
+	vm.GuestCSRFToken = guestToken
+
+	var body bytes.Buffer
+	if err := passwordResetRequestPage(vm).Render(ctx, &body); err != nil {
+		logAccountError("password reset: render request", err)
+		return accountHTMLResponse(http.StatusInternalServerError, "Internal server error", pageAccountPasswordReset, nil)
+	}
+
+	return accountHTMLResponse(statusCode, maybeEmptyBody(httpapi.Method(request), body.String()), pageAccountPasswordReset, cookies)
+}
+
+func (h *Handler) passwordResetConfirmPageResponse(ctx context.Context, request events.APIGatewayV2HTTPRequest, statusCode int, vm passwordResetConfirmPageData, guestToken string) events.APIGatewayV2HTTPResponse {
+	cookies := []string(nil)
+	if guestToken == "" {
+		minted, cookie, err := h.mintGuestCSRF()
+		if err != nil {
+			logAccountError("password reset: mint confirm guest csrf", err)
+			return accountHTMLResponse(http.StatusInternalServerError, "Internal server error", pageAccountPasswordResetConfirm, nil)
+		}
+		guestToken = minted
+		cookies = []string{cookie}
+	}
+	vm.Metadata = passwordResetConfirmMetadata()
+	vm.HeaderCartLabel = h.cartNavigation(request)
+	vm.GuestCSRFToken = guestToken
+
+	var body bytes.Buffer
+	if err := passwordResetConfirmPage(vm).Render(ctx, &body); err != nil {
+		logAccountError("password reset: render confirm", err)
+		return accountHTMLResponse(http.StatusInternalServerError, "Internal server error", pageAccountPasswordResetConfirm, nil)
+	}
+
+	return accountHTMLResponse(statusCode, maybeEmptyBody(httpapi.Method(request), body.String()), pageAccountPasswordResetConfirm, cookies)
 }
 
 // customerThrottleResponse renders the generic 429 with the longest

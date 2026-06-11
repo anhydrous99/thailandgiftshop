@@ -28,19 +28,21 @@ const (
 	pageCartRemove     pageKind = "cart-remove"
 	pageCartClear      pageKind = "cart-clear"
 
-	pageAccountSignUp              pageKind = "account-sign-up"
-	pageAccountSignIn              pageKind = "account-sign-in"
-	pageAccountSignOut             pageKind = "account-sign-out"
-	pageAccount                    pageKind = "account"
-	pageAccountPassword            pageKind = "account-password"
-	pageAccountAddresses           pageKind = "account-addresses"
-	pageAccountAddressEdit         pageKind = "account-address-edit"
-	pageAccountAddressUpdate       pageKind = "account-address-update"
-	pageAccountAddressRemove       pageKind = "account-address-remove"
-	pageAccountAddressDefault      pageKind = "account-address-default"
-	pageAccountPaymentMethods      pageKind = "account-payment-methods"
-	pageAccountPaymentMethodAdd    pageKind = "account-payment-method-add"
-	pageAccountPaymentMethodRemove pageKind = "account-payment-method-remove"
+	pageAccountSignUp               pageKind = "account-sign-up"
+	pageAccountSignIn               pageKind = "account-sign-in"
+	pageAccountPasswordReset        pageKind = "account-password-reset"
+	pageAccountPasswordResetConfirm pageKind = "account-password-reset-confirm"
+	pageAccountSignOut              pageKind = "account-sign-out"
+	pageAccount                     pageKind = "account"
+	pageAccountPassword             pageKind = "account-password"
+	pageAccountAddresses            pageKind = "account-addresses"
+	pageAccountAddressEdit          pageKind = "account-address-edit"
+	pageAccountAddressUpdate        pageKind = "account-address-update"
+	pageAccountAddressRemove        pageKind = "account-address-remove"
+	pageAccountAddressDefault       pageKind = "account-address-default"
+	pageAccountPaymentMethods       pageKind = "account-payment-methods"
+	pageAccountPaymentMethodAdd     pageKind = "account-payment-method-add"
+	pageAccountPaymentMethodRemove  pageKind = "account-payment-method-remove"
 
 	pageCheckoutPlaceOrder pageKind = "checkout-place-order"
 	pageCheckoutConfirm    pageKind = "checkout-confirm"
@@ -138,6 +140,14 @@ func routeForPath(path string) pageRoute {
 		return pageRoute{kind: pageAccountSignIn, knownPageShape: true}
 	case "/account/sign-in/":
 		return pageRoute{kind: pageAccountSignIn, redirectTo: "/account/sign-in", knownPageShape: true}
+	case "/account/password-reset":
+		return pageRoute{kind: pageAccountPasswordReset, knownPageShape: true}
+	case "/account/password-reset/":
+		return pageRoute{kind: pageAccountPasswordReset, redirectTo: "/account/password-reset", knownPageShape: true}
+	case "/account/password-reset/confirm":
+		return pageRoute{kind: pageAccountPasswordResetConfirm, knownPageShape: true}
+	case "/account/password-reset/confirm/":
+		return pageRoute{kind: pageAccountPasswordResetConfirm, redirectTo: "/account/password-reset/confirm", knownPageShape: true}
 	case "/account/sign-out":
 		return pageRoute{kind: pageAccountSignOut, knownPageShape: true}
 	case "/account/password":
@@ -315,7 +325,7 @@ func isCartMutationRoute(kind pageKind) bool {
 // isAccountFormRoute reports the GET,HEAD,POST routes: a rendered page whose
 // POST handles the page's own form submission.
 func isAccountFormRoute(kind pageKind) bool {
-	return kind == pageAccountSignUp || kind == pageAccountSignIn || kind == pageAccountAddresses
+	return kind == pageAccountSignUp || kind == pageAccountSignIn || kind == pageAccountPasswordReset || kind == pageAccountPasswordResetConfirm || kind == pageAccountAddresses
 }
 
 // isAccountMutationRoute reports the POST-only customer routes.

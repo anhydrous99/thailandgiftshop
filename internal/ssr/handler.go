@@ -11,10 +11,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/anhydrous99/thailandgiftshop/internal/appenv"
 	"github.com/anhydrous99/thailandgiftshop/internal/cart"
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
 	"github.com/anhydrous99/thailandgiftshop/internal/checkout"
 	"github.com/anhydrous99/thailandgiftshop/internal/commerce"
+	"github.com/anhydrous99/thailandgiftshop/internal/email"
 	"github.com/anhydrous99/thailandgiftshop/internal/httpapi"
 	"github.com/anhydrous99/thailandgiftshop/internal/observability"
 	"github.com/anhydrous99/thailandgiftshop/internal/payments"
@@ -35,6 +37,8 @@ type Handler struct {
 	commerce                   commerce.Store
 	payments                   payments.Provider
 	checkout                   *checkout.Service
+	emailSender                email.Sender
+	passwordResetBaseURL       string
 	stock                      catalog.StockStore
 	customerSessionSecret      string
 	passwordHashCost           int
@@ -82,6 +86,12 @@ func NewHandlerFromEnvironment(ctx context.Context) (*Handler, error) {
 	handler := NewHandler(catalogStore)
 	handler.metrics = metrics
 	handler.commerce = commerceStore
+	emailSender, err := email.NewSenderFromEnvironment(ctx)
+	if err != nil {
+		return nil, err
+	}
+	handler.emailSender = emailSender
+	handler.passwordResetBaseURL = passwordResetPublicBaseURLFromEnvironment()
 	// The production catalog DynamoStore implements StockStore; the
 	// EmptyStore fallback (no CATALOG_TABLE_NAME outside production) does
 	// not, which leaves checkout unreachable along with the empty catalog.
@@ -93,11 +103,12 @@ func NewHandlerFromEnvironment(ctx context.Context) (*Handler, error) {
 	} else {
 		handler.payments = paymentsProvider
 		handler.checkout = &checkout.Service{
-			Commerce: commerceStore,
-			Payments: paymentsProvider,
-			Stock:    handler.stock,
-			Metrics:  metrics,
-			BaseURL:  payments.PublicBaseURLFromEnvironment(),
+			Commerce:    commerceStore,
+			Payments:    paymentsProvider,
+			Stock:       handler.stock,
+			Metrics:     metrics,
+			EmailSender: emailSender,
+			BaseURL:     payments.PublicBaseURLFromEnvironment(),
 		}
 	}
 	return handler, nil
@@ -107,15 +118,25 @@ func NewHandlerFromEnvironment(ctx context.Context) (*Handler, error) {
 // provider around the shared demo catalog for devserver and tests. The
 // catalog MemoryStore doubles as the stock store.
 func NewLocalDemoHandler(catalogStore *catalog.MemoryStore, commerceStore commerce.Store, provider payments.Provider) *Handler {
+	return NewLocalDemoHandlerWithEmailSender(catalogStore, commerceStore, provider, nil)
+}
+
+func NewLocalDemoHandlerWithEmailSender(catalogStore *catalog.MemoryStore, commerceStore commerce.Store, provider payments.Provider, emailSender email.Sender) *Handler {
+	if emailSender == nil {
+		emailSender = email.NewFakeSender()
+	}
 	handler := NewHandler(catalogStore)
 	handler.commerce = commerceStore
+	handler.emailSender = emailSender
+	handler.passwordResetBaseURL = localDemoBaseURL()
 	handler.payments = provider
 	handler.stock = catalogStore
 	handler.checkout = &checkout.Service{
-		Commerce: commerceStore,
-		Payments: provider,
-		Stock:    catalogStore,
-		BaseURL:  localDemoBaseURL(),
+		Commerce:    commerceStore,
+		Payments:    provider,
+		Stock:       catalogStore,
+		EmailSender: handler.emailSender,
+		BaseURL:     localDemoBaseURL(),
 	}
 	return handler
 }
@@ -125,6 +146,16 @@ func NewLocalDemoHandler(catalogStore *catalog.MemoryStore, commerceStore commer
 func localDemoBaseURL() string {
 	if baseURL := strings.TrimSpace(os.Getenv(payments.EnvPublicBaseURL)); baseURL != "" {
 		return strings.TrimSuffix(baseURL, "/")
+	}
+	return "http://127.0.0.1:8080"
+}
+
+func passwordResetPublicBaseURLFromEnvironment() string {
+	if baseURL := strings.TrimSpace(os.Getenv(payments.EnvPublicBaseURL)); baseURL != "" {
+		return strings.TrimSuffix(baseURL, "/")
+	}
+	if appenv.IsProduction() {
+		return payments.DefaultPublicBaseURL
 	}
 	return "http://127.0.0.1:8080"
 }
