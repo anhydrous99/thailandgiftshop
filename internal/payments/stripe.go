@@ -153,17 +153,24 @@ func checkoutSessionCreateParams(input PaymentSessionInput) *stripe.CheckoutSess
 	params := &stripe.CheckoutSessionCreateParams{
 		Mode:              stripe.String(string(stripe.CheckoutSessionModePayment)),
 		ClientReferenceID: stripe.String(input.OrderID),
-		Customer:          stripe.String(input.StripeCustomerID),
-		Metadata: map[string]string{
-			"order_id":    input.OrderID,
-			"customer_id": input.CustomerID,
-		},
-		SavedPaymentMethodOptions: &stripe.CheckoutSessionCreateSavedPaymentMethodOptionsParams{
+		Metadata:          map[string]string{"order_id": input.OrderID},
+		ExpiresAt:         stripe.Int64(input.ExpiresAt.Unix()),
+		SuccessURL:        stripe.String(input.SuccessURL),
+		CancelURL:         stripe.String(input.CancelURL),
+	}
+	if input.CustomerID != "" {
+		params.Metadata["customer_id"] = input.CustomerID
+	}
+	if input.StripeCustomerID != "" {
+		params.Customer = stripe.String(input.StripeCustomerID)
+		params.SavedPaymentMethodOptions = &stripe.CheckoutSessionCreateSavedPaymentMethodOptionsParams{
 			PaymentMethodSave: stripe.String("enabled"),
-		},
-		ExpiresAt:  stripe.Int64(input.ExpiresAt.Unix()),
-		SuccessURL: stripe.String(input.SuccessURL),
-		CancelURL:  stripe.String(input.CancelURL),
+		}
+	} else {
+		// Guest checkout: lock the hosted page's email to the address collected
+		// on our checkout form (single source of truth) and let Stripe create a
+		// guest customer only if it needs one (customer_creation default).
+		params.CustomerEmail = stripe.String(input.Email)
 	}
 	for _, line := range input.Lines {
 		params.LineItems = append(params.LineItems, &stripe.CheckoutSessionCreateLineItemParams{

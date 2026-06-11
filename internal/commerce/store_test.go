@@ -582,6 +582,73 @@ func TestListOrdersNewestFirstWithLimit(t *testing.T) {
 	}
 }
 
+// TestGuestOrderListing pins the guest-order (CustomerID == "") listing
+// contract on both stores: guests never form a pseudo-customer in the
+// customer-orders index, while the admin listing (gsi2) sees every order. The
+// shared transition/patch path is smoked on a guest order too.
+func TestGuestOrderListing(t *testing.T) {
+	for _, fixture := range storeFixtures(t) {
+		t.Run(fixture.name, func(t *testing.T) {
+			ctx := context.Background()
+			customer := createTestCustomer(t, fixture.store, "shopper@example.test")
+
+			guestSeed := testOrder("", 1500)
+			guestSeed.Email = "guest@example.test"
+			guestOrder, err := fixture.store.CreateOrder(ctx, guestSeed)
+			if err != nil {
+				t.Fatalf("CreateOrder (guest) returned error: %v", err)
+			}
+			if guestOrder.CustomerID != "" || guestOrder.Email != "guest@example.test" {
+				t.Fatalf("guest order = %#v, want empty CustomerID and stamped email", guestOrder)
+			}
+			fixture.clock.Advance(time.Hour)
+			customerOrder, err := fixture.store.CreateOrder(ctx, testOrder(customer.ID, 1850))
+			if err != nil {
+				t.Fatalf("CreateOrder (customer) returned error: %v", err)
+			}
+
+			all, err := fixture.store.ListOrders(ctx, 20, OrderCursor{})
+			if err != nil {
+				t.Fatalf("ListOrders returned error: %v", err)
+			}
+			if len(all.Orders) != 2 || all.Orders[0].ID != customerOrder.ID || all.Orders[1].ID != guestOrder.ID {
+				t.Fatalf("ListOrders = %#v, want customer order then guest order (newest first)", all.Orders)
+			}
+
+			mine, err := fixture.store.ListOrdersByCustomer(ctx, customer.ID, 20, OrderCursor{})
+			if err != nil {
+				t.Fatalf("ListOrdersByCustomer returned error: %v", err)
+			}
+			if len(mine.Orders) != 1 || mine.Orders[0].ID != customerOrder.ID {
+				t.Fatalf("ListOrdersByCustomer = %#v, want only the customer's order", mine.Orders)
+			}
+
+			empty, err := fixture.store.ListOrdersByCustomer(ctx, "", 20, OrderCursor{})
+			if err != nil {
+				t.Fatalf("ListOrdersByCustomer(\"\") returned error: %v", err)
+			}
+			if len(empty.Orders) != 0 {
+				t.Fatalf("ListOrdersByCustomer(\"\") = %#v, want empty page", empty.Orders)
+			}
+			if !empty.NextCursor.IsZero() {
+				t.Fatalf("ListOrdersByCustomer(\"\") NextCursor = %#v, want zero", empty.NextCursor)
+			}
+
+			// Transition/patch smoke: guest orders ride the identical lifecycle.
+			paidAt := fixture.clock.Now()
+			paid, err := fixture.store.TransitionOrder(ctx, guestOrder.ID, OrderStatusPendingPayment, OrderStatusPaid, OrderPatch{Actor: OrderActorStripe, PaidAt: &paidAt})
+			if err != nil || paid.Status != OrderStatusPaid {
+				t.Fatalf("guest TransitionOrder = %#v %v, want paid", paid, err)
+			}
+			sessionID := "cs_guest_session"
+			patched, err := fixture.store.PatchOrder(ctx, guestOrder.ID, OrderStatusPaid, paid.Version, OrderPatch{StripeCheckoutSessionID: &sessionID})
+			if err != nil || patched.StripeCheckoutSessionID != sessionID {
+				t.Fatalf("guest PatchOrder = %#v %v, want session id recorded", patched, err)
+			}
+		})
+	}
+}
+
 func TestListOrdersByCustomerCursorPaging(t *testing.T) {
 	for _, fixture := range storeFixtures(t) {
 		t.Run(fixture.name, func(t *testing.T) {

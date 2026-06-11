@@ -194,13 +194,26 @@ func (f *flakyStockStore) AdjustStock(ctx context.Context, adjustments []catalog
 }
 
 // hookStore wraps the commerce memory store with injectable failures and
-// call counters for the webhook dedupe assertions.
+// call counters for the webhook dedupe assertions. The cart counters let the
+// guest tests assert the service never touches a CART row for guest orders.
 type hookStore struct {
 	commerce.Store
 	getOrderErr             error
 	markStripeEventCalls    int
+	getCartCalls            int
+	putCartCalls            int
 	transitionConflictOnce  bool
 	transitionConflictFired bool
+}
+
+func (h *hookStore) GetCart(ctx context.Context, customerID string) (commerce.CartRecord, bool, error) {
+	h.getCartCalls++
+	return h.Store.GetCart(ctx, customerID)
+}
+
+func (h *hookStore) PutCart(ctx context.Context, record commerce.CartRecord) (commerce.CartRecord, error) {
+	h.putCartCalls++
+	return h.Store.PutCart(ctx, record)
 }
 
 func (h *hookStore) GetOrder(ctx context.Context, orderID string) (commerce.Order, bool, error) {
@@ -2293,4 +2306,295 @@ func TestReconcileRefundIgnoresNonRefundFamilyOrders(t *testing.T) {
 		t.Errorf("GetRefund calls = %d, want %d (no provider lookups)", env.provider.getRefundCalls, callsBefore)
 	}
 	env.assertStock(t, 3, 3)
+}
+
+// --- Guest checkout (CustomerID == "" marker) service tests ---
+
+const guestTestEmail = "guest@example.test"
+
+// guestPlaceOrderInput builds the guest-flow input: zero Customer, contact
+// email, GuestAddressID fingerprint surrogate, and a Cart record carrying only
+// the cookie-pointer fields (guests have no server CART row).
+func (env *testEnv) guestPlaceOrderInput(lines []commerce.OrderLine, email string) PlaceOrderInput {
+	return PlaceOrderInput{
+		Guest:     true,
+		Email:     email,
+		AddressID: GuestAddressID(checkoutTestAddress(), email),
+		Address:   checkoutTestAddress(),
+		Lines:     lines,
+	}
+}
+
+func (env *testEnv) mustGuestPlaceOrder(t *testing.T, lines []commerce.OrderLine, email string) (string, commerce.Order) {
+	t.Helper()
+	redirectURL, order, err := env.service.PlaceOrder(context.Background(), env.guestPlaceOrderInput(lines, email))
+	if err != nil {
+		t.Fatalf("guest PlaceOrder returned error: %v", err)
+	}
+	return redirectURL, order
+}
+
+func TestGuestPlaceOrderHappyPath(t *testing.T) {
+	env := newTestEnv(t)
+	redirectURL, order := env.mustGuestPlaceOrder(t, checkoutTestLines(), guestTestEmail)
+
+	if order.CustomerID != "" {
+		t.Errorf("order customer id = %q, want empty (guest marker)", order.CustomerID)
+	}
+	if order.Email != guestTestEmail {
+		t.Errorf("order email = %q, want %q", order.Email, guestTestEmail)
+	}
+	if order.CheckoutAttempt != 1 {
+		t.Errorf("order checkout attempt = %d, want 1", order.CheckoutAttempt)
+	}
+	if wantURL := "/checkout/fake-pay?session_id=cs_fake_" + order.ID; redirectURL != wantURL {
+		t.Errorf("redirect URL = %q, want %q", redirectURL, wantURL)
+	}
+	wantFingerprint := env.service.Fingerprint(checkoutTestLines(), GuestAddressID(checkoutTestAddress(), guestTestEmail))
+	if order.CartFingerprint != wantFingerprint {
+		t.Errorf("order fingerprint = %q, want %q", order.CartFingerprint, wantFingerprint)
+	}
+	env.assertStock(t, 3, 3)
+	if env.provider.ensureCustomerCalls != 0 {
+		t.Errorf("EnsureCustomer calls = %d, want 0 (guests get no provider customer)", env.provider.ensureCustomerCalls)
+	}
+	if env.hooks.getCartCalls != 0 || env.hooks.putCartCalls != 0 {
+		t.Errorf("cart store ops = %d gets / %d puts, want 0/0 (guests have no server cart)", env.hooks.getCartCalls, env.hooks.putCartCalls)
+	}
+}
+
+func TestGuestPlaceOrderValidation(t *testing.T) {
+	env := newTestEnv(t)
+	withCustomer := env.guestPlaceOrderInput(checkoutTestLines(), guestTestEmail)
+	withCustomer.Customer = env.customer
+	noEmail := env.guestPlaceOrderInput(checkoutTestLines(), "   ")
+
+	tests := []struct {
+		name  string
+		input PlaceOrderInput
+	}{
+		{name: "guest with customer", input: withCustomer},
+		{name: "guest without email", input: noEmail},
+		{name: "non-guest without customer", input: PlaceOrderInput{Lines: checkoutTestLines()}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if _, _, err := env.service.PlaceOrder(context.Background(), test.input); err == nil {
+				t.Fatalf("PlaceOrder accepted invalid input")
+			}
+			if count := env.orderCount(t); count != 0 {
+				t.Errorf("order count = %d, want 0", count)
+			}
+		})
+	}
+}
+
+func TestGuestPlaceOrderResumesPendingPointer(t *testing.T) {
+	env := newTestEnv(t)
+	firstURL, first := env.mustGuestPlaceOrder(t, checkoutTestLines(), guestTestEmail)
+
+	resumed := env.guestPlaceOrderInput(checkoutTestLines(), guestTestEmail)
+	resumed.Cart = commerce.CartRecord{PendingOrderID: first.ID, PendingFingerprint: first.CartFingerprint}
+	secondURL, second, err := env.service.PlaceOrder(context.Background(), resumed)
+	if err != nil {
+		t.Fatalf("guest re-entry PlaceOrder returned error: %v", err)
+	}
+
+	if secondURL != firstURL {
+		t.Errorf("re-entry URL = %q, want the original %q", secondURL, firstURL)
+	}
+	if second.ID != first.ID {
+		t.Errorf("re-entry order id = %q, want the original %q", second.ID, first.ID)
+	}
+	if count := env.orderCount(t); count != 1 {
+		t.Errorf("order count = %d, want 1 (no duplicate order)", count)
+	}
+	env.assertStock(t, 3, 3)
+}
+
+func TestGuestPlaceOrderFingerprintMismatchCancelsStale(t *testing.T) {
+	changedLines := checkoutTestLines()
+	changedLines[0].Quantity = 1
+	changedLines[0].LineTotalCents = 1899
+	changedAddress := checkoutTestAddress()
+	changedAddress.Line1 = "2 Different Street"
+
+	tests := []struct {
+		name      string
+		lines     []commerce.OrderLine
+		address   commerce.OrderAddress
+		email     string
+		wantStock int
+	}{
+		{name: "changed lines", lines: changedLines, address: checkoutTestAddress(), email: guestTestEmail, wantStock: 4},
+		{name: "changed address", lines: checkoutTestLines(), address: changedAddress, email: guestTestEmail, wantStock: 3},
+		{name: "email-only change", lines: checkoutTestLines(), address: checkoutTestAddress(), email: "corrected@example.test", wantStock: 3},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			env := newTestEnv(t)
+			_, first := env.mustGuestPlaceOrder(t, checkoutTestLines(), guestTestEmail)
+
+			input := PlaceOrderInput{
+				Guest:     true,
+				Email:     test.email,
+				AddressID: GuestAddressID(test.address, test.email),
+				Address:   test.address,
+				Lines:     test.lines,
+				Cart:      commerce.CartRecord{PendingOrderID: first.ID, PendingFingerprint: first.CartFingerprint},
+			}
+			_, second, err := env.service.PlaceOrder(context.Background(), input)
+			if err != nil {
+				t.Fatalf("guest PlaceOrder returned error: %v", err)
+			}
+			if second.ID == first.ID {
+				t.Fatalf("expected a fresh order, got the stale one %q", first.ID)
+			}
+			if second.Email != test.email {
+				t.Errorf("fresh order email = %q, want %q stamped", second.Email, test.email)
+			}
+			stale := env.mustGetOrder(t, first.ID)
+			if stale.Status != commerce.OrderStatusCanceled {
+				t.Errorf("stale order status = %q, want %q", stale.Status, commerce.OrderStatusCanceled)
+			}
+			if _, err := env.provider.MarkSessionPaid(first.StripeCheckoutSessionID, false); !errors.Is(err, payments.ErrSessionExpired) {
+				t.Errorf("MarkSessionPaid on the stale session error = %v, want %v", err, payments.ErrSessionExpired)
+			}
+			// Old reservation released, new one held.
+			env.assertStock(t, test.wantStock, 3)
+		})
+	}
+}
+
+func TestGuestPointerCannotTouchForeignOrder(t *testing.T) {
+	t.Run("guest pointer naming a customer order", func(t *testing.T) {
+		env := newTestEnv(t)
+		_, foreign := env.mustPlaceOrder(t, checkoutTestLines())
+
+		input := env.guestPlaceOrderInput(checkoutTestLines(), guestTestEmail)
+		// Match the foreign order's fingerprint exactly: only the owner check
+		// may reject the pointer.
+		input.AddressID = "addr00000000000000000000ab"
+		input.Cart = commerce.CartRecord{PendingOrderID: foreign.ID, PendingFingerprint: foreign.CartFingerprint}
+		_, fresh, err := env.service.PlaceOrder(context.Background(), input)
+		if err != nil {
+			t.Fatalf("guest PlaceOrder returned error: %v", err)
+		}
+		if fresh.ID == foreign.ID {
+			t.Fatalf("guest pointer resumed a customer order")
+		}
+		after := env.mustGetOrder(t, foreign.ID)
+		if after.Status != foreign.Status || after.Version != foreign.Version || after.StripeCheckoutSessionID != foreign.StripeCheckoutSessionID {
+			t.Errorf("foreign order changed: %+v, want untouched %+v", after, foreign)
+		}
+		if count := env.orderCount(t); count != 2 {
+			t.Errorf("order count = %d, want 2", count)
+		}
+	})
+
+	t.Run("customer pointer naming a guest order", func(t *testing.T) {
+		env := newTestEnv(t)
+		_, foreign := env.mustGuestPlaceOrder(t, checkoutTestLines(), guestTestEmail)
+
+		input := env.placeOrderInput(t, checkoutTestLines())
+		input.AddressID = "addr00000000000000000000ab"
+		input.Cart.PendingOrderID = foreign.ID
+		input.Cart.PendingFingerprint = foreign.CartFingerprint
+		_, fresh, err := env.service.PlaceOrder(context.Background(), input)
+		if err != nil {
+			t.Fatalf("PlaceOrder returned error: %v", err)
+		}
+		if fresh.ID == foreign.ID {
+			t.Fatalf("customer pointer resumed a guest order")
+		}
+		after := env.mustGetOrder(t, foreign.ID)
+		if after.Status != foreign.Status || after.Version != foreign.Version || after.StripeCheckoutSessionID != foreign.StripeCheckoutSessionID {
+			t.Errorf("guest order changed: %+v, want untouched %+v", after, foreign)
+		}
+	})
+}
+
+func TestGuestFinalizePaymentSkipsCartClear(t *testing.T) {
+	env := newTestEnv(t)
+	_, order := env.mustGuestPlaceOrder(t, checkoutTestLines(), guestTestEmail)
+	session := env.paidSession(t, order.StripeCheckoutSessionID)
+
+	finalized, err := env.service.FinalizePayment(context.Background(), order.ID, session)
+	if err != nil {
+		t.Fatalf("FinalizePayment returned error: %v", err)
+	}
+	if finalized.Status != commerce.OrderStatusPaid {
+		t.Errorf("order status = %q, want %q", finalized.Status, commerce.OrderStatusPaid)
+	}
+	if got := env.metrics.count(observability.MetricCheckoutPayment, "success"); got != 1 {
+		t.Errorf("success metric count = %d, want 1", got)
+	}
+	if env.hooks.getCartCalls != 0 || env.hooks.putCartCalls != 0 {
+		t.Errorf("cart store ops after finalize = %d gets / %d puts, want 0/0", env.hooks.getCartCalls, env.hooks.putCartCalls)
+	}
+
+	replayed, err := env.service.FinalizePayment(context.Background(), order.ID, session)
+	if err != nil {
+		t.Fatalf("replayed FinalizePayment returned error: %v", err)
+	}
+	if replayed.Version != finalized.Version {
+		t.Errorf("replay bumped version %d -> %d, want a no-op", finalized.Version, replayed.Version)
+	}
+	if env.hooks.getCartCalls != 0 || env.hooks.putCartCalls != 0 {
+		t.Errorf("cart store ops after replay = %d gets / %d puts, want 0/0", env.hooks.getCartCalls, env.hooks.putCartCalls)
+	}
+}
+
+func TestGuestWebhookExpiredReleasesStock(t *testing.T) {
+	env := newTestEnv(t)
+	_, order := env.mustGuestPlaceOrder(t, checkoutTestLines(), guestTestEmail)
+	session, err := env.provider.GetSession(context.Background(), order.StripeCheckoutSessionID)
+	if err != nil {
+		t.Fatalf("GetSession returned error: %v", err)
+	}
+	event := payments.Event{ID: "evt_guest_expired_1", Type: "checkout.session.expired", SessionID: session.ID, OrderID: order.ID, Session: session}
+
+	if err := env.service.ApplyWebhookEvent(context.Background(), event); err != nil {
+		t.Fatalf("ApplyWebhookEvent returned error: %v", err)
+	}
+	if got := env.mustGetOrder(t, order.ID).Status; got != commerce.OrderStatusExpired {
+		t.Errorf("order status = %q, want %q", got, commerce.OrderStatusExpired)
+	}
+	env.assertStock(t, 5, 4)
+}
+
+func TestGuestAddressID(t *testing.T) {
+	address := checkoutTestAddress()
+	base := GuestAddressID(address, guestTestEmail)
+
+	if !strings.HasPrefix(base, "guest-") {
+		t.Errorf("GuestAddressID = %q, want the guest- prefix", base)
+	}
+	if again := GuestAddressID(checkoutTestAddress(), guestTestEmail); again != base {
+		t.Errorf("GuestAddressID is not deterministic: %q != %q", again, base)
+	}
+	if normalized := GuestAddressID(address, "  Guest@Example.TEST "); normalized != base {
+		t.Errorf("GuestAddressID is email case/whitespace sensitive: %q != %q", normalized, base)
+	}
+	if changedEmail := GuestAddressID(address, "other@example.test"); changedEmail == base {
+		t.Errorf("GuestAddressID ignored an email change")
+	}
+
+	variants := []func(a *commerce.OrderAddress){
+		func(a *commerce.OrderAddress) { a.FullName = "Different Name" },
+		func(a *commerce.OrderAddress) { a.Line1 = "9 Other Road" },
+		func(a *commerce.OrderAddress) { a.Line2 = "Unit 5" },
+		func(a *commerce.OrderAddress) { a.City = "Elsewhere" },
+		func(a *commerce.OrderAddress) { a.Region = "CA" },
+		func(a *commerce.OrderAddress) { a.PostalCode = "90001" },
+		func(a *commerce.OrderAddress) { a.Country = "CA" },
+		func(a *commerce.OrderAddress) { a.Phone = "+1-555-000-1111" },
+	}
+	for i, mutate := range variants {
+		changed := checkoutTestAddress()
+		mutate(&changed)
+		if GuestAddressID(changed, guestTestEmail) == base {
+			t.Errorf("variant %d: GuestAddressID ignored an address field change", i)
+		}
+	}
 }

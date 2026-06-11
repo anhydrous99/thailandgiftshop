@@ -56,8 +56,12 @@ test.describe('without JavaScript', () => {
     await addProductToCart(page, 'mango-sticky-rice-kit', { quantity: '2' });
     await expect(page.getByRole('link', { name: 'Cart (2)', exact: true }).first()).toBeVisible();
 
-    // Checkout is sign-in gated with a validated return_to.
+    // Checkout now renders the guest layout for anonymous shoppers; the
+    // sign-in link reaches the account flow with a validated return_to.
     await page.getByRole('link', { name: 'Check out', exact: true }).click();
+    await expect(page).toHaveURL(/\/checkout$/);
+    await expect(page.getByTestId('guest-checkout-form')).toBeVisible();
+    await page.getByTestId('checkout-sign-in-link').click();
     await expect(page).toHaveURL(/\/account\/sign-in\?return_to=%2Fcheckout$/);
     await expect(page.getByTestId('signin-form')).toBeVisible();
 
@@ -189,9 +193,10 @@ test.describe('without JavaScript', () => {
   });
 });
 
-test('checkout stays sign-in gated with JavaScript enabled', async ({ page }) => {
+test('checkout renders the guest layout with JavaScript enabled', async ({ page }) => {
   await addProductToCart(page, 'jasmine-rice-candle');
   await page.goto('/checkout');
-  await expect(page).toHaveURL(/\/account\/sign-in\?return_to=%2Fcheckout$/);
-  await expect(page.getByTestId('signin-form')).toBeVisible();
+  await expect(page).toHaveURL(/\/checkout$/);
+  await expect(page.getByTestId('guest-checkout-form')).toBeVisible();
+  await expect(page.getByTestId('checkout-sign-in-link')).toBeVisible();
 });

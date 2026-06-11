@@ -690,6 +690,12 @@ func (s *DynamoStore) GetOrder(ctx context.Context, orderID string) (Order, bool
 }
 
 func (s *DynamoStore) ListOrdersByCustomer(ctx context.Context, customerID string, limit int, cursor OrderCursor) (OrderPage, error) {
+	if customerID == "" {
+		// Guest marker: guest orders are sparse in gsi1 and must never be
+		// listable as a pseudo-customer. The guard also keeps
+		// customerOrdersStartKey from ever building a key for an empty ID.
+		return OrderPage{}, nil
+	}
 	input := dynamodb.QueryInput{
 		TableName:              aws.String(s.tableName),
 		IndexName:              aws.String(s.customerOrdersIndexName),
@@ -1265,8 +1271,8 @@ type orderDynamoItem struct {
 	DeliveredAt             string                 `dynamodbav:"delivered_at,omitempty"`
 	RefundedAt              string                 `dynamodbav:"refunded_at,omitempty"`
 	StockReleasedAt         string                 `dynamodbav:"stock_released_at,omitempty"`
-	GSI1PK                  string                 `dynamodbav:"gsi1pk"`
-	GSI1SK                  string                 `dynamodbav:"gsi1sk"`
+	GSI1PK                  string                 `dynamodbav:"gsi1pk,omitempty"`
+	GSI1SK                  string                 `dynamodbav:"gsi1sk,omitempty"`
 	GSI2PK                  string                 `dynamodbav:"gsi2pk"`
 	GSI2SK                  string                 `dynamodbav:"gsi2sk"`
 }
@@ -1566,10 +1572,15 @@ func orderItem(order Order) (map[string]types.AttributeValue, error) {
 		DeliveredAt:             formatCommerceTime(order.DeliveredAt),
 		RefundedAt:              formatCommerceTime(order.RefundedAt),
 		StockReleasedAt:         formatCommerceTime(order.StockReleasedAt),
-		GSI1PK:                  customerOrdersIndexPK(order.CustomerID),
-		GSI1SK:                  customerOrdersIndexSK(order),
 		GSI2PK:                  ordersIndexPK,
 		GSI2SK:                  ordersIndexSK(order),
+	}
+	if order.CustomerID != "" {
+		// Guest orders (CustomerID == "") are sparse in gsi1: DynamoDB skips
+		// items missing an index key attribute, so they never pollute the
+		// customer-orders index while staying fully listable on gsi2.
+		item.GSI1PK = customerOrdersIndexPK(order.CustomerID)
+		item.GSI1SK = customerOrdersIndexSK(order)
 	}
 	if order.CheckoutAttempt != 0 {
 		item.CheckoutAttempt = intPtr(order.CheckoutAttempt)

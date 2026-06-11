@@ -160,6 +160,9 @@ func TestCheckoutSessionCreateParams(t *testing.T) {
 	if params.SavedPaymentMethodOptions == nil || stringValue(params.SavedPaymentMethodOptions.PaymentMethodSave) != "enabled" {
 		t.Fatalf("SavedPaymentMethodOptions = %#v, want payment_method_save=enabled", params.SavedPaymentMethodOptions)
 	}
+	if params.CustomerEmail != nil {
+		t.Fatalf("CustomerEmail = %q, want nil for customer sessions (the Stripe Customer carries the email)", stringValue(params.CustomerEmail))
+	}
 	if got := int64Value(params.ExpiresAt); got != expiresAt.Unix() {
 		t.Fatalf("ExpiresAt = %d, want %d", got, expiresAt.Unix())
 	}
@@ -195,6 +198,42 @@ func TestCheckoutSessionCreateParams(t *testing.T) {
 	}
 	if got := stringValue(params.IdempotencyKey); got != "order-session-ord0000000000000000000000a-2" {
 		t.Fatalf("IdempotencyKey = %q, want %q", got, "order-session-ord0000000000000000000000a-2")
+	}
+}
+
+// TestCheckoutSessionCreateParamsGuest pins the guest branch: no Stripe
+// Customer, no saved-payment-method options (both require a Customer), the
+// hosted page's email locked to the checkout form's value, and no empty
+// customer_id metadata entry.
+func TestCheckoutSessionCreateParamsGuest(t *testing.T) {
+	expiresAt := time.Date(2026, 6, 9, 12, 30, 0, 0, time.UTC)
+	params := checkoutSessionCreateParams(PaymentSessionInput{
+		OrderID:          "ord0000000000000000000000b",
+		CustomerID:       "",
+		StripeCustomerID: "",
+		Email:            "guest@example.test",
+		Lines:            []SessionLine{{Name: "Mango Sticky Rice Candy", UnitAmountCents: 450, Quantity: 2}},
+		TotalCents:       900,
+		SuccessURL:       "https://thailandgiftshop.com/checkout/confirm?session_id={CHECKOUT_SESSION_ID}",
+		CancelURL:        "https://thailandgiftshop.com/checkout?canceled=1",
+		ExpiresAt:        expiresAt,
+		Attempt:          1,
+	})
+
+	if params.Customer != nil {
+		t.Fatalf("Customer = %q, want nil for guest sessions", stringValue(params.Customer))
+	}
+	if params.SavedPaymentMethodOptions != nil {
+		t.Fatalf("SavedPaymentMethodOptions = %#v, want nil for guest sessions", params.SavedPaymentMethodOptions)
+	}
+	if got := stringValue(params.CustomerEmail); got != "guest@example.test" {
+		t.Fatalf("CustomerEmail = %q, want the checkout form email", got)
+	}
+	if params.Metadata["order_id"] != "ord0000000000000000000000b" {
+		t.Fatalf("Metadata = %#v, want order_id", params.Metadata)
+	}
+	if _, found := params.Metadata["customer_id"]; found {
+		t.Fatalf("Metadata = %#v, want no customer_id key for guest sessions", params.Metadata)
 	}
 }
 

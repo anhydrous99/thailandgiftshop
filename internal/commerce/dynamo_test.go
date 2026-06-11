@@ -143,6 +143,26 @@ func TestOnlyOrderItemsCarryGSIAttributes(t *testing.T) {
 	if got := stringAttribute(orderAttrs, "gsi2sk"); got != "2026-06-08T12:00:00Z#order1" {
 		t.Fatalf("order gsi2sk = %q", got)
 	}
+
+	// Guest orders (CustomerID == "") are sparse in gsi1 — DynamoDB rejects
+	// empty-string index key values, and a shared "CUSTOMER#" partition would
+	// silently pool every guest order — while staying fully present in gsi2
+	// for the admin order desk.
+	guestAttrs, err := orderItem(Order{ID: "order2", CustomerID: "", Email: "guest@example.test", Status: OrderStatusPendingPayment, Version: 1, TotalCents: 1500, Currency: "usd", CreatedAt: now, UpdatedAt: now})
+	if err != nil {
+		t.Fatalf("orderItem (guest) returned error: %v", err)
+	}
+	for _, gsiAttribute := range []string{"gsi1pk", "gsi1sk"} {
+		if _, found := guestAttrs[gsiAttribute]; found {
+			t.Fatalf("guest order item carries %s; guest orders must be sparse in gsi1", gsiAttribute)
+		}
+	}
+	if got := stringAttribute(guestAttrs, "gsi2pk"); got != "ORDERS" {
+		t.Fatalf("guest order gsi2pk = %q, want ORDERS", got)
+	}
+	if got := stringAttribute(guestAttrs, "gsi2sk"); got != "2026-06-08T12:00:00Z#order2" {
+		t.Fatalf("guest order gsi2sk = %q", got)
+	}
 }
 
 // TestListOrdersByCustomerPagesAcrossDynamoQueryPages pins queryItems'

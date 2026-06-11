@@ -484,6 +484,32 @@ func TestStackIncludesAdminCloudFrontWAFRateLimits(t *testing.T) {
 					}),
 				},
 			}),
+			assertions.Match_ObjectLike(&map[string]any{
+				"Name":     "CheckoutPlaceOrderRateLimit",
+				"Priority": 3,
+				"Action": map[string]any{
+					"Block": map[string]any{
+						"CustomResponse": map[string]any{
+							"ResponseCode": 429,
+						},
+					},
+				},
+				"Statement": map[string]any{
+					"RateBasedStatement": assertions.Match_ObjectLike(&map[string]any{
+						"AggregateKeyType":    "IP",
+						"Limit":               100,
+						"EvaluationWindowSec": 300,
+						"ScopeDownStatement": map[string]any{
+							"AndStatement": map[string]any{
+								"Statements": assertions.Match_ArrayWith(&[]any{
+									urlDecodedPathMatchAssertion("/checkout/place-order", "EXACTLY"),
+									byteMatchAssertion("Method", "POST", "EXACTLY"),
+								}),
+							},
+						},
+					}),
+				},
+			}),
 		}),
 	})
 	template.HasResourceProperties(jsii.String("AWS::CloudFront::Distribution"), map[string]any{

@@ -386,6 +386,10 @@ func (p *FakeProvider) ParseWebhook(payload []byte, signatureHeader string, now 
 }
 
 func (p *FakeProvider) addFakePaymentMethodLocked(stripeCustomerID string) {
+	if stripeCustomerID == "" {
+		// Guest sessions carry no provider customer: never save a demo card.
+		return
+	}
 	for _, method := range p.paymentMethods[stripeCustomerID] {
 		if method.ID == fakePaymentMethodID {
 			return

@@ -583,6 +583,7 @@ func adminRateLimitWebACL(stack awscdk.Stack, id string, name string, scope stri
 			adminRateLimitRule("AdminLoginPostRateLimit", 0, 100, loginPostStatement(), metricName+"LoginPost"),
 			adminRateLimitRule("AdminPathRateLimit", 1, 500, adminPathStatement(), metricName+"Path"),
 			adminRateLimitRule("CustomerAuthPostRateLimit", 2, 100, customerAuthPostStatement(), metricName+"CustomerAuthPost"),
+			adminRateLimitRule("CheckoutPlaceOrderRateLimit", 3, 100, checkoutPlaceOrderPostStatement(), metricName+"CheckoutPlaceOrderPost"),
 		},
 	})
 }
@@ -637,6 +638,21 @@ func customerAuthPostStatement() *awswafv2.CfnWebACL_StatementProperty {
 						},
 					},
 				},
+				byteMatchStatement(&awswafv2.CfnWebACL_FieldToMatchProperty{Method: map[string]any{}}, "POST", "EXACTLY"),
+			},
+		},
+	}
+}
+
+// checkoutPlaceOrderPostStatement rate-limits the one unauthenticated POST
+// that reserves stock. Guest checkout removes the account gate, so the edge
+// throttle takes its place; 100 place-order POSTs per 5 minutes per IP is far
+// beyond any human checkout cadence.
+func checkoutPlaceOrderPostStatement() *awswafv2.CfnWebACL_StatementProperty {
+	return &awswafv2.CfnWebACL_StatementProperty{
+		AndStatement: &awswafv2.CfnWebACL_AndStatementProperty{
+			Statements: []any{
+				urlDecodedPathStatement("/checkout/place-order", "EXACTLY"),
 				byteMatchStatement(&awswafv2.CfnWebACL_FieldToMatchProperty{Method: map[string]any{}}, "POST", "EXACTLY"),
 			},
 		},

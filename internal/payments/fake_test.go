@@ -157,6 +157,31 @@ func TestFakeProviderMarkSessionPaidSavesCard(t *testing.T) {
 	}
 }
 
+// TestFakeProviderGuestSessionNeverSavesCard pins the guest guard: a session
+// created without a Stripe customer must not key a demo card under "".
+func TestFakeProviderGuestSessionNeverSavesCard(t *testing.T) {
+	provider := NewFakeProvider()
+	input := testPaymentSessionInput("ord0000000000000000000000a")
+	input.CustomerID = ""
+	input.StripeCustomerID = ""
+	session, err := provider.CreatePaymentSession(context.Background(), input)
+	if err != nil {
+		t.Fatalf("CreatePaymentSession returned error: %v", err)
+	}
+
+	if _, err := provider.MarkSessionPaid(session.ID, true); err != nil {
+		t.Fatalf("MarkSessionPaid returned error: %v", err)
+	}
+
+	methods, err := provider.ListPaymentMethods(context.Background(), "")
+	if err != nil {
+		t.Fatalf("ListPaymentMethods returned error: %v", err)
+	}
+	if len(methods) != 0 {
+		t.Fatalf("methods = %#v, want none for guest sessions", methods)
+	}
+}
+
 func TestFakeProviderExpireSession(t *testing.T) {
 	provider := NewFakeProvider()
 	input := testPaymentSessionInput("ord0000000000000000000000a")

@@ -1125,3 +1125,113 @@ func TestLocalDemoHandlerRefundsEndToEnd(t *testing.T) {
 	}
 	assertVariantStock(t, catalogStore, testOrderVariantStock+testOrderLineQuantity)
 }
+
+// adminGuestTestOrder is the adminTestOrder fixture with the guest marker:
+// CustomerID == "" and a guest contact email.
+func adminGuestTestOrder(id string, status commerce.OrderStatus, createdAt time.Time) commerce.Order {
+	order := adminTestOrder(id, status, createdAt)
+	order.CustomerID = ""
+	order.Email = "guest@example.test"
+	return order
+}
+
+// TestAdminGuestOrderLifecycle pins that customer-less orders ride the full
+// refund-era admin lifecycle: list + detail render (with the guest markers),
+// pending cancel releases stock, paid cancel is refused toward Refund, the
+// fulfillment chain works, and a paid guest refund settles end-to-end with the
+// stock released. Flat test on purpose: authenticated admin requests must not
+// run inside t.Run subtests (the test password derives from t.Name()).
+func TestAdminGuestOrderLifecycle(t *testing.T) {
+	handler, commerceStore, catalogStore, currentTime := newOrdersTestHandler(t)
+	handler.payments = payments.NewFakeProvider()
+
+	pendingGuest := createTestOrder(t, commerceStore, adminGuestTestOrder(testOrderID(1), commerce.OrderStatusPendingPayment, currentTime.Add(-3*time.Minute)))
+	fulfillGuest := createTestOrder(t, commerceStore, adminGuestTestOrder(testOrderID(2), commerce.OrderStatusPaid, currentTime.Add(-2*time.Minute)))
+	refundGuest := createTestOrder(t, commerceStore, adminGuestTestOrder(testOrderID(3), commerce.OrderStatusPaid, currentTime.Add(-1*time.Minute)))
+
+	// List: guest rows render the email plus the Guest suffix.
+	list := authenticatedProductGet(t, handler, "/admin/orders")
+	if list.StatusCode != http.StatusOK {
+		t.Fatalf("list status = %d, want %d", list.StatusCode, http.StatusOK)
+	}
+	if got := strings.Count(list.Body, `data-testid="admin-order-row"`); got != 3 {
+		t.Fatalf("admin-order-row count = %d, want 3", got)
+	}
+	if !strings.Contains(list.Body, "guest@example.test") {
+		t.Fatalf("list body missing the guest email")
+	}
+	if got := strings.Count(list.Body, "· Guest"); got != 3 {
+		t.Fatalf("list Guest suffix count = %d, want 3", got)
+	}
+
+	// Detail: guest chip next to the status chip.
+	detail := authenticatedProductGet(t, handler, "/admin/orders/"+pendingGuest.ID)
+	if detail.StatusCode != http.StatusOK {
+		t.Fatalf("detail status = %d, want %d", detail.StatusCode, http.StatusOK)
+	}
+	for _, want := range []string{`data-testid="admin-order-guest"`, "Guest checkout", "guest@example.test"} {
+		if !strings.Contains(detail.Body, want) {
+			t.Fatalf("detail body missing %q", want)
+		}
+	}
+
+	// Pending cancel releases the reservation.
+	cancel := authenticatedProductPost(t, handler, "/admin/orders/"+pendingGuest.ID+"/cancel", url.Values{})
+	if cancel.StatusCode != http.StatusSeeOther || cancel.Headers["Location"] != "/admin/orders/"+pendingGuest.ID+"?saved=canceled" {
+		t.Fatalf("pending cancel = %d %q, want 303 saved=canceled", cancel.StatusCode, cancel.Headers["Location"])
+	}
+	if got := getTestOrder(t, commerceStore, pendingGuest.ID).Status; got != commerce.OrderStatusCanceled {
+		t.Fatalf("pending guest order status = %q, want canceled", got)
+	}
+	assertVariantStock(t, catalogStore, testOrderVariantStock+testOrderLineQuantity)
+
+	// Paid cancel is refused toward the Refund action.
+	paidCancel := authenticatedProductPost(t, handler, "/admin/orders/"+fulfillGuest.ID+"/cancel", url.Values{})
+	if paidCancel.StatusCode != http.StatusConflict {
+		t.Fatalf("paid cancel status = %d, want %d", paidCancel.StatusCode, http.StatusConflict)
+	}
+	if !strings.Contains(paidCancel.Body, "Only pending orders can be canceled. Refund paid orders instead.") {
+		t.Fatalf("paid cancel body missing the refund-instead guidance: %q", paidCancel.Body)
+	}
+
+	// Fulfillment chain: tracking ships, advance delivers.
+	tracking := authenticatedProductPost(t, handler, "/admin/orders/"+fulfillGuest.ID+"/tracking", url.Values{
+		"carrier":         {"Thailand Post"},
+		"tracking_number": {"TH1234567890"},
+	})
+	if tracking.StatusCode != http.StatusSeeOther || tracking.Headers["Location"] != "/admin/orders/"+fulfillGuest.ID+"?saved=shipped" {
+		t.Fatalf("tracking = %d %q, want 303 saved=shipped", tracking.StatusCode, tracking.Headers["Location"])
+	}
+	if got := getTestOrder(t, commerceStore, fulfillGuest.ID).Status; got != commerce.OrderStatusShipped {
+		t.Fatalf("guest order status = %q, want shipped", got)
+	}
+	advance := authenticatedProductPost(t, handler, "/admin/orders/"+fulfillGuest.ID+"/advance", url.Values{"to_status": {"delivered"}})
+	if advance.StatusCode != http.StatusSeeOther {
+		t.Fatalf("advance status = %d, want %d", advance.StatusCode, http.StatusSeeOther)
+	}
+	if got := getTestOrder(t, commerceStore, fulfillGuest.ID).Status; got != commerce.OrderStatusDelivered {
+		t.Fatalf("guest order status = %q, want delivered", got)
+	}
+
+	// Refund of a paid guest order settles end-to-end through the shared fake
+	// provider; stock comes back because the order never shipped.
+	refund := authenticatedProductPost(t, handler, "/admin/orders/"+refundGuest.ID+"/refund", url.Values{})
+	if refund.StatusCode != http.StatusSeeOther || refund.Headers["Location"] != "/admin/orders/"+refundGuest.ID+"?saved=refunded" {
+		t.Fatalf("refund = %d %q, want 303 saved=refunded", refund.StatusCode, refund.Headers["Location"])
+	}
+	refunded := getTestOrder(t, commerceStore, refundGuest.ID)
+	if refunded.Status != commerce.OrderStatusRefunded {
+		t.Fatalf("refunded guest order status = %q, want refunded", refunded.Status)
+	}
+	if refunded.StripeRefundID != "re_fake_"+refundGuest.ID+"_1" {
+		t.Fatalf("refund id = %q, want the fake provider refund", refunded.StripeRefundID)
+	}
+	assertVariantStock(t, catalogStore, testOrderVariantStock+2*testOrderLineQuantity)
+
+	refundedDetail := authenticatedProductGet(t, handler, "/admin/orders/"+refundGuest.ID+"?saved=refunded")
+	for _, want := range []string{"Refund issued and confirmed.", `data-testid="admin-order-guest"`, ">Refunded</span>"} {
+		if !strings.Contains(refundedDetail.Body, want) {
+			t.Fatalf("refunded detail body missing %q", want)
+		}
+	}
+}

@@ -650,6 +650,25 @@ func TestCartAndCheckoutRenderNoindexRobots(t *testing.T) {
 		`<meta name="robots" content="noindex, follow">`,
 		`<link rel="canonical" href="` + canonicalHost + `/checkout">`,
 	})
+
+	// The anonymous guest checkout render carries the same headers.
+	guestRequest := pageRequest(http.MethodGet, "/checkout")
+	guestRequest.Cookies = []string{cart.CookieName + "=" + encodedTestCart(t, []cart.Line{{Slug: "mango-sticky-rice-kit", Quantity: 1}})}
+	guestEnv := newAccountTestEnv(t)
+	guestResponse, err := guestEnv.handler.Handle(context.Background(), guestRequest)
+	if err != nil {
+		t.Fatalf("Handle guest checkout returned error: %v", err)
+	}
+	if guestResponse.StatusCode != http.StatusOK {
+		t.Fatalf("guest checkout status code = %d, want %d", guestResponse.StatusCode, http.StatusOK)
+	}
+	if got := guestResponse.Headers["X-Robots-Tag"]; got != "noindex, follow" {
+		t.Fatalf("guest checkout X-Robots-Tag = %q, want noindex, follow", got)
+	}
+	if got := guestResponse.Headers["Cache-Control"]; got != privatePageCacheControl {
+		t.Fatalf("guest checkout Cache-Control = %q, want %q", got, privatePageCacheControl)
+	}
+	assertBodyContains(t, guestResponse.Body, []string{`data-testid="guest-checkout-form"`})
 }
 
 // addToTestCart drives the real POST /cart/items mutation so signed-in tests
@@ -1851,14 +1870,13 @@ func TestHeaderCartLinkLabelCountsCookieLinesWithoutValidatingProducts(t *testin
 func TestCartBearingPagesReuseNormalizedRequestCart(t *testing.T) {
 	t.Setenv(cart.EnvCookieSecret, ssrTestCartSecret)
 
-	// The anonymous checkout request 303s to sign-in, but its cart guard
-	// still normalizes the cart exactly once first.
+	// The anonymous checkout request renders the guest layout, and its cart
+	// guard still normalizes the cart exactly once first.
 	tests := []struct {
-		path       string
-		statusCode int
+		path string
 	}{
-		{path: "/cart", statusCode: http.StatusOK},
-		{path: "/checkout", statusCode: http.StatusSeeOther},
+		{path: "/cart"},
+		{path: "/checkout"},
 	}
 	for _, test := range tests {
 		t.Run(test.path, func(t *testing.T) {
@@ -1870,14 +1888,15 @@ func TestCartBearingPagesReuseNormalizedRequestCart(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Handle returned error: %v", err)
 			}
-			if response.StatusCode != test.statusCode {
-				t.Fatalf("status code = %d, want %d", response.StatusCode, test.statusCode)
+			if response.StatusCode != http.StatusOK {
+				t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
 			}
 			if got := store.productLookupCount("mango-sticky-rice-kit"); got != 1 {
 				t.Fatalf("GetProductBySlug lookups for mango-sticky-rice-kit = %d, want 1", got)
 			}
-			if test.statusCode == http.StatusOK {
-				assertBodyContains(t, response.Body, []string{`Cart (2)`, `Mango Sticky Rice Treats`})
+			assertBodyContains(t, response.Body, []string{`Cart (2)`, `Mango Sticky Rice Treats`})
+			if test.path == "/checkout" {
+				assertBodyContains(t, response.Body, []string{`data-testid="guest-checkout-form"`})
 			}
 		})
 	}
@@ -4309,8 +4328,8 @@ func TestSignUpCreatesAccountSessionAndCookies(t *testing.T) {
 	if got := response.Headers["Cache-Control"]; got != privatePageCacheControl {
 		t.Fatalf("Cache-Control = %q, want %q", got, privatePageCacheControl)
 	}
-	if len(response.Cookies) != 4 {
-		t.Fatalf("cookies = %#v, want session, csrf, guest clear, cart mirror", response.Cookies)
+	if len(response.Cookies) != 5 {
+		t.Fatalf("cookies = %#v, want session, csrf, guest clear, guest order clear, cart mirror", response.Cookies)
 	}
 	sessionCookie := rawSetCookie(t, response, commerce.SessionCookieName)
 	for _, want := range []string{"Path=/", "Max-Age=2592000", "HttpOnly", "Secure", "SameSite=Lax"} {
@@ -4323,6 +4342,9 @@ func TestSignUpCreatesAccountSessionAndCookies(t *testing.T) {
 	}
 	if guestClear := rawSetCookie(t, response, commerce.GuestCSRFCookieName); !strings.Contains(guestClear, "Max-Age=0") {
 		t.Fatalf("guest csrf cookie = %q, want clearing", guestClear)
+	}
+	if guestOrderClear := rawSetCookie(t, response, commerce.GuestOrderCookieName); !strings.Contains(guestOrderClear, "Max-Age=0") {
+		t.Fatalf("guest order pointer cookie = %q, want clearing", guestOrderClear)
 	}
 	if cartMirror := rawSetCookie(t, response, cart.CookieName); !strings.Contains(cartMirror, "Max-Age=0") {
 		t.Fatalf("cart mirror = %q, want clearing for an empty cart", cartMirror)
@@ -4347,6 +4369,22 @@ func TestSignUpCreatesAccountSessionAndCookies(t *testing.T) {
 		t.Fatalf("/account status = %d, want %d", accountResponse.StatusCode, http.StatusOK)
 	}
 	assertBodyContains(t, accountResponse.Body, []string{"Shopper@Example.com", `action="/account/sign-out"`, `action="/account/password"`})
+}
+
+// TestGuestPointerCookieClearedOnSignIn pins the finishCustomerAuth tail: a
+// guest-order pointer is meaningless once signed in, so both sign-in and
+// sign-up responses clear it (any stranded guest pending order self-heals via
+// the 30-minute expiry webhook).
+func TestGuestPointerCookieClearedOnSignIn(t *testing.T) {
+	env := newAccountTestEnv(t)
+	signUpJar := testCookieJar{}
+	signUpTestCustomer(t, env.handler, signUpJar, "shopper@example.com", "orchid-market-99")
+
+	jar := testCookieJar{}
+	response := signInTestCustomer(t, env.handler, jar, "shopper@example.com", "orchid-market-99")
+	if guestOrderClear := rawSetCookie(t, response, commerce.GuestOrderCookieName); !strings.Contains(guestOrderClear, "Max-Age=0") {
+		t.Fatalf("guest order pointer cookie = %q, want clearing on sign-in", guestOrderClear)
+	}
 }
 
 // transientConflictCommerceStore fails CreateCustomer with the retryable

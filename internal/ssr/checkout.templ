@@ -26,7 +26,41 @@ templ checkoutPage(vm checkoutPageViewModel) {
 					if vm.ErrorMessage != "" {
 						<p role="alert" data-testid="checkout-error" class="mb-8 border-l-4 border-flag-red bg-flag-red/10 px-4 py-3 text-sm font-semibold text-flag-red">{ vm.ErrorMessage }</p>
 					}
-					if len(vm.Addresses) == 0 {
+					if vm.Guest {
+						<form method="post" action="/checkout/place-order" data-testid="guest-checkout-form">
+							<input type="hidden" name="guest_csrf_token" value={ vm.CSRFToken }/>
+							<div class="grid gap-8 lg:grid-cols-[1fr_22rem] lg:items-start">
+								<div class="grid gap-8">
+									<section aria-label="Contact" class="border-2 border-ink bg-paper">
+										@flagBand("h-1.5")
+										<div class="p-6">
+											<p class="text-xs font-semibold uppercase tracking-eyebrow text-flag-red">Contact</p>
+											<h2 class="mt-2 font-display text-2xl font-bold tracking-tight text-flag-blue">Where should the receipt go?</h2>
+											<p class="mt-3 text-sm leading-6 text-muted">Check out as a guest — no account needed. Stripe emails your receipt here.</p>
+											<label class="mt-5 grid gap-2 text-xs font-medium text-muted">
+												Email
+												<input type="email" name="email" value={ vm.GuestEmail } autocomplete="email" required data-testid="guest-email-input" class="h-12 border border-flag-blue/25 bg-flag-white px-4 text-base font-medium text-ink transition focus:border-flag-blue focus:bg-paper"/>
+											</label>
+											<p class="mt-4 text-sm leading-6 text-muted">Have an account? <a href="/account/sign-in?return_to=%2Fcheckout" data-testid="checkout-sign-in-link" class="font-bold text-flag-red transition hover:text-flag-red-deep hover:underline hover:underline-offset-4">Sign in</a></p>
+										</div>
+									</section>
+									<section aria-label="Shipping address" class="border-2 border-ink bg-paper">
+										@flagBand("h-1.5")
+										<div class="p-6">
+											<p class="text-xs font-semibold uppercase tracking-eyebrow text-flag-red">Shipping address</p>
+											<h2 class="mt-2 font-display text-2xl font-bold tracking-tight text-flag-blue">Where is this order going?</h2>
+											<p class="mt-3 text-sm leading-6 text-muted">US addresses only while we launch.</p>
+											<div class="mt-5 grid gap-4">
+												@addressFormFields(vm.AddressForm)
+											</div>
+										</div>
+									</section>
+									@checkoutItemsSection(vm)
+								</div>
+								@checkoutSummaryAside(vm, true)
+							</div>
+						</form>
+					} else if len(vm.Addresses) == 0 {
 						<div class="grid gap-8 lg:grid-cols-[1fr_22rem] lg:items-start">
 							<div class="grid gap-8">
 								<section aria-label="Shipping address" class="border-2 border-ink bg-paper">

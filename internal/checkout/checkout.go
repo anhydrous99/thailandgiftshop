@@ -154,7 +154,11 @@ type Service struct {
 // (plus its ID for fingerprinting), the normalized, priced order lines, and
 // the customer's current server cart record.
 type PlaceOrderInput struct {
-	Customer  commerce.Customer
+	Customer commerce.Customer
+	// Guest marks a checkout without an account: Customer must be the zero
+	// value, Email is required, and the cart pointer in Cart comes from the
+	// signed guest-order cookie instead of a server CART row.
+	Guest     bool
 	Email     string
 	AddressID string
 	Address   commerce.OrderAddress
@@ -168,7 +172,14 @@ type PlaceOrderInput struct {
 // with compensation on provider failure, the session-id patch, and the cart
 // pointer update. It returns the URL the shopper should be redirected to.
 func (s *Service) PlaceOrder(ctx context.Context, input PlaceOrderInput) (string, commerce.Order, error) {
-	if input.Customer.ID == "" {
+	if input.Guest {
+		if input.Customer.ID != "" {
+			return "", commerce.Order{}, errors.New("checkout: guest place order must not carry a customer")
+		}
+		if strings.TrimSpace(input.Email) == "" {
+			return "", commerce.Order{}, errors.New("checkout: guest place order requires an email")
+		}
+	} else if input.Customer.ID == "" {
 		return "", commerce.Order{}, errors.New("checkout: place order requires a customer")
 	}
 	if len(input.Lines) == 0 {
@@ -179,9 +190,11 @@ func (s *Service) PlaceOrder(ctx context.Context, input PlaceOrderInput) (string
 	cartRecord := input.Cart
 	cartRecord.CustomerID = input.Customer.ID
 
-	// Step 2: idempotent re-entry via the cart's pending-order pointer.
+	// Step 2: idempotent re-entry via the cart's pending-order pointer. The
+	// owner is the customer ID — "" for guests, so a pointer can only ever
+	// resume an order of the requester's own class.
 	if cartRecord.PendingOrderID != "" {
-		redirectURL, pending, done, err := s.resumePendingOrder(ctx, cartRecord.PendingOrderID, fingerprint)
+		redirectURL, pending, done, err := s.resumePendingOrder(ctx, cartRecord.PendingOrderID, fingerprint, input.Customer.ID)
 		if err != nil {
 			return "", commerce.Order{}, err
 		}
@@ -231,9 +244,11 @@ func (s *Service) PlaceOrder(ctx context.Context, input PlaceOrderInput) (string
 	}
 
 	// Step 5: lazy provider-customer creation; a SetStripeCustomerID race is
-	// resolved by adopting whatever ID won the conditional write.
+	// resolved by adopting whatever ID won the conditional write. Guests have
+	// no customer row to hang a provider customer off, so the step is skipped
+	// entirely (the provider locks the hosted page's email instead, §5.1).
 	stripeCustomerID := input.Customer.StripeCustomerID
-	if stripeCustomerID == "" {
+	if !input.Guest && stripeCustomerID == "" {
 		providerCustomerID, err := s.Payments.EnsureCustomer(ctx, input.Customer.ID, input.Email)
 		if err != nil {
 			s.compensatePlaceOrder(ctx, created, "ensure provider customer failed")
@@ -286,22 +301,28 @@ func (s *Service) PlaceOrder(ctx context.Context, input PlaceOrderInput) (string
 
 	// Step 8: point the cart at the pending order. The cart lines are NOT
 	// cleared; a canceled payment returns the shopper to an intact cart.
-	concurrentOrderID, err := s.pointCartAtOrder(ctx, cartRecord, patched.ID, fingerprint)
-	if err != nil {
-		s.compensatePlaceOrder(ctx, patched, "cart pending pointer update failed")
-		s.recordCheckoutPayment(outcomePaymentError)
-		return "", commerce.Order{}, err
-	}
-	if concurrentOrderID != "" {
-		// A concurrent place-order won the cart pointer: re-entry semantics.
-		// This request's fresh order is canceled (session expired, stock
-		// released) and the shopper is sent to the winner's session.
-		redirectURL, winner, err := s.adoptConcurrentPendingOrder(ctx, concurrentOrderID, patched)
+	// Guests have no server CART row: their pointer lives in the signed
+	// guest-order cookie the ssr layer persists from the returned order
+	// (best-effort, last-write-wins per browser; a stranded loser order is
+	// cleaned up by the 30-minute session-expired webhook).
+	if !input.Guest {
+		concurrentOrderID, err := s.pointCartAtOrder(ctx, cartRecord, patched.ID, fingerprint)
 		if err != nil {
+			s.compensatePlaceOrder(ctx, patched, "cart pending pointer update failed")
 			s.recordCheckoutPayment(outcomePaymentError)
 			return "", commerce.Order{}, err
 		}
-		return redirectURL, winner, nil
+		if concurrentOrderID != "" {
+			// A concurrent place-order won the cart pointer: re-entry semantics.
+			// This request's fresh order is canceled (session expired, stock
+			// released) and the shopper is sent to the winner's session.
+			redirectURL, winner, err := s.adoptConcurrentPendingOrder(ctx, concurrentOrderID, patched)
+			if err != nil {
+				s.recordCheckoutPayment(outcomePaymentError)
+				return "", commerce.Order{}, err
+			}
+			return redirectURL, winner, nil
+		}
 	}
 
 	return paymentSession.URL, patched, nil
@@ -311,13 +332,20 @@ func (s *Service) PlaceOrder(ctx context.Context, input PlaceOrderInput) (string
 // PlaceOrder should stop and return redirectURL/order as-is; done=false means
 // the pointer was stale (the order was canceled and its stock released where
 // applicable) and a fresh order should be placed.
-func (s *Service) resumePendingOrder(ctx context.Context, pendingOrderID string, fingerprint string) (string, commerce.Order, bool, error) {
+func (s *Service) resumePendingOrder(ctx context.Context, pendingOrderID string, fingerprint string, ownerCustomerID string) (string, commerce.Order, bool, error) {
 	pending, found, err := s.Commerce.GetOrder(ctx, pendingOrderID)
 	if err != nil {
 		s.recordCheckoutPayment(outcomePaymentError)
 		return "", commerce.Order{}, false, err
 	}
 	if !found {
+		return "", commerce.Order{}, false, nil
+	}
+	if pending.CustomerID != ownerCustomerID {
+		// A pointer that names someone else's order is stale/foreign: never
+		// resume it and never cancel it — place a fresh order. Guest pointers
+		// (owner "") can therefore only ever touch guest orders, and customer
+		// pointers only their own.
 		return "", commerce.Order{}, false, nil
 	}
 
@@ -1331,11 +1359,36 @@ func (s *Service) Fingerprint(lines []commerce.OrderLine, addressID string) stri
 	return hex.EncodeToString(digest[:])
 }
 
+// GuestAddressID returns the deterministic fingerprint surrogate for a guest
+// checkout: guests have no saved-address ID, so the address content plus the
+// contact email keys the cart fingerprint. Same address+email ⇒ same ID
+// (idempotent re-entry); any field change — including an email correction —
+// ⇒ new fingerprint, exactly like switching saved addresses. The email must
+// be in the surrogate because it is stamped once at CreateOrder and locked on
+// hosted Checkout via customer_email; excluding it would make an email
+// correction on resubmit silently resume the original session with the
+// typo'd, unfixable email. The "guest-" prefix can never collide with real
+// address IDs (26-char [a-z0-9] values).
+func GuestAddressID(address commerce.OrderAddress, email string) string {
+	digest := sha256.Sum256([]byte(strings.Join([]string{
+		"guest-address",
+		address.FullName, address.Line1, address.Line2, address.City,
+		address.Region, address.PostalCode, address.Country, address.Phone,
+		strings.ToLower(strings.TrimSpace(email)),
+	}, "\n")))
+	return "guest-" + hex.EncodeToString(digest[:])
+}
+
 // clearCartAfterPayment empties the server cart and clears its pending
 // pointer once payment succeeded. The pointer guard keeps a late replay from
 // clobbering a cart that a newer checkout already owns; version conflicts are
 // re-read and retried because the operation is idempotent.
 func (s *Service) clearCartAfterPayment(ctx context.Context, order commerce.Order) error {
+	if order.CustomerID == "" {
+		// Guest orders have no server cart; the cookie cart is cleared by the
+		// ssr confirm redirect.
+		return nil
+	}
 	for attempt := 0; attempt < cartUpdateAttempts; attempt++ {
 		record, found, err := s.Commerce.GetCart(ctx, order.CustomerID)
 		if err != nil {

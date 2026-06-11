@@ -17,9 +17,10 @@ const (
 	EnvOrdersIndexName         = "COMMERCE_ORDERS_INDEX_NAME"
 	EnvSessionSecret           = "CUSTOMER_SESSION_SECRET"
 
-	SessionCookieName   = "__Host-tgs_customer"
-	CSRFCookieName      = "__Host-tgs_customer_csrf"
-	GuestCSRFCookieName = "__Host-tgs_guest_csrf"
+	SessionCookieName    = "__Host-tgs_customer"
+	CSRFCookieName       = "__Host-tgs_customer_csrf"
+	GuestCSRFCookieName  = "__Host-tgs_guest_csrf"
+	GuestOrderCookieName = "__Host-tgs_guest_order"
 
 	DefaultCustomerOrdersIndexName = "customer-orders-index"
 	DefaultOrdersIndexName         = "orders-index"
@@ -391,9 +392,13 @@ type Store interface {
 	GetOrder(ctx context.Context, orderID string) (Order, bool, error)
 	// ListOrdersByCustomer returns one newest-first page of the customer's
 	// orders, resuming after cursor. limit <= 0 returns the full listing.
+	// customerID == "" (guest marker) always returns an empty page: guest
+	// orders are sparse in gsi1 and must never be listable as a
+	// pseudo-customer.
 	ListOrdersByCustomer(ctx context.Context, customerID string, limit int, cursor OrderCursor) (OrderPage, error)
-	// ListOrders returns one newest-first page of all orders (admin order desk),
-	// resuming after cursor. limit <= 0 returns the full listing.
+	// ListOrders returns one newest-first page of all orders (admin order
+	// desk, gsi2 — includes guest orders), resuming after cursor. limit <= 0
+	// returns the full listing.
 	ListOrders(ctx context.Context, limit int, cursor OrderCursor) (OrderPage, error)
 	TransitionOrder(ctx context.Context, orderID string, from OrderStatus, to OrderStatus, patch OrderPatch) (Order, error)
 	PatchOrder(ctx context.Context, orderID string, expectedStatus OrderStatus, expectedVersion int, patch OrderPatch) (Order, error)

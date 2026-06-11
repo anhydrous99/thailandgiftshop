@@ -345,6 +345,11 @@ func (s *MemoryStore) GetOrder(ctx context.Context, orderID string) (Order, bool
 }
 
 func (s *MemoryStore) ListOrdersByCustomer(ctx context.Context, customerID string, limit int, cursor OrderCursor) (OrderPage, error) {
+	if customerID == "" {
+		// Guest marker: without this guard the filter below would match every
+		// guest order ("" == ""), turning guests into a pseudo-customer.
+		return OrderPage{}, nil
+	}
 	_ = ctx
 	s.mu.Lock()
 	defer s.mu.Unlock()
