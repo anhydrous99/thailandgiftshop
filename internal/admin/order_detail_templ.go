@@ -829,7 +829,7 @@ func adminOrderDetailPage(vm adminOrderDetailViewModel) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 85, "\" class=\"h-11 border border-flag-blue/25 bg-paper px-4 text-sm font-medium text-ink transition focus:border-flag-blue\"></label> <button data-testid=\"admin-order-tracking-button\" type=\"submit\" class=\"inline-flex h-11 items-center justify-center bg-flag-red px-5 text-sm font-bold text-white transition hover:bg-flag-red-deep\">Save tracking and mark shipped</button></form>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 85, "\" class=\"h-11 border border-flag-blue/25 bg-paper px-4 text-sm font-medium text-ink transition focus:border-flag-blue\"></label> <button data-testid=\"admin-order-tracking-button\" type=\"submit\" class=\"inline-flex h-11 items-center justify-center bg-flag-red px-5 text-sm font-bold text-white transition hover:bg-flag-red-deep\">Save tracking</button></form>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

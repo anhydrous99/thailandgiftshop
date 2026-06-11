@@ -155,7 +155,7 @@ templ adminOrderDetailPage(vm adminOrderDetailViewModel) {
 												<input type="hidden" name="csrf_token" value={ vm.CSRFValue }/>
 												<label class="grid gap-2 text-xs font-medium text-muted">Carrier <input data-testid="admin-order-carrier-input" name="carrier" value={ vm.Order.TrackingCarrier } class="h-11 border border-flag-blue/25 bg-paper px-4 text-sm font-medium text-ink transition focus:border-flag-blue"/></label>
 												<label class="grid gap-2 text-xs font-medium text-muted">Tracking number <input data-testid="admin-order-tracking-input" name="tracking_number" value={ vm.Order.TrackingNumber } class="h-11 border border-flag-blue/25 bg-paper px-4 text-sm font-medium text-ink transition focus:border-flag-blue"/></label>
-												<button data-testid="admin-order-tracking-button" type="submit" class="inline-flex h-11 items-center justify-center bg-flag-red px-5 text-sm font-bold text-white transition hover:bg-flag-red-deep">Save tracking and mark shipped</button>
+												<button data-testid="admin-order-tracking-button" type="submit" class="inline-flex h-11 items-center justify-center bg-flag-red px-5 text-sm font-bold text-white transition hover:bg-flag-red-deep">Save tracking</button>
 											</form>
 										}
 										if vm.ShowRefundForm {
