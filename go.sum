@@ -28,6 +28,8 @@ github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.29 h1:RdwIf/CuUsvJX3RgJa
 github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.29/go.mod h1:71wt8W2EgswdZy9Mf9KNnzxZ3TiZlv4caKghPktDOkA=
 github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.29 h1:VkE9FuzTQVjBBrnj4+oCdxCLFIz7aqLYKUCjtvxVcOs=
 github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.29/go.mod h1:H32Z2Qth9b+9LqjyBsCnozMQ8H2N7YBUDVXwbs0iggg=
+github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.30 h1:VTGy885W5DKBxWRUJbym9hytNaYzsyaPkCHGRRMAOhU=
+github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.30/go.mod h1:AS0HycUvJRFvTt613AYDOgO2jzw+00cVSMny8XB3yMY=
 github.com/aws/aws-sdk-go-v2/service/dynamodb v1.58.0 h1:kiOMESAm6XdbFFWixSU6nbprLZMibYK1DkjWNqYse0I=
 github.com/aws/aws-sdk-go-v2/service/dynamodb v1.58.0/go.mod h1:oA69sd8xL8Bd2yDI18eaeMQ55UKqfR88cXgHxjbNKQk=
 github.com/aws/aws-sdk-go-v2/service/dynamodbstreams v1.32.21 h1:1D3C4VwwdttYJHU+n0qZxjp+4+m6XDt7xkad/5TjCoQ=
@@ -46,6 +48,8 @@ github.com/aws/aws-sdk-go-v2/service/s3 v1.103.2 h1:b4ikkRk22T4xYkEgaWc3Voe+3xbt
 github.com/aws/aws-sdk-go-v2/service/s3 v1.103.2/go.mod h1:Gp7eHZ0NZ8ZK5RXpoIUp/C8OeAmJqpCgdwEK1D/QOek=
 github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.42.3 h1:L9gPLf3sFH1/ao3oB2QZcaX1xGYi8hj+WJlsf3/dN+M=
 github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.42.3/go.mod h1:9DKRlwDCw2OUDlyCIFcQCroL5M0mQTUU9qW8JEDcXmI=
+github.com/aws/aws-sdk-go-v2/service/sesv2 v1.62.4 h1:E+hfJiJ/ZAx5SmnpDIejKpgqpd0TqoWqcmBGmLhe7PU=
+github.com/aws/aws-sdk-go-v2/service/sesv2 v1.62.4/go.mod h1:pPfcguG4y24CV1iQeejOJ8MRkTMFqHtxc8/Lmklv4gY=
 github.com/aws/aws-sdk-go-v2/service/signin v1.1.4 h1:YcpVyIPLCbiypN6KSphijN5fC7DDjX114SqA7prnnxg=
 github.com/aws/aws-sdk-go-v2/service/signin v1.1.4/go.mod h1:5ZICS++oFTRPfa1GsBqFDWX/8WamZ/QQOcCzIuU/zLw=
 github.com/aws/aws-sdk-go-v2/service/sso v1.31.2 h1:ySNWu7TPmj5fKFIa1GYvX+Ddxd5ccruqC20aMNuyWDM=
