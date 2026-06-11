@@ -72,7 +72,7 @@ export ADMIN_PASSWORD_HASH=<bcrypt-hash>
 export ADMIN_SESSION_SECRET=<session-secret>
 ```
 
-Create the bcrypt hash and session secret outside the repository, then keep the real values in your shell, local secret manager, or CI secret store. Do not commit a plaintext admin password, generated bcrypt hash, or generated session secret. Local and dev code reads `ADMIN_PASSWORD_HASH` and `ADMIN_SESSION_SECRET` as a fallback; production reads `ADMIN_CREDENTIALS_SECRET_JSON` from the Lambda environment.
+Create the bcrypt hash and session secret outside the repository, then keep the real values in your shell, local secret manager, or CI secret store. Do not commit a plaintext admin password, generated bcrypt hash, or generated session secret. Local and dev code reads `ADMIN_PASSWORD_HASH` and `ADMIN_SESSION_SECRET` as a fallback; production loads the `thailandgiftshop/admin/credentials` secret at runtime from the name in `ADMIN_CREDENTIALS_SECRET_NAME` (an inline `ADMIN_CREDENTIALS_SECRET_JSON` blob is still honored ahead of it for local overrides).
 
 Leave `ADMIN_ORIGIN_HEADER_SECRET` unset for local direct `/admin` work. In production, CDK generates this secret, configures CloudFront to send it as `X-TGS-Origin-Secret`, and configures the admin Lambda to reject `/admin` requests that do not include the matching header.
 
@@ -199,7 +199,7 @@ aws secretsmanager put-secret-value \
   --secret-string file:///tmp/thailandgiftshop-admin-secret.json
 ```
 
-The CDK stack imports that name and passes the secret string to the admin Lambda through the `ADMIN_CREDENTIALS_SECRET_JSON` dynamic reference.
+The CDK stack passes the secret's name to the admin Lambda as `ADMIN_CREDENTIALS_SECRET_NAME` and grants it read access; the Lambda fetches the JSON from Secrets Manager at runtime and caches it briefly, so a rotation takes effect within a few minutes without a redeploy. (It is not injected via a deploy-time `ADMIN_CREDENTIALS_SECRET_JSON` dynamic reference, which would require a redeploy to pick up a rotation.)
 
 The stack also creates a DynamoDB table for admin login attempts and passes its generated name to the admin Lambda as `ADMIN_LOGIN_ATTEMPTS_TABLE_NAME`. Failed admin logins are tracked per client, locked after 8 failures in 15 minutes, and receive a generic `429` with `Retry-After` during the 15-minute lockout.
 

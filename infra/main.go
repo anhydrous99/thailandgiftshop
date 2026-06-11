@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"strings"
 
 	adminauth "github.com/anhydrous99/thailandgiftshop/internal/admin"
 	appenv "github.com/anhydrous99/thailandgiftshop/internal/appenv"
@@ -337,6 +338,9 @@ func addAdminLoginAttempts(stack awscdk.Stack) awsdynamodb.Table {
 			Name: jsii.String(adminLoginAttemptsPKName),
 			Type: awsdynamodb.AttributeType_STRING,
 		},
+		PointInTimeRecoverySpecification: &awsdynamodb.PointInTimeRecoverySpecification{
+			PointInTimeRecoveryEnabled: jsii.Bool(true),
+		},
 		RemovalPolicy:       awscdk.RemovalPolicy_DESTROY,
 		TimeToLiveAttribute: jsii.String(adminLoginAttemptsTTLName),
 	})
@@ -486,7 +490,7 @@ func addAdmin(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable
 			adminauth.EnvProductImagesKeyPrefix:      jsii.String(productImagesKeyPrefix),
 			catalog.EnvProductImagePlaceholderURL:    jsii.String(catalog.DefaultProductImagePlaceholderURL),
 			appenv.EnvAppEnvironment:                 jsii.String(appenv.EnvironmentProduction),
-			adminauth.EnvAdminCredentialsSecretJSON:  adminCredentialsSecretReference(adminCredentialsSecret(stack)),
+			adminauth.EnvAdminCredentialsSecretName:  jsii.String(adminCredentialsSecretName),
 			adminauth.EnvAdminLoginAttemptsTableName: adminLoginAttemptsTable.TableName(),
 			adminauth.EnvAdminOriginHeaderSecret:     adminOriginHeaderSecretReference(adminOriginHeaderSecret),
 			commerce.EnvTableName:                    commerceTable.TableName(),
@@ -516,6 +520,10 @@ func addAdmin(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable
 	}))
 	commerceTable.GrantReadWriteData(adminFunction)
 	stripeSecret.GrantRead(adminFunction, nil)
+	// The admin Lambda reads its credentials JSON from Secrets Manager at
+	// runtime (not a deploy-time dynamic reference), so a rotation takes effect
+	// without redeploying.
+	adminCredentialsSecret(stack).GrantRead(adminFunction, nil)
 	adminFunction.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
 		Actions: &[]*string{
 			jsii.String("dynamodb:TransactWriteItems"),
@@ -559,13 +567,6 @@ func adminCredentialsSecret(stack awscdk.Stack) awssecretsmanager.ISecret {
 	return awssecretsmanager.Secret_FromSecretNameV2(stack, jsii.String("AdminCredentialsSecret"), jsii.String(adminCredentialsSecretName))
 }
 
-func adminCredentialsSecretReference(secret awssecretsmanager.ISecret) *string {
-	return awscdk.NewCfnDynamicReference(
-		awscdk.CfnDynamicReferenceService_SECRETS_MANAGER,
-		secret.CfnDynamicReferenceKey(nil),
-	).ToString()
-}
-
 func addAdminCloudFrontWebACL(stack awscdk.Stack) awswafv2.CfnWebACL {
 	return adminRateLimitWebACL(stack, "AdminCloudFrontWebACL", "thailandgiftshop-admin-cloudfront", "CLOUDFRONT", "ThailandGiftshopAdminCloudFront")
 }
@@ -578,7 +579,7 @@ func adminRateLimitWebACL(stack awscdk.Stack, id string, name string, scope stri
 			Allow: &awswafv2.CfnWebACL_AllowActionProperty{},
 		},
 		VisibilityConfig: wafVisibility(metricName),
-		Rules: []interface{}{
+		Rules: []any{
 			adminRateLimitRule("AdminLoginPostRateLimit", 0, 100, loginPostStatement(), metricName+"LoginPost"),
 			adminRateLimitRule("AdminPathRateLimit", 1, 500, adminPathStatement(), metricName+"Path"),
 			adminRateLimitRule("CustomerAuthPostRateLimit", 2, 100, customerAuthPostStatement(), metricName+"CustomerAuthPost"),
@@ -586,7 +587,7 @@ func adminRateLimitWebACL(stack awscdk.Stack, id string, name string, scope stri
 	})
 }
 
-func adminRateLimitRule(name string, priority int, limit int, statement interface{}, metricName string) *awswafv2.CfnWebACL_RuleProperty {
+func adminRateLimitRule(name string, priority int, limit int, statement any, metricName string) *awswafv2.CfnWebACL_RuleProperty {
 	return &awswafv2.CfnWebACL_RuleProperty{
 		Name:     jsii.String(name),
 		Priority: jsii.Number(priority),
@@ -612,9 +613,9 @@ func adminRateLimitRule(name string, priority int, limit int, statement interfac
 func loginPostStatement() *awswafv2.CfnWebACL_StatementProperty {
 	return &awswafv2.CfnWebACL_StatementProperty{
 		AndStatement: &awswafv2.CfnWebACL_AndStatementProperty{
-			Statements: []interface{}{
+			Statements: []any{
 				urlDecodedPathStatement("/admin/login", "EXACTLY"),
-				byteMatchStatement(&awswafv2.CfnWebACL_FieldToMatchProperty{Method: map[string]interface{}{}}, "POST", "EXACTLY"),
+				byteMatchStatement(&awswafv2.CfnWebACL_FieldToMatchProperty{Method: map[string]any{}}, "POST", "EXACTLY"),
 			},
 		},
 	}
@@ -627,16 +628,16 @@ func loginPostStatement() *awswafv2.CfnWebACL_StatementProperty {
 func customerAuthPostStatement() *awswafv2.CfnWebACL_StatementProperty {
 	return &awswafv2.CfnWebACL_StatementProperty{
 		AndStatement: &awswafv2.CfnWebACL_AndStatementProperty{
-			Statements: []interface{}{
+			Statements: []any{
 				&awswafv2.CfnWebACL_StatementProperty{
 					OrStatement: &awswafv2.CfnWebACL_OrStatementProperty{
-						Statements: []interface{}{
+						Statements: []any{
 							urlDecodedPathStatement("/account/sign-in", "EXACTLY"),
 							urlDecodedPathStatement("/account/sign-up", "EXACTLY"),
 						},
 					},
 				},
-				byteMatchStatement(&awswafv2.CfnWebACL_FieldToMatchProperty{Method: map[string]interface{}{}}, "POST", "EXACTLY"),
+				byteMatchStatement(&awswafv2.CfnWebACL_FieldToMatchProperty{Method: map[string]any{}}, "POST", "EXACTLY"),
 			},
 		},
 	}
@@ -645,15 +646,15 @@ func customerAuthPostStatement() *awswafv2.CfnWebACL_StatementProperty {
 func adminPathStatement() *awswafv2.CfnWebACL_StatementProperty {
 	return &awswafv2.CfnWebACL_StatementProperty{
 		OrStatement: &awswafv2.CfnWebACL_OrStatementProperty{
-			Statements: []interface{}{
-				byteMatchStatement(&awswafv2.CfnWebACL_FieldToMatchProperty{UriPath: map[string]interface{}{}}, "/admin", "EXACTLY"),
-				byteMatchStatement(&awswafv2.CfnWebACL_FieldToMatchProperty{UriPath: map[string]interface{}{}}, "/admin/", "STARTS_WITH"),
+			Statements: []any{
+				byteMatchStatement(&awswafv2.CfnWebACL_FieldToMatchProperty{UriPath: map[string]any{}}, "/admin", "EXACTLY"),
+				byteMatchStatement(&awswafv2.CfnWebACL_FieldToMatchProperty{UriPath: map[string]any{}}, "/admin/", "STARTS_WITH"),
 			},
 		},
 	}
 }
 
-func byteMatchStatement(fieldToMatch interface{}, search string, positionalConstraint string) *awswafv2.CfnWebACL_StatementProperty {
+func byteMatchStatement(fieldToMatch any, search string, positionalConstraint string) *awswafv2.CfnWebACL_StatementProperty {
 	return transformedByteMatchStatement(fieldToMatch, search, positionalConstraint, []string{"NONE"})
 }
 
@@ -663,11 +664,11 @@ func byteMatchStatement(fieldToMatch interface{}, search string, positionalConst
 // WAF applies TextTransformations in priority order and inspects the final
 // value, so decoding leaves canonical paths byte-identical to a NONE match.
 func urlDecodedPathStatement(search string, positionalConstraint string) *awswafv2.CfnWebACL_StatementProperty {
-	return transformedByteMatchStatement(&awswafv2.CfnWebACL_FieldToMatchProperty{UriPath: map[string]interface{}{}}, search, positionalConstraint, []string{"URL_DECODE", "NONE"})
+	return transformedByteMatchStatement(&awswafv2.CfnWebACL_FieldToMatchProperty{UriPath: map[string]any{}}, search, positionalConstraint, []string{"URL_DECODE", "NONE"})
 }
 
-func transformedByteMatchStatement(fieldToMatch interface{}, search string, positionalConstraint string, transformations []string) *awswafv2.CfnWebACL_StatementProperty {
-	textTransformations := make([]interface{}, 0, len(transformations))
+func transformedByteMatchStatement(fieldToMatch any, search string, positionalConstraint string, transformations []string) *awswafv2.CfnWebACL_StatementProperty {
+	textTransformations := make([]any, 0, len(transformations))
 	for priority, transformation := range transformations {
 		textTransformations = append(textTransformations, &awswafv2.CfnWebACL_TextTransformationProperty{
 			Priority: jsii.Number(priority),
@@ -1232,13 +1233,10 @@ func metricOptions(label string, period awscdk.Duration, statistic *string, unit
 
 func dynamoOperationSumMetric(table awsdynamodb.ITable, metricName string, label string, period awscdk.Duration, unit awscloudwatch.Unit, idPrefix string, operations []dynamoMetricOperation) awscloudwatch.MathExpression {
 	usingMetrics := make(map[string]awscloudwatch.IMetric, len(operations))
-	expression := ""
-	for index, operation := range operations {
+	expressionTerms := make([]string, 0, len(operations))
+	for _, operation := range operations {
 		id := idPrefix + operation.idSuffix
-		if index > 0 {
-			expression += "+"
-		}
-		expression += id
+		expressionTerms = append(expressionTerms, id)
 		usingMetrics[id] = awscloudwatch.NewMetric(&awscloudwatch.MetricProps{
 			Namespace:  jsii.String("AWS/DynamoDB"),
 			MetricName: jsii.String(metricName),
@@ -1254,7 +1252,7 @@ func dynamoOperationSumMetric(table awsdynamodb.ITable, metricName string, label
 	}
 
 	return awscloudwatch.NewMathExpression(&awscloudwatch.MathExpressionProps{
-		Expression:   jsii.String(expression),
+		Expression:   jsii.String(strings.Join(expressionTerms, "+")),
 		Label:        jsii.String(label),
 		Period:       period,
 		UsingMetrics: &usingMetrics,
@@ -1278,13 +1276,10 @@ func appMetric(metricName string, label string, period awscdk.Duration, dimensio
 // outcome separately (CloudWatch metrics cannot OR dimension values).
 func appOutcomeSumMetric(metricName string, label string, period awscdk.Duration, service string, idPrefix string, outcomes []string) awscloudwatch.MathExpression {
 	usingMetrics := make(map[string]awscloudwatch.IMetric, len(outcomes))
-	expression := ""
-	for index, outcome := range outcomes {
+	expressionTerms := make([]string, 0, len(outcomes))
+	for _, outcome := range outcomes {
 		id := idPrefix + outcome
-		if index > 0 {
-			expression += "+"
-		}
-		expression += id
+		expressionTerms = append(expressionTerms, id)
 		usingMetrics[id] = appMetric(metricName, metricName+" "+outcome, period, map[string]*string{
 			"Service": jsii.String(service),
 			"Outcome": jsii.String(outcome),
@@ -1292,7 +1287,7 @@ func appOutcomeSumMetric(metricName string, label string, period awscdk.Duration
 	}
 
 	return awscloudwatch.NewMathExpression(&awscloudwatch.MathExpressionProps{
-		Expression:   jsii.String(expression),
+		Expression:   jsii.String(strings.Join(expressionTerms, "+")),
 		Label:        jsii.String(label),
 		Period:       period,
 		UsingMetrics: &usingMetrics,
@@ -1303,11 +1298,13 @@ func appOutcomeSumMetric(metricName string, label string, period awscdk.Duration
 // whose full EMF dimension set carries no {Service, Outcome} rollup. SEARCH
 // expressions are dashboard-only — they cannot back alarms.
 func appSearchMetric(metricName string, label string, period awscdk.Duration, dimensionNames []string, statistic string) awscloudwatch.MathExpression {
-	schema := appobservability.Namespace
+	schemaTerms := make([]string, 0, len(dimensionNames)+1)
+	schemaTerms = append(schemaTerms, appobservability.Namespace)
 	for _, dimensionName := range dimensionNames {
-		schema += "," + dimensionName
+		schemaTerms = append(schemaTerms, dimensionName)
 	}
 
+	schema := strings.Join(schemaTerms, ",")
 	return awscloudwatch.NewMathExpression(&awscloudwatch.MathExpressionProps{
 		Expression: jsii.String(`SEARCH('{` + schema + `} MetricName="` + metricName + `"', '` + statistic + `', 300)`),
 		Label:      jsii.String(label),

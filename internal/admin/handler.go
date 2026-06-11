@@ -37,9 +37,16 @@ const csrfFieldName = "csrf_token"
 
 const dummyBcryptHash = "$2a$04$Vn0nSllZrX4bNwFaMifZAuS4xCZ9oE4DngJ02k8pYDz7zlXzpOfgK"
 
+// adminCredentialsTTL bounds how long a warm Lambda reuses cached credentials
+// before reloading them from the environment (and, in production, re-reading
+// the Secrets Manager secret). It is the window within which a password
+// rotation takes effect without a redeploy or cold start.
+const adminCredentialsTTL = 5 * time.Minute
+
 type Handler struct {
 	stateMu            sync.RWMutex
 	credentials        Credentials
+	credentialsExpiry  time.Time
 	now                func() time.Time
 	catalog            catalog.AdminStore
 	commerce           commerce.Store
@@ -104,6 +111,9 @@ func NewHandlerFromEnvironment(ctx context.Context) (*Handler, error) {
 		return nil, err
 	}
 	handler := NewHandlerWithCredentialsAndCatalog(credentials, adminStore)
+	// Mark the cold-start credentials with a reload deadline so a later rotation
+	// is picked up within adminCredentialsTTL on this warm container.
+	handler.storeCredentials(credentials)
 	handler.commerce = commerceStore
 	// The catalog admin store doubles as the stock store (both the Dynamo and
 	// memory implementations satisfy catalog.StockStore), so admin order
@@ -341,40 +351,47 @@ func (h *Handler) handleProtectedAdmin(ctx context.Context, request events.APIGa
 }
 
 func (h *Handler) credentialsForRequest(ctx context.Context) Credentials {
-	credentials := h.cachedCredentials()
-	if credentials.PasswordHash != "" && credentials.SessionSecret != "" {
-		return credentials
+	cached, fresh := h.cachedCredentials()
+	if fresh {
+		return cached
 	}
 
 	loadedCredentials, err := CredentialsFromEnvironment(ctx)
 	if err != nil {
+		// Keep serving with the last-known-good credentials rather than locking
+		// admins out on a transient Secrets Manager error.
 		logAdminError("load credentials from environment", err)
-		return credentials
+		return cached
 	}
 
-	h.stateMu.Lock()
-	defer h.stateMu.Unlock()
-	credentials = h.credentials
-	if credentials.PasswordHash != "" && credentials.SessionSecret != "" {
-		return credentials
-	}
-	h.credentials = loadedCredentials
+	h.storeCredentials(loadedCredentials)
 	return loadedCredentials
 }
 
-func (h *Handler) cachedCredentials() Credentials {
+// cachedCredentials returns the cached credentials and whether they may still be
+// used without reloading. Empty credentials are never fresh. A zero expiry marks
+// credentials injected directly (tests, local/demo) that have no reload source,
+// so they never expire; a non-zero expiry is honored against the clock.
+func (h *Handler) cachedCredentials() (Credentials, bool) {
 	h.stateMu.RLock()
 	defer h.stateMu.RUnlock()
-	return h.credentials
+	if h.credentials.PasswordHash == "" || h.credentials.SessionSecret == "" {
+		return h.credentials, false
+	}
+	if h.credentialsExpiry.IsZero() {
+		return h.credentials, true
+	}
+	return h.credentials, h.currentTime().Before(h.credentialsExpiry)
 }
 
-func (h *Handler) cacheCredentials(credentials Credentials) {
-	if credentials.PasswordHash == "" && credentials.SessionSecret == "" {
+func (h *Handler) storeCredentials(credentials Credentials) {
+	if credentials.PasswordHash == "" || credentials.SessionSecret == "" {
 		return
 	}
 	h.stateMu.Lock()
 	defer h.stateMu.Unlock()
 	h.credentials = credentials
+	h.credentialsExpiry = h.currentTime().Add(adminCredentialsTTL)
 }
 
 func (h *Handler) validPasswordWithCredentials(credentials Credentials, password string) bool {
@@ -389,7 +406,7 @@ func (h *Handler) validPasswordWithCredentials(credentials Credentials, password
 		return false
 	}
 
-	h.cacheCredentials(credentials)
+	h.storeCredentials(credentials)
 	return true
 }
 

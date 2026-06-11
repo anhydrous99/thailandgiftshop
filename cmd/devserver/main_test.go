@@ -152,6 +152,7 @@ func TestREADMEAdminBootstrapDocsUsePlaceholdersOnly(t *testing.T) {
 		"\"password_hash\": \"<bcrypt-hash>\"",
 		"\"session_secret\": \"<session-secret>\"",
 		"ADMIN_CREDENTIALS_SECRET_JSON",
+		"ADMIN_CREDENTIALS_SECRET_NAME",
 		"CATALOG_DEMO_STORE=1",
 		"without a live AWS account",
 		"STRIPE_CREDENTIALS_SECRET_JSON",

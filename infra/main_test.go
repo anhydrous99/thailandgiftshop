@@ -287,7 +287,7 @@ func TestStackIncludesAdminLambdaRoutesAndScopedPermissions(t *testing.T) {
 				appenv.EnvAppEnvironment:                 appenv.EnvironmentProduction,
 				adminauth.EnvProductImagesBucketName:     assertions.Match_AnyValue(),
 				adminauth.EnvProductImagesKeyPrefix:      productImagesKeyPrefix,
-				adminauth.EnvAdminCredentialsSecretJSON:  assertions.Match_AnyValue(),
+				adminauth.EnvAdminCredentialsSecretName:  assertions.Match_AnyValue(),
 				adminauth.EnvAdminLoginAttemptsTableName: assertions.Match_AnyValue(),
 				adminauth.EnvAdminOriginHeaderSecret:     assertions.Match_AnyValue(),
 			},
@@ -371,6 +371,9 @@ func TestStackIncludesAdminLoginAttemptThrottleStorage(t *testing.T) {
 					"KeyType":       "HASH",
 				},
 			}),
+			"PointInTimeRecoverySpecification": map[string]any{
+				"PointInTimeRecoveryEnabled": true,
+			},
 			"TimeToLiveSpecification": map[string]any{
 				"AttributeName": adminLoginAttemptsTTLName,
 				"Enabled":       true,
@@ -541,7 +544,7 @@ func operationsDashboardBodyJSON(t *testing.T, templateJSON *map[string]any) str
 	return ""
 }
 
-func TestStackWiresAdminCredentialsSecretReference(t *testing.T) {
+func TestStackWiresAdminCredentialsSecretName(t *testing.T) {
 	defer jsii.Close()
 
 	app := awscdk.NewApp(nil)
@@ -550,15 +553,31 @@ func TestStackWiresAdminCredentialsSecretReference(t *testing.T) {
 	template.ResourceCountIs(jsii.String("AWS::SecretsManager::Secret"), jsii.Number(3))
 
 	templateJSON := template.ToJSON()
+
+	// The admin lambda receives the secret name and reads it at runtime, rather
+	// than a deploy-time dynamic reference baked into an env var (which would not
+	// pick up a rotation without a redeploy).
 	adminVariables := lambdaEnvironmentVariables(t, templateJSON, "thailandgiftshop-admin")
-	secretReference := templateValueString(t, adminVariables[adminauth.EnvAdminCredentialsSecretJSON])
-	if !strings.Contains(secretReference, adminCredentialsSecretName) || !strings.Contains(secretReference, "SecretString") {
-		t.Fatalf("admin credential reference = %q, want dynamic reference to named Secrets Manager JSON secret", secretReference)
+	secretName := templateValueString(t, adminVariables[adminauth.EnvAdminCredentialsSecretName])
+	if secretName != `"`+adminCredentialsSecretName+`"` {
+		t.Fatalf("admin credentials secret name = %q, want %q", secretName, adminCredentialsSecretName)
+	}
+	if _, found := adminVariables[adminauth.EnvAdminCredentialsSecretJSON]; found {
+		t.Fatalf("admin lambda must not receive deploy-time %s dynamic reference: %#v", adminauth.EnvAdminCredentialsSecretJSON, adminVariables)
 	}
 
 	ssrVariables := lambdaEnvironmentVariables(t, templateJSON, "thailandgiftshop-ssr")
-	if _, found := ssrVariables[adminauth.EnvAdminCredentialsSecretJSON]; found {
-		t.Fatalf("public SSR lambda must not receive %s; got %#v", adminauth.EnvAdminCredentialsSecretJSON, ssrVariables)
+	for _, key := range []string{adminauth.EnvAdminCredentialsSecretName, adminauth.EnvAdminCredentialsSecretJSON} {
+		if _, found := ssrVariables[key]; found {
+			t.Fatalf("public SSR lambda must not receive %s; got %#v", key, ssrVariables)
+		}
+	}
+
+	templateText := templateValueString(t, templateJSON)
+	for _, want := range []string{"secretsmanager:GetSecretValue", adminCredentialsSecretName} {
+		if !strings.Contains(templateText, want) {
+			t.Fatalf("template missing %q for runtime admin secret lookup", want)
+		}
 	}
 }
 
