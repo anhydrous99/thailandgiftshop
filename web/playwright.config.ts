@@ -18,6 +18,7 @@ export default defineConfig({
     cwd: '..',
     env: {
       CATALOG_DEMO_STORE: '1',
+      EMAIL_SENDER_MODE: 'fake',
       CART_COOKIE_SECRET: 'playwright-cart-cookie-secret',
       CUSTOMER_SESSION_SECRET: 'playwright-customer-session-secret-with-enough-entropy',
       PUBLIC_BASE_URL: 'http://127.0.0.1:8080',
