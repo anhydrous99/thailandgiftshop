@@ -145,6 +145,57 @@ func TestOnlyOrderItemsCarryGSIAttributes(t *testing.T) {
 	}
 }
 
+// TestListOrdersByCustomerPagesAcrossDynamoQueryPages pins queryItems'
+// multi-page continuation: with the fake forced to one item per Query call,
+// assembling a 2-row page (plus the probe row) requires ExclusiveStartKey
+// follow-ups, and the trailing page must follow a LastEvaluatedKey that real
+// DynamoDB sets even when the limit cut exactly at the end of the partition.
+func TestListOrdersByCustomerPagesAcrossDynamoQueryPages(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeCommerceClient()
+	clock := newTestClock()
+	store := NewDynamoStoreWithClock(client, testDynamoConfig(), nil, clock.Now)
+
+	const customerID = "pagingcustomer"
+	created := make([]Order, 0, 4)
+	for i := 0; i < 4; i++ {
+		order, err := store.CreateOrder(ctx, testOrder(customerID, 1000+i))
+		if err != nil {
+			t.Fatalf("CreateOrder %d returned error: %v", i, err)
+		}
+		created = append(created, order)
+		clock.Advance(time.Hour)
+	}
+
+	client.setForcedQueryPageSize(1)
+
+	callsBefore := client.queryCallCount()
+	pageOne, err := store.ListOrdersByCustomer(ctx, customerID, 2, OrderCursor{})
+	if err != nil {
+		t.Fatalf("ListOrdersByCustomer page 1 returned error: %v", err)
+	}
+	if got := client.queryCallCount() - callsBefore; got < 3 {
+		t.Fatalf("page 1 issued %d Query calls, want >= 3 (probe of 3 rows at one item per call)", got)
+	}
+	if len(pageOne.Orders) != 2 || pageOne.Orders[0].ID != created[3].ID || pageOne.Orders[1].ID != created[2].ID {
+		t.Fatalf("page 1 = %v, want the two newest orders %q,%q", pageOne.Orders, created[3].ID, created[2].ID)
+	}
+	if pageOne.NextCursor.OrderID != created[2].ID || !pageOne.NextCursor.CreatedAt.Equal(created[2].CreatedAt) {
+		t.Fatalf("page 1 NextCursor = %#v, want the probe-backed position after %q", pageOne.NextCursor, created[2].ID)
+	}
+
+	pageTwo, err := store.ListOrdersByCustomer(ctx, customerID, 2, pageOne.NextCursor)
+	if err != nil {
+		t.Fatalf("ListOrdersByCustomer page 2 returned error: %v", err)
+	}
+	if len(pageTwo.Orders) != 2 || pageTwo.Orders[0].ID != created[1].ID || pageTwo.Orders[1].ID != created[0].ID {
+		t.Fatalf("page 2 = %v, want the two oldest orders %q,%q", pageTwo.Orders, created[1].ID, created[0].ID)
+	}
+	if !pageTwo.NextCursor.IsZero() {
+		t.Fatalf("page 2 NextCursor = %#v, want zero at the end of the listing", pageTwo.NextCursor)
+	}
+}
+
 func TestCustomerItemShape(t *testing.T) {
 	now := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
 	attrs, err := customerItem(Customer{ID: "cust1", Email: "Shopper@example.test", EmailNormalized: "shopper@example.test", PasswordHash: testPasswordHash, Version: 1, CreatedAt: now, UpdatedAt: now})
@@ -445,6 +496,11 @@ type fakeCommerceClient struct {
 	throttleUpdateCalls               int
 	deletedKeys                       []string
 	capturedExpressions               []string
+	// forcedQueryPageSize, when > 0, caps the items each Query call returns
+	// regardless of input.Limit, forcing multi-page LastEvaluatedKey
+	// continuation exactly like a small real DynamoDB page.
+	forcedQueryPageSize int
+	queryCalls          int
 }
 
 func newFakeCommerceClient() *fakeCommerceClient {
@@ -585,11 +641,47 @@ func (f *fakeCommerceClient) Query(ctx context.Context, input *dynamodb.QueryInp
 			}
 		}
 	}
-	if input.Limit != nil && len(matches) > int(*input.Limit) {
-		matches = matches[:int(*input.Limit)]
+
+	// ExclusiveStartKey is a position, not a row reference: drop everything
+	// at or before it in scan order, even when no stored row matches it.
+	if input.ExclusiveStartKey != nil {
+		startSK := stringAttribute(input.ExclusiveStartKey, skAttribute)
+		for len(matches) > 0 {
+			if forward && matches[0].sortKey > startSK {
+				break
+			}
+			if !forward && matches[0].sortKey < startSK {
+				break
+			}
+			matches = matches[1:]
+		}
 	}
 
+	pageCap := 0
+	if input.Limit != nil {
+		pageCap = int(*input.Limit)
+	}
+	if f.forcedQueryPageSize > 0 && (pageCap == 0 || f.forcedQueryPageSize < pageCap) {
+		pageCap = f.forcedQueryPageSize
+	}
+	f.queryCalls++
+
 	output := &dynamodb.QueryOutput{}
+	if pageCap > 0 && len(matches) >= pageCap {
+		// The page was cut at the cap. Real DynamoDB sets LastEvaluatedKey in
+		// this case even when nothing happens to remain, so the caller must
+		// issue a follow-up query to learn the partition is exhausted.
+		matches = matches[:pageCap]
+		last := matches[len(matches)-1].item
+		output.LastEvaluatedKey = map[string]types.AttributeValue{
+			"pk": last["pk"],
+			"sk": last["sk"],
+		}
+		if input.IndexName != nil {
+			output.LastEvaluatedKey[pkAttribute] = last[pkAttribute]
+			output.LastEvaluatedKey[skAttribute] = last[skAttribute]
+		}
+	}
 	for _, match := range matches {
 		output.Items = append(output.Items, match.item)
 	}
@@ -641,6 +733,18 @@ func (f *fakeCommerceClient) BatchWriteItem(ctx context.Context, input *dynamodb
 		}
 	}
 	return &dynamodb.BatchWriteItemOutput{}, nil
+}
+
+func (f *fakeCommerceClient) setForcedQueryPageSize(size int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.forcedQueryPageSize = size
+}
+
+func (f *fakeCommerceClient) queryCallCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.queryCalls
 }
 
 func (f *fakeCommerceClient) itemForKey(t *testing.T, pk string, sk string) map[string]types.AttributeValue {

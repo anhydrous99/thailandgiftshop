@@ -4,10 +4,13 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -18,6 +21,7 @@ import (
 	"github.com/anhydrous99/thailandgiftshop/internal/commerce"
 	"github.com/anhydrous99/thailandgiftshop/internal/observability"
 	"github.com/anhydrous99/thailandgiftshop/internal/payments"
+	"github.com/anhydrous99/thailandgiftshop/internal/signedtoken"
 	"github.com/aws/aws-lambda-go/events"
 )
 
@@ -895,30 +899,62 @@ func TestFakePay404sUnlessProviderIsFake(t *testing.T) {
 
 // --- Orders paging ---
 
-func TestOrdersPageListsNewestFirstWithCursorPaging(t *testing.T) {
-	env := newAccountTestEnv(t)
-	jar := testCookieJar{}
-	signUpTestCustomer(t, env.handler, jar, "shopper@example.com", "orchid-market-99")
-	customerID := accountCustomerID(t, env, "shopper@example.com")
+// ordersPagingBase is the creation time of the first (oldest) order the
+// paging tests seed; each later order is one minute newer.
+var ordersPagingBase = time.Date(2026, 6, 1, 8, 0, 0, 0, time.UTC)
 
-	base := time.Date(2026, 6, 1, 8, 0, 0, 0, time.UTC)
-	orderIDs := make([]string, 0, 25)
-	for index := range 25 {
+// createPagingTestOrders seeds count paid orders for the customer, one minute
+// apart starting at ordersPagingBase, and returns their IDs oldest-first.
+func createPagingTestOrders(t *testing.T, env accountTestEnv, customerID string, email string, count int) []string {
+	t.Helper()
+	orderIDs := make([]string, 0, count)
+	for index := range count {
 		created, err := env.commerce.CreateOrder(context.Background(), commerce.Order{
 			CustomerID:    customerID,
-			Email:         "shopper@example.com",
+			Email:         email,
 			Status:        commerce.OrderStatusPaid,
 			Lines:         []commerce.OrderLine{{Slug: "mango-sticky-rice-kit", ProductID: "prod_account_mango", Name: "Mango Sticky Rice Treats", UnitPriceCents: 2899, Quantity: 1, LineTotalCents: 2899}},
 			SubtotalCents: 2899,
 			TotalCents:    2899,
 			Currency:      "usd",
-			CreatedAt:     base.Add(time.Duration(index) * time.Minute),
+			CreatedAt:     ordersPagingBase.Add(time.Duration(index) * time.Minute),
 		})
 		if err != nil {
 			t.Fatalf("CreateOrder %d returned error: %v", index, err)
 		}
 		orderIDs = append(orderIDs, created.ID)
 	}
+	return orderIDs
+}
+
+var ordersCursorLinkPattern = regexp.MustCompile(`href="/orders\?after=([^"]+)"`)
+
+// firstPageCursorToken renders /orders page 1 and returns the decoded signed
+// cursor token from its older-orders link.
+func firstPageCursorToken(t *testing.T, env accountTestEnv, jar testCookieJar) string {
+	t.Helper()
+	firstPage, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, "/orders", jar))
+	if err != nil {
+		t.Fatalf("Handle orders returned error: %v", err)
+	}
+	match := ordersCursorLinkPattern.FindStringSubmatch(firstPage.Body)
+	if match == nil {
+		t.Fatal("first page is missing the next-page cursor link")
+	}
+	token, err := url.QueryUnescape(match[1])
+	if err != nil {
+		t.Fatalf("cursor token does not query-unescape: %v", err)
+	}
+	return token
+}
+
+func TestOrdersPageListsNewestFirstWithCursorPaging(t *testing.T) {
+	env := newAccountTestEnv(t)
+	jar := testCookieJar{}
+	signUpTestCustomer(t, env.handler, jar, "shopper@example.com", "orchid-market-99")
+	customerID := accountCustomerID(t, env, "shopper@example.com")
+
+	orderIDs := createPagingTestOrders(t, env, customerID, "shopper@example.com", 25)
 	newestID := orderIDs[len(orderIDs)-1]
 	oldestID := orderIDs[0]
 
@@ -943,14 +979,53 @@ func TestOrdersPageListsNewestFirstWithCursorPaging(t *testing.T) {
 		t.Fatal("orders are not sorted newest first")
 	}
 
-	// The cursor is the last order on the page (the 20th newest = index 5).
-	cursorID := orderIDs[5]
-	if !strings.Contains(firstPage.Body, `href="/orders?after=`+cursorID+`"`) {
-		t.Fatalf("first page is missing the next-page cursor link for %s", cursorID)
+	// The next link carries a signed cursor token, not the pre-deploy bare
+	// order-ID format.
+	match := ordersCursorLinkPattern.FindStringSubmatch(firstPage.Body)
+	if match == nil {
+		t.Fatal("first page is missing the next-page cursor link")
+	}
+	token, err := url.QueryUnescape(match[1])
+	if err != nil {
+		t.Fatalf("cursor token does not query-unescape: %v", err)
+	}
+	if accountIDPattern.MatchString(token) {
+		t.Fatalf("cursor %q is a bare order ID, want the signed token format", token)
+	}
+
+	// Payload-shape check: the token's first segment is world-readable JSON
+	// (the envelope signs, it does not encrypt). Pin exactly what it carries
+	// — position fields only, never the customer ID — so a future field
+	// addition that leaks anything new fails here and forces a decision.
+	payloadSegment, _, ok := strings.Cut(token, ".")
+	if !ok {
+		t.Fatalf("cursor token %q is not a payload.signature envelope", token)
+	}
+	payloadBytes, err := base64.RawURLEncoding.DecodeString(payloadSegment)
+	if err != nil {
+		t.Fatalf("cursor payload segment does not base64-decode: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		t.Fatalf("cursor payload is not JSON: %v", err)
+	}
+	if len(payload) != 3 {
+		t.Fatalf("cursor payload keys = %v, want exactly version, order_id, created_at", payload)
+	}
+	for _, key := range []string{"version", "order_id", "created_at"} {
+		if _, found := payload[key]; !found {
+			t.Fatalf("cursor payload %v is missing %q", payload, key)
+		}
+	}
+	if _, found := payload["customer_id"]; found {
+		t.Fatalf("cursor payload %v carries customer_id; the customer binding belongs in the MAC purpose only", payload)
+	}
+	if strings.Contains(string(payloadBytes), customerID) {
+		t.Fatalf("cursor payload %q leaks the customer ID", payloadBytes)
 	}
 
 	secondPageRequest := jarPageRequest(http.MethodGet, "/orders", jar)
-	secondPageRequest.QueryStringParameters = map[string]string{"after": cursorID}
+	secondPageRequest.QueryStringParameters = map[string]string{"after": token}
 	secondPage, err := env.handler.Handle(context.Background(), secondPageRequest)
 	if err != nil {
 		t.Fatalf("Handle orders page 2 returned error: %v", err)
@@ -974,6 +1049,155 @@ func TestOrdersPageListsNewestFirstWithCursorPaging(t *testing.T) {
 	}
 	if got := strings.Count(badCursorPage.Body, `data-testid="order-row"`); got != ordersPageSize {
 		t.Fatalf("bad cursor rows = %d, want first page of %d", got, ordersPageSize)
+	}
+}
+
+func TestOrdersPageCursorIsCustomerBound(t *testing.T) {
+	env := newAccountTestEnv(t)
+
+	jarA := testCookieJar{}
+	signUpTestCustomer(t, env.handler, jarA, "alpha@example.com", "orchid-market-99")
+	customerA := accountCustomerID(t, env, "alpha@example.com")
+	ordersA := createPagingTestOrders(t, env, customerA, "alpha@example.com", 25)
+
+	jarB := testCookieJar{}
+	signUpTestCustomer(t, env.handler, jarB, "beta@example.com", "orchid-market-99")
+	customerB := accountCustomerID(t, env, "beta@example.com")
+	ordersB := createPagingTestOrders(t, env, customerB, "beta@example.com", 1)
+
+	tokenA := firstPageCursorToken(t, env, jarA)
+
+	// B replays A's cursor: the MAC purpose embeds B's customer ID, so A's
+	// token fails verification and B gets their own first page — never an
+	// error, never A's data.
+	request := jarPageRequest(http.MethodGet, "/orders", jarB)
+	request.QueryStringParameters = map[string]string{"after": tokenA}
+	response, err := env.handler.Handle(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Handle orders with foreign cursor returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("foreign cursor status = %d, want 200", response.StatusCode)
+	}
+	if got := strings.Count(response.Body, `data-testid="order-row"`); got != 1 {
+		t.Fatalf("foreign cursor rows = %d, want B's single order", got)
+	}
+	if !strings.Contains(response.Body, ordersB[0]) {
+		t.Fatal("foreign cursor page is missing B's own order")
+	}
+	for _, orderID := range ordersA {
+		if strings.Contains(response.Body, orderID) {
+			t.Fatalf("foreign cursor page leaked A's order %s", orderID)
+		}
+	}
+}
+
+func TestOrdersPageRejectsCrossPurposeCursor(t *testing.T) {
+	env := newAccountTestEnv(t)
+	jar := testCookieJar{}
+	signUpTestCustomer(t, env.handler, jar, "shopper@example.com", "orchid-market-99")
+	customerID := accountCustomerID(t, env, "shopper@example.com")
+	orderIDs := createPagingTestOrders(t, env, customerID, "shopper@example.com", 25)
+
+	// The payload is a real position (the 20th-newest order), so only the
+	// MAC purpose decides whether it pages.
+	payload := ordersCursorPayload{
+		Version:   customerSignedValueVersion,
+		OrderID:   orderIDs[5],
+		CreatedAt: ordersPagingBase.Add(5 * time.Minute).UTC().Format(time.RFC3339),
+	}
+
+	// Sanity: under the correct customer-bound purpose the same payload
+	// reaches page 2 — the rejections below are purely purpose-driven.
+	boundToken, err := signedtoken.Encode(payload, ssrTestSessionSecret, ordersCursorTokenPurpose(customerID))
+	if err != nil {
+		t.Fatalf("Encode bound cursor returned error: %v", err)
+	}
+	crossPurposeToken, err := signedtoken.Encode(payload, ssrTestSessionSecret, customerCSRFPurpose)
+	if err != nil {
+		t.Fatalf("Encode cross-purpose cursor returned error: %v", err)
+	}
+	barePurposeToken, err := signedtoken.Encode(payload, ssrTestSessionSecret, customerOrdersCursorPurpose)
+	if err != nil {
+		t.Fatalf("Encode bare-purpose cursor returned error: %v", err)
+	}
+
+	tests := []struct {
+		name     string
+		token    string
+		wantRows int
+	}{
+		{name: "customer-bound purpose pages", token: boundToken, wantRows: 5},
+		{name: "csrf purpose restarts at page 1", token: crossPurposeToken, wantRows: ordersPageSize},
+		{name: "bare cursor purpose without the customer ID restarts at page 1", token: barePurposeToken, wantRows: ordersPageSize},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := jarPageRequest(http.MethodGet, "/orders", jar)
+			request.QueryStringParameters = map[string]string{"after": test.token}
+			response, err := env.handler.Handle(context.Background(), request)
+			if err != nil {
+				t.Fatalf("Handle returned error: %v", err)
+			}
+			if response.StatusCode != http.StatusOK {
+				t.Fatalf("status = %d, want 200", response.StatusCode)
+			}
+			if got := strings.Count(response.Body, `data-testid="order-row"`); got != test.wantRows {
+				t.Fatalf("rows = %d, want %d", got, test.wantRows)
+			}
+		})
+	}
+}
+
+func TestOrdersPageTamperedCursorFallsBackToFirstPage(t *testing.T) {
+	env := newAccountTestEnv(t)
+	jar := testCookieJar{}
+	signUpTestCustomer(t, env.handler, jar, "shopper@example.com", "orchid-market-99")
+	customerID := accountCustomerID(t, env, "shopper@example.com")
+	createPagingTestOrders(t, env, customerID, "shopper@example.com", 25)
+
+	token := firstPageCursorToken(t, env, jar)
+
+	// Flip one character of an otherwise valid envelope-shaped token.
+	flipped := byte('A')
+	if token[0] == flipped {
+		flipped = 'B'
+	}
+	tampered := string(flipped) + token[1:]
+	if tampered == token {
+		t.Fatal("tampering produced an identical token")
+	}
+
+	request := jarPageRequest(http.MethodGet, "/orders", jar)
+	request.QueryStringParameters = map[string]string{"after": tampered}
+	response, err := env.handler.Handle(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Handle orders tampered cursor returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("tampered cursor status = %d, want 200", response.StatusCode)
+	}
+	if got := strings.Count(response.Body, `data-testid="order-row"`); got != ordersPageSize {
+		t.Fatalf("tampered cursor rows = %d, want first page of %d", got, ordersPageSize)
+	}
+}
+
+func TestOrdersPageExactPageSizeHasNoNextLink(t *testing.T) {
+	env := newAccountTestEnv(t)
+	jar := testCookieJar{}
+	signUpTestCustomer(t, env.handler, jar, "shopper@example.com", "orchid-market-99")
+	customerID := accountCustomerID(t, env, "shopper@example.com")
+	createPagingTestOrders(t, env, customerID, "shopper@example.com", ordersPageSize)
+
+	response, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, "/orders", jar))
+	if err != nil {
+		t.Fatalf("Handle orders returned error: %v", err)
+	}
+	if got := strings.Count(response.Body, `data-testid="order-row"`); got != ordersPageSize {
+		t.Fatalf("rows = %d, want %d", got, ordersPageSize)
+	}
+	if strings.Contains(response.Body, `data-testid="orders-next-page"`) {
+		t.Fatal("exactly one full page must not offer an older-orders link")
 	}
 }
 

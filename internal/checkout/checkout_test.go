@@ -309,11 +309,11 @@ func (env *testEnv) mustGetOrder(t *testing.T, orderID string) commerce.Order {
 
 func (env *testEnv) orderCount(t *testing.T) int {
 	t.Helper()
-	orders, err := env.commerceStore.ListOrders(context.Background(), 0)
+	page, err := env.commerceStore.ListOrders(context.Background(), 0, commerce.OrderCursor{})
 	if err != nil {
 		t.Fatalf("ListOrders returned error: %v", err)
 	}
-	return len(orders)
+	return len(page.Orders)
 }
 
 func (env *testEnv) assertStock(t *testing.T, wantBase int, wantVarM int) {
@@ -598,10 +598,11 @@ func TestPlaceOrderProviderFailureCompensates(t *testing.T) {
 
 			// Reservation released; order canceled by the system actor.
 			env.assertStock(t, 5, 4)
-			orders, listErr := env.commerceStore.ListOrders(context.Background(), 0)
+			page, listErr := env.commerceStore.ListOrders(context.Background(), 0, commerce.OrderCursor{})
 			if listErr != nil {
 				t.Fatalf("ListOrders returned error: %v", listErr)
 			}
+			orders := page.Orders
 			if len(orders) != 1 {
 				t.Fatalf("order count = %d, want 1 compensated order", len(orders))
 			}
@@ -1305,10 +1306,11 @@ func TestPlaceOrderCartPointerRaceAdoptsExistingPendingOrder(t *testing.T) {
 
 	// This request's fresh order was canceled, its stock released, and its
 	// session expired.
-	orders, listErr := env.commerceStore.ListOrders(context.Background(), 0)
+	page, listErr := env.commerceStore.ListOrders(context.Background(), 0, commerce.OrderCursor{})
 	if listErr != nil {
 		t.Fatalf("ListOrders returned error: %v", listErr)
 	}
+	orders := page.Orders
 	if len(orders) != 2 {
 		t.Fatalf("order count = %d, want 2", len(orders))
 	}

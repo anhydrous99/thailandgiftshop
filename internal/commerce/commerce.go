@@ -237,6 +237,55 @@ type OrderPatch struct {
 	StockReleasedAt *time.Time
 }
 
+// OrderCursor resumes a newest-first order listing immediately after the
+// order identified by OrderID and CreatedAt — the two components of the
+// order GSI sort keys ("ORDER#<RFC3339 created>#<id>" on gsi1,
+// "<RFC3339 created>#<id>" on gsi2). The zero value means "start at the
+// newest order". Cursor times are UTC at RFC3339 second precision, matching
+// formatCommerceTime; CreatedAt is immutable, so cursors are stable forever.
+type OrderCursor struct {
+	OrderID   string
+	CreatedAt time.Time
+}
+
+// IsZero reports whether the cursor is the start-of-listing marker. A cursor
+// missing either component is treated as the start so a half-built value can
+// never address an arbitrary position.
+func (c OrderCursor) IsZero() bool {
+	return c.OrderID == "" || c.CreatedAt.IsZero()
+}
+
+// OrderPage is one newest-first page of orders. NextCursor resumes the
+// listing after the last order in Orders; it is the zero cursor when no
+// further order existed at query time, so a non-zero NextCursor always leads
+// to a non-empty page (orders are never deleted).
+type OrderPage struct {
+	Orders     []Order
+	NextCursor OrderCursor
+}
+
+// probeLimit fetches one row beyond the requested page so NextCursor is only
+// emitted when a further row provably exists (never a dangling "older" link).
+// limit <= 0 keeps the existing fetch-everything contract.
+func probeLimit(limit int) int {
+	if limit <= 0 {
+		return 0
+	}
+	return limit + 1
+}
+
+// orderPageFromProbe converts a probe-sized listing into a page: when the
+// probe row is present, the page is trimmed back to limit and NextCursor
+// points after its last visible order.
+func orderPageFromProbe(orders []Order, limit int) OrderPage {
+	if limit <= 0 || len(orders) <= limit {
+		return OrderPage{Orders: orders}
+	}
+	page := orders[:limit:limit]
+	last := page[limit-1]
+	return OrderPage{Orders: page, NextCursor: OrderCursor{OrderID: last.ID, CreatedAt: last.CreatedAt}}
+}
+
 func orderActorOrDefault(actor string) string {
 	if strings.TrimSpace(actor) == "" {
 		return OrderActorSystem
@@ -304,8 +353,12 @@ type Store interface {
 
 	CreateOrder(ctx context.Context, o Order) (Order, error)
 	GetOrder(ctx context.Context, orderID string) (Order, bool, error)
-	ListOrdersByCustomer(ctx context.Context, customerID string, limit int) ([]Order, error)
-	ListOrders(ctx context.Context, limit int) ([]Order, error)
+	// ListOrdersByCustomer returns one newest-first page of the customer's
+	// orders, resuming after cursor. limit <= 0 returns the full listing.
+	ListOrdersByCustomer(ctx context.Context, customerID string, limit int, cursor OrderCursor) (OrderPage, error)
+	// ListOrders returns one newest-first page of all orders (admin order desk),
+	// resuming after cursor. limit <= 0 returns the full listing.
+	ListOrders(ctx context.Context, limit int, cursor OrderCursor) (OrderPage, error)
 	TransitionOrder(ctx context.Context, orderID string, from OrderStatus, to OrderStatus, patch OrderPatch) (Order, error)
 	PatchOrder(ctx context.Context, orderID string, expectedStatus OrderStatus, expectedVersion int, patch OrderPatch) (Order, error)
 

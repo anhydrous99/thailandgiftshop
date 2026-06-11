@@ -67,6 +67,11 @@ templ adminOrderListPage(vm adminOrderListViewModel) {
 									</article>
 								}
 							</div>
+							if vm.NextCursor != "" {
+								<div class="border-t border-flag-blue/10 p-5">
+									<a data-testid="admin-orders-next-page" href={ "/admin/orders?after=" + vm.NextCursor } class="inline-flex h-11 items-center justify-center bg-flag-blue px-5 text-sm font-bold text-white transition hover:bg-ink">Older orders</a>
+								</div>
+							}
 						}
 					</section>
 				</main>

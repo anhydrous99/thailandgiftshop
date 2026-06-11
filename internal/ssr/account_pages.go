@@ -62,7 +62,7 @@ func (h *Handler) renderAccountPage(ctx context.Context, request events.APIGatew
 		logAccountError("account: list addresses", err)
 		return accountHTMLResponse(http.StatusInternalServerError, "Internal server error", pageAccount, nil)
 	}
-	orders, err := h.commerce.ListOrdersByCustomer(ctx, customer.ID, recentAccountOrderLimit)
+	page, err := h.commerce.ListOrdersByCustomer(ctx, customer.ID, recentAccountOrderLimit, commerce.OrderCursor{})
 	if err != nil {
 		logAccountError("account: list orders", err)
 		return accountHTMLResponse(http.StatusInternalServerError, "Internal server error", pageAccount, nil)
@@ -76,7 +76,7 @@ func (h *Handler) renderAccountPage(ctx context.Context, request events.APIGatew
 		Email:           customer.Email,
 		PasswordChanged: state.PasswordChanged,
 		PasswordError:   state.PasswordError,
-		RecentOrders:    accountOrderViews(orders),
+		RecentOrders:    accountOrderViews(page.Orders),
 	}
 	if defaultAddress, found := findAddressByID(addresses, customer.DefaultAddressID); found {
 		view := addressRowView(defaultAddress, customer.DefaultAddressID)

@@ -61,6 +61,76 @@ func TestAdminOrdersListRendersNewestFirstWithStatusChipsAndOverdueFlag(t *testi
 	if !strings.Contains(response.Body[overdueRowStart:], "Overdue pending") {
 		t.Fatalf("overdue pending order row missing overdue flag")
 	}
+	if strings.Contains(response.Body, `data-testid="admin-orders-next-page"`) {
+		t.Fatalf("3 orders fit on one page; the older-orders link must not render")
+	}
+}
+
+func TestAdminOrdersListPagesWithCursor(t *testing.T) {
+	handler, commerceStore, _, currentTime := newOrdersTestHandler(t)
+	now := *currentTime
+
+	// adminOrderListLimit+1 orders, distinct creation times: the list shows
+	// the newest 100 and links the next-older page after the 100th row.
+	orderIDs := make([]string, 0, adminOrderListLimit+1)
+	for i := 1; i <= adminOrderListLimit+1; i++ {
+		order := createTestOrder(t, commerceStore, adminTestOrder(testOrderID(i), commerce.OrderStatusPaid, now.Add(-time.Duration(i)*time.Minute)))
+		orderIDs = append(orderIDs, order.ID)
+	}
+	oldestID := orderIDs[adminOrderListLimit]
+	cursorID := orderIDs[adminOrderListLimit-1] // 100th-newest order
+
+	response := authenticatedProductGet(t, handler, "/admin/orders")
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	if got := strings.Count(response.Body, `data-testid="admin-order-row"`); got != adminOrderListLimit {
+		t.Fatalf("admin-order-row count = %d, want %d", got, adminOrderListLimit)
+	}
+	if strings.Contains(response.Body, `href="/admin/orders/`+oldestID+`"`) {
+		t.Fatalf("first page must not contain the oldest order")
+	}
+	if !strings.Contains(response.Body, `data-testid="admin-orders-next-page"`) {
+		t.Fatalf("first page is missing the older-orders link")
+	}
+	if !strings.Contains(response.Body, `href="/admin/orders?after=`+cursorID+`"`) {
+		t.Fatalf("older-orders link should resume after the 100th order %s", cursorID)
+	}
+
+	secondPage := authenticatedProductGet(t, handler, "/admin/orders?after="+cursorID)
+	if secondPage.StatusCode != http.StatusOK {
+		t.Fatalf("page 2 status = %d, want %d", secondPage.StatusCode, http.StatusOK)
+	}
+	if got := strings.Count(secondPage.Body, `data-testid="admin-order-row"`); got != 1 {
+		t.Fatalf("page 2 admin-order-row count = %d, want 1", got)
+	}
+	if !strings.Contains(secondPage.Body, `href="/admin/orders/`+oldestID+`"`) {
+		t.Fatalf("page 2 is missing the oldest order")
+	}
+	if strings.Contains(secondPage.Body, `data-testid="admin-orders-next-page"`) {
+		t.Fatalf("the last page must not offer another page")
+	}
+}
+
+func TestAdminOrdersListUnknownCursorRestartsAtFirstPage(t *testing.T) {
+	handler, commerceStore, _, currentTime := newOrdersTestHandler(t)
+	now := *currentTime
+
+	for i := 1; i <= 3; i++ {
+		createTestOrder(t, commerceStore, adminTestOrder(testOrderID(i), commerce.OrderStatusPaid, now.Add(-time.Duration(i)*time.Minute)))
+	}
+
+	// No t.Run subtests: the login helper derives the admin password from
+	// t.Name(), so authenticated requests must run under the parent test.
+	for _, after := range []string{strings.Repeat("z", 26), "abc"} {
+		response := authenticatedProductGet(t, handler, "/admin/orders?after="+after)
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("after=%q status = %d, want %d", after, response.StatusCode, http.StatusOK)
+		}
+		if got := strings.Count(response.Body, `data-testid="admin-order-row"`); got != 3 {
+			t.Fatalf("after=%q admin-order-row count = %d, want the full first page of 3", after, got)
+		}
+	}
 }
 
 func TestAdminOrdersListShowsEmptyState(t *testing.T) {

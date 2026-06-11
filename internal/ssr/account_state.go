@@ -26,6 +26,7 @@ const customerSignedValueVersion = 1
 var customerSessionPurpose = []byte("tgs-customer-session")
 var customerCSRFPurpose = []byte("tgs-customer-csrf")
 var customerGuestCSRFPurpose = []byte("tgs-customer-guest-csrf")
+var customerOrdersCursorPurpose = []byte("tgs-orders-cursor")
 
 const customerCSRFFieldName = "csrf_token"
 const guestCSRFFieldName = "guest_csrf_token"

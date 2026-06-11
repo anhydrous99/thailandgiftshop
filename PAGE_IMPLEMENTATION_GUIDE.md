@@ -42,7 +42,7 @@ Implement these routes as server-rendered pages using templ. Preserve existing a
 | Place order | `POST /checkout/place-order` | `checkout.Service.PlaceOrder` | 303 to the provider's hosted payment page (or `/checkout/fake-pay` in demo runs) |
 | Checkout confirm | `/checkout/confirm` | Server-side provider session reconcile | Paid 303 to `/orders/{id}?placed=1`; unpaid renders the no-JS processing page |
 | Demo payment | `/checkout/fake-pay` (GET/POST) | Fake provider only | `404` unless the fake provider is wired (never in production) |
-| Orders | `/orders` | `ListOrdersByCustomer`, newest-first, 20 per page | Empty state invites shopping |
+| Orders | `/orders` | `ListOrdersByCustomer`, newest-first, 20 per page, signed `?after` cursor pages the full history | Empty state invites shopping |
 | Order detail | `/orders/{orderID}` | Frozen order snapshot (names/prices at purchase) | Foreign or missing order returns `404`, never `403` |
 | Stripe webhook | `POST /webhooks/stripe` | Signature-verified provider events | Invalid signature returns `400` |
 

@@ -539,30 +539,278 @@ func TestListOrdersNewestFirstWithLimit(t *testing.T) {
 				t.Fatalf("CreateOrder for other customer returned error: %v", err)
 			}
 
-			listed, err := fixture.store.ListOrdersByCustomer(ctx, customer.ID, 20)
+			listed, err := fixture.store.ListOrdersByCustomer(ctx, customer.ID, 20, OrderCursor{})
 			if err != nil {
 				t.Fatalf("ListOrdersByCustomer returned error: %v", err)
 			}
-			if len(listed) != 3 {
-				t.Fatalf("ListOrdersByCustomer returned %d orders, want 3", len(listed))
+			if len(listed.Orders) != 3 {
+				t.Fatalf("ListOrdersByCustomer returned %d orders, want 3", len(listed.Orders))
 			}
 			for i, want := range []string{customerOrders[2].ID, customerOrders[1].ID, customerOrders[0].ID} {
-				if listed[i].ID != want {
-					t.Fatalf("ListOrdersByCustomer[%d] = %q, want %q (newest first)", i, listed[i].ID, want)
+				if listed.Orders[i].ID != want {
+					t.Fatalf("ListOrdersByCustomer[%d] = %q, want %q (newest first)", i, listed.Orders[i].ID, want)
 				}
 			}
-
-			limited, err := fixture.store.ListOrdersByCustomer(ctx, customer.ID, 2)
-			if err != nil || len(limited) != 2 || limited[0].ID != customerOrders[2].ID {
-				t.Fatalf("limited ListOrdersByCustomer = %d orders %v, want newest 2", len(limited), err)
+			if !listed.NextCursor.IsZero() {
+				t.Fatalf("NextCursor = %#v, want zero when the listing fits in one page", listed.NextCursor)
 			}
 
-			all, err := fixture.store.ListOrders(ctx, 20)
+			limited, err := fixture.store.ListOrdersByCustomer(ctx, customer.ID, 2, OrderCursor{})
+			if err != nil || len(limited.Orders) != 2 || limited.Orders[0].ID != customerOrders[2].ID {
+				t.Fatalf("limited ListOrdersByCustomer = %d orders %v, want newest 2", len(limited.Orders), err)
+			}
+			if limited.NextCursor.OrderID != customerOrders[1].ID || !limited.NextCursor.CreatedAt.Equal(customerOrders[1].CreatedAt) {
+				t.Fatalf("limited NextCursor = %#v, want position after %q at %s", limited.NextCursor, customerOrders[1].ID, customerOrders[1].CreatedAt)
+			}
+
+			full, err := fixture.store.ListOrdersByCustomer(ctx, customer.ID, 0, OrderCursor{})
+			if err != nil || len(full.Orders) != 3 || !full.NextCursor.IsZero() {
+				t.Fatalf("limit-0 ListOrdersByCustomer = %d orders cursor %#v err %v, want full listing with zero cursor", len(full.Orders), full.NextCursor, err)
+			}
+
+			all, err := fixture.store.ListOrders(ctx, 20, OrderCursor{})
 			if err != nil {
 				t.Fatalf("ListOrders returned error: %v", err)
 			}
-			if len(all) != 4 || all[0].ID != otherOrder.ID {
-				t.Fatalf("ListOrders = %d orders first %q, want 4 with newest (%q) first", len(all), all[0].ID, otherOrder.ID)
+			if len(all.Orders) != 4 || all.Orders[0].ID != otherOrder.ID {
+				t.Fatalf("ListOrders = %d orders first %q, want 4 with newest (%q) first", len(all.Orders), all.Orders[0].ID, otherOrder.ID)
+			}
+			if !all.NextCursor.IsZero() {
+				t.Fatalf("ListOrders NextCursor = %#v, want zero when the listing fits", all.NextCursor)
+			}
+		})
+	}
+}
+
+func TestListOrdersByCustomerCursorPaging(t *testing.T) {
+	for _, fixture := range storeFixtures(t) {
+		t.Run(fixture.name, func(t *testing.T) {
+			ctx := context.Background()
+			customer := createTestCustomer(t, fixture.store, "shopper@example.test")
+
+			created := make([]Order, 0, 5)
+			for i := 0; i < 5; i++ {
+				order, err := fixture.store.CreateOrder(ctx, testOrder(customer.ID, 1000+i))
+				if err != nil {
+					t.Fatalf("CreateOrder %d returned error: %v", i, err)
+				}
+				created = append(created, order)
+				fixture.clock.Advance(time.Hour)
+			}
+			wantNewestFirst := []string{created[4].ID, created[3].ID, created[2].ID, created[1].ID, created[0].ID}
+
+			var walked []string
+			cursor := OrderCursor{}
+			for pageIndex, wantRows := range []int{2, 2, 1} {
+				page, err := fixture.store.ListOrdersByCustomer(ctx, customer.ID, 2, cursor)
+				if err != nil {
+					t.Fatalf("page %d ListOrdersByCustomer returned error: %v", pageIndex, err)
+				}
+				if len(page.Orders) != wantRows {
+					t.Fatalf("page %d rows = %d, want %d", pageIndex, len(page.Orders), wantRows)
+				}
+				for _, order := range page.Orders {
+					walked = append(walked, order.ID)
+				}
+				if pageIndex < 2 && page.NextCursor.IsZero() {
+					t.Fatalf("page %d NextCursor is zero with more orders remaining", pageIndex)
+				}
+				if pageIndex == 2 && !page.NextCursor.IsZero() {
+					t.Fatalf("final page NextCursor = %#v, want zero", page.NextCursor)
+				}
+				cursor = page.NextCursor
+			}
+
+			if len(walked) != len(wantNewestFirst) {
+				t.Fatalf("walk yielded %d orders, want %d", len(walked), len(wantNewestFirst))
+			}
+			for i, want := range wantNewestFirst {
+				if walked[i] != want {
+					t.Fatalf("walk[%d] = %q, want %q (newest first, no skips, no duplicates)", i, walked[i], want)
+				}
+			}
+		})
+	}
+}
+
+func TestListOrdersCursorPagingIsStableWhenNewOrdersArrive(t *testing.T) {
+	for _, fixture := range storeFixtures(t) {
+		t.Run(fixture.name, func(t *testing.T) {
+			ctx := context.Background()
+			customer := createTestCustomer(t, fixture.store, "shopper@example.test")
+
+			created := make([]Order, 0, 4)
+			for i := 0; i < 4; i++ {
+				order, err := fixture.store.CreateOrder(ctx, testOrder(customer.ID, 1000+i))
+				if err != nil {
+					t.Fatalf("CreateOrder %d returned error: %v", i, err)
+				}
+				created = append(created, order)
+				fixture.clock.Advance(time.Hour)
+			}
+
+			pageOne, err := fixture.store.ListOrdersByCustomer(ctx, customer.ID, 2, OrderCursor{})
+			if err != nil || len(pageOne.Orders) != 2 || pageOne.NextCursor.IsZero() {
+				t.Fatalf("page 1 = %d orders cursor %#v err %v, want 2 with a cursor", len(pageOne.Orders), pageOne.NextCursor, err)
+			}
+			heldCursor := pageOne.NextCursor
+
+			preInsert, err := fixture.store.ListOrdersByCustomer(ctx, customer.ID, 2, heldCursor)
+			if err != nil {
+				t.Fatalf("pre-insert page 2 returned error: %v", err)
+			}
+
+			newest, err := fixture.store.CreateOrder(ctx, testOrder(customer.ID, 9999))
+			if err != nil {
+				t.Fatalf("CreateOrder for the newer order returned error: %v", err)
+			}
+
+			postInsert, err := fixture.store.ListOrdersByCustomer(ctx, customer.ID, 2, heldCursor)
+			if err != nil {
+				t.Fatalf("post-insert page 2 returned error: %v", err)
+			}
+			if len(postInsert.Orders) != 2 || len(preInsert.Orders) != 2 {
+				t.Fatalf("page 2 rows pre %d post %d, want 2 and 2", len(preInsert.Orders), len(postInsert.Orders))
+			}
+			for i := range postInsert.Orders {
+				if postInsert.Orders[i].ID != preInsert.Orders[i].ID {
+					t.Fatalf("post-insert page 2[%d] = %q, want %q (stable under newer inserts)", i, postInsert.Orders[i].ID, preInsert.Orders[i].ID)
+				}
+			}
+			if postInsert.Orders[0].ID != created[1].ID || postInsert.Orders[1].ID != created[0].ID {
+				t.Fatalf("page 2 = %q,%q, want the two oldest orders %q,%q", postInsert.Orders[0].ID, postInsert.Orders[1].ID, created[1].ID, created[0].ID)
+			}
+
+			refreshed, err := fixture.store.ListOrdersByCustomer(ctx, customer.ID, 2, OrderCursor{})
+			if err != nil || len(refreshed.Orders) == 0 || refreshed.Orders[0].ID != newest.ID {
+				t.Fatalf("re-fetched page 1 first order = %v err %v, want the new order %q leading", refreshed.Orders, err, newest.ID)
+			}
+		})
+	}
+}
+
+func TestListOrdersCursorSameSecondTiebreak(t *testing.T) {
+	for _, fixture := range storeFixtures(t) {
+		t.Run(fixture.name, func(t *testing.T) {
+			ctx := context.Background()
+			customer := createTestCustomer(t, fixture.store, "shopper@example.test")
+
+			first, err := fixture.store.CreateOrder(ctx, testOrder(customer.ID, 1000))
+			if err != nil {
+				t.Fatalf("CreateOrder returned error: %v", err)
+			}
+			second, err := fixture.store.CreateOrder(ctx, testOrder(customer.ID, 2000))
+			if err != nil {
+				t.Fatalf("CreateOrder returned error: %v", err)
+			}
+
+			// Same RFC3339 second: the index sort key falls back to the
+			// order ID, descending with the newest-first scan.
+			wantFirst, wantSecond := first.ID, second.ID
+			if wantFirst < wantSecond {
+				wantFirst, wantSecond = wantSecond, wantFirst
+			}
+
+			pageOne, err := fixture.store.ListOrdersByCustomer(ctx, customer.ID, 1, OrderCursor{})
+			if err != nil || len(pageOne.Orders) != 1 || pageOne.Orders[0].ID != wantFirst {
+				t.Fatalf("page 1 = %v err %v, want exactly %q", pageOne.Orders, err, wantFirst)
+			}
+			if pageOne.NextCursor.IsZero() {
+				t.Fatalf("page 1 NextCursor is zero with one order remaining")
+			}
+
+			pageTwo, err := fixture.store.ListOrdersByCustomer(ctx, customer.ID, 1, pageOne.NextCursor)
+			if err != nil || len(pageTwo.Orders) != 1 || pageTwo.Orders[0].ID != wantSecond {
+				t.Fatalf("page 2 = %v err %v, want exactly %q", pageTwo.Orders, err, wantSecond)
+			}
+			if !pageTwo.NextCursor.IsZero() {
+				t.Fatalf("page 2 NextCursor = %#v, want zero at the end of the walk", pageTwo.NextCursor)
+			}
+		})
+	}
+}
+
+func TestListOrdersCursorAtUnknownPosition(t *testing.T) {
+	for _, fixture := range storeFixtures(t) {
+		t.Run(fixture.name, func(t *testing.T) {
+			ctx := context.Background()
+			customer := createTestCustomer(t, fixture.store, "shopper@example.test")
+
+			created := make([]Order, 0, 3)
+			for i := 0; i < 3; i++ {
+				order, err := fixture.store.CreateOrder(ctx, testOrder(customer.ID, 1000+i))
+				if err != nil {
+					t.Fatalf("CreateOrder %d returned error: %v", i, err)
+				}
+				created = append(created, order)
+				fixture.clock.Advance(time.Hour)
+			}
+
+			// A position between the second and third orders that matches no
+			// stored row: ExclusiveStartKey is positional, so the listing
+			// resumes strictly below it with no error.
+			betweenCursor := OrderCursor{
+				OrderID:   "zzzzzzzzzzzzzzzzzzzzzzzzzz",
+				CreatedAt: created[1].CreatedAt.Add(30 * time.Minute),
+			}
+			page, err := fixture.store.ListOrdersByCustomer(ctx, customer.ID, 20, betweenCursor)
+			if err != nil {
+				t.Fatalf("ListOrdersByCustomer at unknown position returned error: %v", err)
+			}
+			if len(page.Orders) != 2 || page.Orders[0].ID != created[1].ID || page.Orders[1].ID != created[0].ID {
+				t.Fatalf("page = %v, want the two orders strictly below the fabricated position (%q, %q)", page.Orders, created[1].ID, created[0].ID)
+			}
+			if !page.NextCursor.IsZero() {
+				t.Fatalf("NextCursor = %#v, want zero", page.NextCursor)
+			}
+		})
+	}
+}
+
+func TestListOrdersCursorPaging(t *testing.T) {
+	for _, fixture := range storeFixtures(t) {
+		t.Run(fixture.name, func(t *testing.T) {
+			ctx := context.Background()
+			customer := createTestCustomer(t, fixture.store, "shopper@example.test")
+			other := createTestCustomer(t, fixture.store, "other@example.test")
+
+			created := make([]Order, 0, 5)
+			for i := 0; i < 5; i++ {
+				owner := customer.ID
+				if i%2 == 1 {
+					owner = other.ID
+				}
+				order, err := fixture.store.CreateOrder(ctx, testOrder(owner, 1000+i))
+				if err != nil {
+					t.Fatalf("CreateOrder %d returned error: %v", i, err)
+				}
+				created = append(created, order)
+				fixture.clock.Advance(time.Hour)
+			}
+			wantNewestFirst := []string{created[4].ID, created[3].ID, created[2].ID, created[1].ID, created[0].ID}
+
+			var walked []string
+			cursor := OrderCursor{}
+			for pageIndex, wantRows := range []int{2, 2, 1} {
+				page, err := fixture.store.ListOrders(ctx, 2, cursor)
+				if err != nil {
+					t.Fatalf("page %d ListOrders returned error: %v", pageIndex, err)
+				}
+				if len(page.Orders) != wantRows {
+					t.Fatalf("page %d rows = %d, want %d", pageIndex, len(page.Orders), wantRows)
+				}
+				for _, order := range page.Orders {
+					walked = append(walked, order.ID)
+				}
+				cursor = page.NextCursor
+			}
+			if !cursor.IsZero() {
+				t.Fatalf("final NextCursor = %#v, want zero-cursor termination", cursor)
+			}
+			for i, want := range wantNewestFirst {
+				if walked[i] != want {
+					t.Fatalf("walk[%d] = %q, want %q (both customers' orders, newest first)", i, walked[i], want)
+				}
 			}
 		})
 	}

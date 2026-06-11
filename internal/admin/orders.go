@@ -16,7 +16,8 @@ import (
 
 const adminOrderActionAllowedMethods = http.MethodPost
 
-// adminOrderListLimit caps the newest-first admin order list query (gsi2).
+// adminOrderListLimit is the page size of the newest-first admin order list
+// (gsi2 orders-index); older pages continue via the ?after=<orderID> cursor.
 const adminOrderListLimit = 100
 
 // adminOrderOverdueAfter flags pending_payment orders that should have been
@@ -30,6 +31,9 @@ const adminOrderFieldMaxLength = 100
 type adminOrderListViewModel struct {
 	CSRFValue string
 	Orders    []adminOrderRowViewModel
+	// NextCursor is the order ID the next-older page resumes after; empty on
+	// the last page. The detail handler re-reads the order for its CreatedAt.
+	NextCursor string
 }
 
 type adminOrderRowViewModel struct {
@@ -107,7 +111,7 @@ func (h *Handler) handleAdminOrders(ctx context.Context, path string, request ev
 		if method != http.MethodGet && method != http.MethodHead {
 			return adminHTMLResponse(http.StatusMethodNotAllowed, "Method not allowed", map[string]string{"Allow": adminAllowedMethods}, nil)
 		}
-		return h.adminOrderListResponse(ctx, method, csrfValue, cookies)
+		return h.adminOrderListResponse(ctx, request, method, csrfValue, cookies)
 	}
 
 	orderID, action, ok := adminOrderIDAction(path)
@@ -156,18 +160,19 @@ func (h *Handler) handleAdminOrders(ctx context.Context, path string, request ev
 	return adminHTMLResponse(http.StatusNotFound, "Not found", nil, nil)
 }
 
-func (h *Handler) adminOrderListResponse(ctx context.Context, method string, csrfValue string, cookies []string) events.APIGatewayV2HTTPResponse {
-	orders, err := h.commerceStore().ListOrders(ctx, adminOrderListLimit)
+func (h *Handler) adminOrderListResponse(ctx context.Context, request events.APIGatewayV2HTTPRequest, method string, csrfValue string, cookies []string) events.APIGatewayV2HTTPResponse {
+	cursor := h.adminOrdersCursor(ctx, request.QueryStringParameters["after"])
+	page, err := h.commerceStore().ListOrders(ctx, adminOrderListLimit, cursor)
 	if err != nil {
 		logAdminError("orders: list", err)
 		return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 	}
 	now := h.currentTime()
-	rows := make([]adminOrderRowViewModel, 0, len(orders))
-	for _, order := range orders {
+	rows := make([]adminOrderRowViewModel, 0, len(page.Orders))
+	for _, order := range page.Orders {
 		rows = append(rows, adminOrderRowViewModel{Order: order, Overdue: adminOrderOverdue(order, now)})
 	}
-	body, err := renderAdminOrderList(ctx, adminOrderListViewModel{CSRFValue: csrfValue, Orders: rows})
+	body, err := renderAdminOrderList(ctx, adminOrderListViewModel{CSRFValue: csrfValue, Orders: rows, NextCursor: page.NextCursor.OrderID})
 	if err != nil {
 		logAdminError("orders: render list", err)
 		return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
@@ -176,6 +181,24 @@ func (h *Handler) adminOrderListResponse(ctx context.Context, method string, csr
 		body = ""
 	}
 	return adminHTMLResponse(http.StatusOK, body, nil, cookies)
+}
+
+// adminOrdersCursor resolves ?after=<orderID> by re-reading the order so the
+// URL never carries a sort-key timestamp. Malformed, unknown, or unreadable
+// IDs restart at the first page (the customer-page fallback convention).
+func (h *Handler) adminOrdersCursor(ctx context.Context, after string) commerce.OrderCursor {
+	if !validAdminOrderID(after) {
+		return commerce.OrderCursor{}
+	}
+	order, found, err := h.commerceStore().GetOrder(ctx, after)
+	if err != nil {
+		logAdminError("orders: resolve cursor", err)
+		return commerce.OrderCursor{}
+	}
+	if !found {
+		return commerce.OrderCursor{}
+	}
+	return commerce.OrderCursor{OrderID: order.ID, CreatedAt: order.CreatedAt}
 }
 
 func (h *Handler) advanceOrder(ctx context.Context, request events.APIGatewayV2HTTPRequest, order commerce.Order, csrfValue string, cookies []string) events.APIGatewayV2HTTPResponse {

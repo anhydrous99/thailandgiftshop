@@ -229,7 +229,9 @@ type ordersPageData struct {
 	Breadcrumbs     []breadcrumbItem
 	HeaderCartLabel string
 	Orders          []orderRowView
-	NextCursor      string
+	// NextCursor is the URL-ready signed ?after token for the next-older
+	// page (already query-escaped); empty when this is the last page.
+	NextCursor string
 }
 
 // orderLineView renders one frozen order-snapshot line: every field was

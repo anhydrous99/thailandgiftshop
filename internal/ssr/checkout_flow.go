@@ -15,16 +15,15 @@ import (
 	"github.com/anhydrous99/thailandgiftshop/internal/commerce"
 	"github.com/anhydrous99/thailandgiftshop/internal/httpapi"
 	"github.com/anhydrous99/thailandgiftshop/internal/payments"
+	"github.com/anhydrous99/thailandgiftshop/internal/signedtoken"
 	"github.com/aws/aws-lambda-go/events"
 )
 
-// ordersPageSize is the order-history page length (gsi1 newest-first).
+// ordersPageSize is the order-history page length. Pages walk the
+// customer-orders index (gsi1) newest-first via store-level cursors; the
+// ?after URL parameter is an HMAC-signed, customer-bound cursor token
+// (decodeOrdersCursor).
 const ordersPageSize = 20
-
-// ordersScanLimit bounds how far back the cursor can page. The store
-// interface exposes a single limit-bounded query, so cursor paging scans this
-// window and slices; a store-level exclusive-start key is the future upgrade.
-const ordersScanLimit = 200
 
 const checkoutPaymentStatusPaid = "paid"
 const checkoutSessionModeSetup = "setup"
@@ -546,38 +545,99 @@ func fakePayReturnTo(request events.APIGatewayV2HTTPRequest) string {
 	return returnTo
 }
 
-// handleOrdersPage renders the order history newest-first with cursor paging:
-// ?after=<orderID> resumes below that order.
+// ordersCursorPayload is the signed ?after token for /orders paging. It
+// carries only the order GSI sort-key components — both already user-visible
+// (order IDs sit in /orders/<id> URLs; created_at is on the order page) — so
+// the store can rebuild the ExclusiveStartKey without exposing raw DynamoDB
+// keys. The payload is readable by anyone holding the token (the envelope
+// signs, it does not encrypt): never add confidential fields here. The
+// customer binding is in the MAC purpose (ordersCursorTokenPurpose), not in
+// the payload.
+type ordersCursorPayload struct {
+	Version   int    `json:"version"`
+	OrderID   string `json:"order_id"`
+	CreatedAt string `json:"created_at"` // UTC RFC3339, second precision (formatCommerceTime parity)
+}
+
+// ordersCursorTokenPurpose scopes the cursor MAC to one customer by mixing
+// the customer ID into the HMAC purpose; signedtoken.signPayload computes
+// HMAC over purpose || 0x00 || payload, so the MAC input becomes
+//
+//	"tgs-orders-cursor" || 0x00 || customerID || 0x00 || payload
+//
+// A token minted for one account fails verification under every other
+// account without the customer ID ever appearing in the URL. Customer IDs
+// are fixed-length 26-char [a-z0-9] values (signedtoken.NewID via
+// commerce ID minting), so the concatenation is unambiguous; no existing
+// purpose string contains 0x00 and the bare customerOrdersCursorPurpose is
+// never used directly, so this cannot collide with the session/CSRF purposes.
+func ordersCursorTokenPurpose(customerID string) []byte {
+	purpose := make([]byte, 0, len(customerOrdersCursorPurpose)+1+len(customerID))
+	purpose = append(purpose, customerOrdersCursorPurpose...)
+	purpose = append(purpose, 0)
+	return append(purpose, customerID...)
+}
+
+// decodeOrdersCursor resolves ?after into a store cursor. Every invalid input
+// — bad signature, wrong purpose, token minted for another customer,
+// malformed fields — yields the zero cursor, i.e. page 1. Failing open to the
+// customer's own first page is safe: the listing is always scoped to the
+// session customer.
+func (h *Handler) decodeOrdersCursor(after string, customerID string) commerce.OrderCursor {
+	if after == "" {
+		return commerce.OrderCursor{}
+	}
+	var payload ordersCursorPayload
+	if !signedtoken.Decode(after, h.customerSessionSecret, ordersCursorTokenPurpose(customerID), &payload) {
+		return commerce.OrderCursor{}
+	}
+	if payload.Version != customerSignedValueVersion || !accountIDPattern.MatchString(payload.OrderID) {
+		return commerce.OrderCursor{}
+	}
+	createdAt, err := time.Parse(time.RFC3339, payload.CreatedAt)
+	if err != nil {
+		return commerce.OrderCursor{}
+	}
+	return commerce.OrderCursor{OrderID: payload.OrderID, CreatedAt: createdAt}
+}
+
+func (h *Handler) encodeOrdersCursor(cursor commerce.OrderCursor, customerID string) (string, error) {
+	return signedtoken.Encode(ordersCursorPayload{
+		Version:   customerSignedValueVersion,
+		OrderID:   cursor.OrderID,
+		CreatedAt: cursor.CreatedAt.UTC().Format(time.RFC3339),
+	}, h.customerSessionSecret, ordersCursorTokenPurpose(customerID))
+}
+
+// handleOrdersPage renders the order history newest-first with true
+// store-level cursor paging: ?after carries a signed, customer-bound cursor
+// token; anything invalid silently restarts at the first page.
 func (h *Handler) handleOrdersPage(ctx context.Context, request events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
 	_, customer, signedIn, clearingCookies := h.customerSession(ctx, request)
 	if !signedIn {
 		return accountSeeOther(signInLocationForReturnTo("/orders"), pageOrders, clearingCookies)
 	}
 
-	orders, err := h.commerce.ListOrdersByCustomer(ctx, customer.ID, ordersScanLimit)
+	cursor := h.decodeOrdersCursor(request.QueryStringParameters["after"], customer.ID)
+	page, err := h.commerce.ListOrdersByCustomer(ctx, customer.ID, ordersPageSize, cursor)
 	if err != nil {
 		logAccountError("orders: list", err)
 		return accountHTMLResponse(http.StatusInternalServerError, "Internal server error", pageOrders, nil)
 	}
 
-	start := 0
-	if after := request.QueryStringParameters["after"]; accountIDPattern.MatchString(after) {
-		for index, order := range orders {
-			if order.ID == after {
-				start = index + 1
-				break
-			}
+	nextCursor := ""
+	if !page.NextCursor.IsZero() {
+		token, err := h.encodeOrdersCursor(page.NextCursor, customer.ID)
+		if err != nil {
+			// Degrade: render the page without the older-orders link.
+			logAccountError("orders: encode cursor", err)
+		} else {
+			nextCursor = url.QueryEscape(token)
 		}
 	}
-	end := min(start+ordersPageSize, len(orders))
-	page := orders[start:end]
-	nextCursor := ""
-	if end < len(orders) && len(page) > 0 {
-		nextCursor = page[len(page)-1].ID
-	}
 
-	rows := make([]orderRowView, 0, len(page))
-	for _, order := range page {
+	rows := make([]orderRowView, 0, len(page.Orders))
+	for _, order := range page.Orders {
 		rows = append(rows, orderRowView{
 			ID:          order.ID,
 			StatusLabel: orderStatusLabel(order.Status),
