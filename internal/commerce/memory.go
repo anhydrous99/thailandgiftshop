@@ -22,10 +22,12 @@ type MemoryStore struct {
 	customers    map[string]Customer
 	emailLocks   map[string]string
 	sessions     map[string]map[string]Session
+	resetTokens  map[string]PasswordResetToken
 	carts        map[string]CartRecord
 	addresses    map[string]map[string]Address
 	orders       map[string]Order
 	stripeEvents map[string]bool
+	emailEvents  map[string]EmailEvent
 	throttle     map[string]memoryThrottleRecord
 }
 
@@ -40,10 +42,12 @@ func NewMemoryStoreWithClock(now func() time.Time) *MemoryStore {
 		customers:    map[string]Customer{},
 		emailLocks:   map[string]string{},
 		sessions:     map[string]map[string]Session{},
+		resetTokens:  map[string]PasswordResetToken{},
 		carts:        map[string]CartRecord{},
 		addresses:    map[string]map[string]Address{},
 		orders:       map[string]Order{},
 		stripeEvents: map[string]bool{},
+		emailEvents:  map[string]EmailEvent{},
 		throttle:     map[string]memoryThrottleRecord{},
 	}
 }
@@ -201,6 +205,51 @@ func (s *MemoryStore) DeleteAllSessions(ctx context.Context, customerID string) 
 	defer s.mu.Unlock()
 
 	delete(s.sessions, customerID)
+	return nil
+}
+
+func (s *MemoryStore) PutPasswordResetToken(ctx context.Context, token PasswordResetToken) error {
+	_ = ctx
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.resetTokens[token.CustomerID] = token
+	return nil
+}
+
+func (s *MemoryStore) ValidatePasswordResetToken(ctx context.Context, customerID string, tokenHash string, now time.Time) (PasswordResetToken, bool, error) {
+	_ = ctx
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	token, found := s.resetTokens[customerID]
+	if !found || !passwordResetTokenUsable(token, tokenHash, now) {
+		return PasswordResetToken{}, false, nil
+	}
+	return token, true, nil
+}
+
+func (s *MemoryStore) ConsumePasswordResetToken(ctx context.Context, customerID string, tokenHash string, now time.Time) (PasswordResetToken, bool, error) {
+	_ = ctx
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	token, found := s.resetTokens[customerID]
+	if !found || !passwordResetTokenUsable(token, tokenHash, now) {
+		return PasswordResetToken{}, false, nil
+	}
+	token.UsedAt = now.UTC()
+	token.Version++
+	s.resetTokens[customerID] = token
+	return token, true, nil
+}
+
+func (s *MemoryStore) DeletePasswordResetToken(ctx context.Context, customerID string) error {
+	_ = ctx
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	delete(s.resetTokens, customerID)
 	return nil
 }
 
@@ -437,6 +486,56 @@ func (s *MemoryStore) MarkStripeEventProcessed(ctx context.Context, eventID stri
 	}
 	s.stripeEvents[eventID] = true
 	return false, nil
+}
+
+func (s *MemoryStore) ReserveEmailEvent(ctx context.Context, event EmailEvent) (bool, error) {
+	_ = ctx
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	mapKey := memoryEmailEventKey(event.OrderID, event.Key)
+	if _, found := s.emailEvents[mapKey]; found {
+		return false, nil
+	}
+	s.emailEvents[mapKey] = event
+	return true, nil
+}
+
+func (s *MemoryStore) MarkEmailEventSent(ctx context.Context, orderID string, key string, sentAt time.Time) error {
+	_ = ctx
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	mapKey := memoryEmailEventKey(orderID, key)
+	event, found := s.emailEvents[mapKey]
+	if !found {
+		return fmt.Errorf("commerce email event %q for order %q not found", key, orderID)
+	}
+	event.Status = "sent"
+	event.SentAt = sentAt.UTC()
+	s.emailEvents[mapKey] = event
+	return nil
+}
+
+func (s *MemoryStore) MarkEmailEventFailed(ctx context.Context, orderID string, key string, failedAt time.Time, reason string) error {
+	_ = ctx
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	mapKey := memoryEmailEventKey(orderID, key)
+	event, found := s.emailEvents[mapKey]
+	if !found {
+		return fmt.Errorf("commerce email event %q for order %q not found", key, orderID)
+	}
+	event.Status = "failed"
+	event.FailedAt = failedAt.UTC()
+	event.LastError = reason
+	s.emailEvents[mapKey] = event
+	return nil
+}
+
+func memoryEmailEventKey(orderID string, key string) string {
+	return orderID + "\x00" + key
 }
 
 func cloneCartRecord(record CartRecord) CartRecord {

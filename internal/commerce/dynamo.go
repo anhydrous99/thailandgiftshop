@@ -2,6 +2,7 @@ package commerce
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
@@ -20,23 +21,27 @@ import (
 )
 
 const (
-	entityCustomer    = "CUSTOMER"
-	entityEmailLock   = "CUSTOMER_EMAIL_LOCK"
-	entitySession     = "SESSION"
-	entityCart        = "CART"
-	entityAddress     = "ADDRESS"
-	entityOrder       = "ORDER"
-	entityStripeEvent = "STRIPE_EVENT"
-	entityThrottle    = "THROTTLE"
+	entityCustomer      = "CUSTOMER"
+	entityEmailLock     = "CUSTOMER_EMAIL_LOCK"
+	entitySession       = "SESSION"
+	entityPasswordReset = "PASSWORD_RESET"
+	entityCart          = "CART"
+	entityAddress       = "ADDRESS"
+	entityOrder         = "ORDER"
+	entityEmailEvent    = "EMAIL_EVENT"
+	entityStripeEvent   = "STRIPE_EVENT"
+	entityThrottle      = "THROTTLE"
 
-	customerSK      = "CUSTOMER"
-	emailLockSK     = "EMAIL_LOCK"
-	cartSK          = "CART"
-	orderSK         = "ORDER"
-	stripeEventSK   = "EVENT"
-	throttleSK      = "THROTTLE"
-	sessionSKPrefix = "SESSION#"
-	addressSKPrefix = "ADDRESS#"
+	customerSK         = "CUSTOMER"
+	emailLockSK        = "EMAIL_LOCK"
+	cartSK             = "CART"
+	orderSK            = "ORDER"
+	emailEventSKPrefix = "EMAIL_EVENT#"
+	stripeEventSK      = "EVENT"
+	throttleSK         = "THROTTLE"
+	passwordResetSK    = "PASSWORD_RESET"
+	sessionSKPrefix    = "SESSION#"
+	addressSKPrefix    = "ADDRESS#"
 
 	ordersIndexPK = "ORDERS"
 )
@@ -62,6 +67,10 @@ func addressSK(addressID string) string {
 
 func orderPK(orderID string) string {
 	return "ORDER#" + orderID
+}
+
+func emailEventSK(key string) string {
+	return emailEventSKPrefix + base64.RawURLEncoding.EncodeToString([]byte(key))
 }
 
 func stripeEventPK(eventID string) string {
@@ -493,6 +502,79 @@ func (s *DynamoStore) DeleteAllSessions(ctx context.Context, customerID string) 
 	return nil
 }
 
+func (s *DynamoStore) PutPasswordResetToken(ctx context.Context, token PasswordResetToken) error {
+	item, err := passwordResetTokenItem(token)
+	if err != nil {
+		return err
+	}
+	return s.putItem(ctx, item, nil, nil, "PutPasswordResetToken")
+}
+
+func (s *DynamoStore) ValidatePasswordResetToken(ctx context.Context, customerID string, tokenHash string, now time.Time) (PasswordResetToken, bool, error) {
+	token, found, err := s.getPasswordResetToken(ctx, customerID, "ValidatePasswordResetToken")
+	if err != nil || !found {
+		return PasswordResetToken{}, found, err
+	}
+	if !passwordResetTokenUsable(token, tokenHash, now) {
+		return PasswordResetToken{}, false, nil
+	}
+	return token, true, nil
+}
+
+func (s *DynamoStore) ConsumePasswordResetToken(ctx context.Context, customerID string, tokenHash string, now time.Time) (PasswordResetToken, bool, error) {
+	if s.update == nil {
+		return PasswordResetToken{}, false, errors.New("commerce store is missing an update client")
+	}
+	started := time.Now()
+	output, err := s.update.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName:           aws.String(s.tableName),
+		Key:                 itemKey(customerPK(customerID), passwordResetSK),
+		ConditionExpression: aws.String("attribute_exists(pk) AND token_hash = :token_hash AND expires_at > :now AND attribute_not_exists(used_at)"),
+		UpdateExpression:    aws.String("SET used_at = :used_at, #version = :new_version"),
+		ExpressionAttributeNames: map[string]string{
+			"#version": "version",
+		},
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":token_hash":  &types.AttributeValueMemberS{Value: tokenHash},
+			":now":         numberValue(now.UTC().Unix()),
+			":used_at":     &types.AttributeValueMemberS{Value: formatCommerceTime(now)},
+			":new_version": numberValue(2),
+		},
+		ReturnValues: types.ReturnValueAllNew,
+	})
+	s.recordCommerceOperation("UpdateItem", "ConsumePasswordResetToken", time.Since(started))
+	if isConditionalCheckFailed(err) {
+		return PasswordResetToken{}, false, nil
+	}
+	if err != nil {
+		return PasswordResetToken{}, false, err
+	}
+	token, err := passwordResetTokenFromItem(output.Attributes)
+	if err != nil {
+		return PasswordResetToken{}, false, err
+	}
+	return token, true, nil
+}
+
+func (s *DynamoStore) DeletePasswordResetToken(ctx context.Context, customerID string) error {
+	return s.deleteItem(ctx, customerPK(customerID), passwordResetSK, "DeletePasswordResetToken")
+}
+
+func (s *DynamoStore) getPasswordResetToken(ctx context.Context, customerID string, operation string) (PasswordResetToken, bool, error) {
+	item, err := s.getItem(ctx, customerPK(customerID), passwordResetSK, operation)
+	if err != nil {
+		return PasswordResetToken{}, false, err
+	}
+	if len(item) == 0 {
+		return PasswordResetToken{}, false, nil
+	}
+	token, err := passwordResetTokenFromItem(item)
+	if err != nil {
+		return PasswordResetToken{}, false, err
+	}
+	return token, true, nil
+}
+
 func (s *DynamoStore) GetCart(ctx context.Context, customerID string) (CartRecord, bool, error) {
 	item, err := s.getItem(ctx, customerPK(customerID), cartSK, "GetCart")
 	if err != nil {
@@ -852,6 +934,60 @@ func (s *DynamoStore) MarkStripeEventProcessed(ctx context.Context, eventID stri
 	return false, nil
 }
 
+func (s *DynamoStore) ReserveEmailEvent(ctx context.Context, event EmailEvent) (bool, error) {
+	item, err := emailEventItem(event)
+	if err != nil {
+		return false, err
+	}
+	err = s.putItem(ctx, item, aws.String("attribute_not_exists(pk)"), nil, "ReserveEmailEvent")
+	if isConditionalCheckFailed(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *DynamoStore) MarkEmailEventSent(ctx context.Context, orderID string, key string, sentAt time.Time) error {
+	_, err := s.updateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName:           aws.String(s.tableName),
+		Key:                 itemKey(orderPK(orderID), emailEventSK(key)),
+		ConditionExpression: aws.String("attribute_exists(pk) AND entity_type = :entity_type"),
+		UpdateExpression:    aws.String("SET #status = :status, sent_at = :sent_at"),
+		ExpressionAttributeNames: map[string]string{
+			"#status": "status",
+		},
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":entity_type": &types.AttributeValueMemberS{Value: entityEmailEvent},
+			":status":      &types.AttributeValueMemberS{Value: "sent"},
+			":sent_at":     &types.AttributeValueMemberS{Value: formatCommerceTime(sentAt)},
+		},
+		ReturnValues: types.ReturnValueNone,
+	}, "MarkEmailEventSent")
+	return err
+}
+
+func (s *DynamoStore) MarkEmailEventFailed(ctx context.Context, orderID string, key string, failedAt time.Time, reason string) error {
+	_, err := s.updateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName:           aws.String(s.tableName),
+		Key:                 itemKey(orderPK(orderID), emailEventSK(key)),
+		ConditionExpression: aws.String("attribute_exists(pk) AND entity_type = :entity_type"),
+		UpdateExpression:    aws.String("SET #status = :status, failed_at = :failed_at, last_error = :last_error"),
+		ExpressionAttributeNames: map[string]string{
+			"#status": "status",
+		},
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":entity_type": &types.AttributeValueMemberS{Value: entityEmailEvent},
+			":status":      &types.AttributeValueMemberS{Value: "failed"},
+			":failed_at":   &types.AttributeValueMemberS{Value: formatCommerceTime(failedAt)},
+			":last_error":  &types.AttributeValueMemberS{Value: reason},
+		},
+		ReturnValues: types.ReturnValueNone,
+	}, "MarkEmailEventFailed")
+	return err
+}
+
 type putItemExpressions struct {
 	names  map[string]string
 	values map[string]types.AttributeValue
@@ -1170,6 +1306,35 @@ type sessionDynamoItem struct {
 	ExpiresAt  int64  `dynamodbav:"expires_at"`
 }
 
+type passwordResetTokenDynamoItem struct {
+	PK         string `dynamodbav:"pk"`
+	SK         string `dynamodbav:"sk"`
+	EntityType string `dynamodbav:"entity_type"`
+	CustomerID string `dynamodbav:"customer_id"`
+	TokenHash  string `dynamodbav:"token_hash"`
+	ExpiresAt  int64  `dynamodbav:"expires_at"`
+	CreatedAt  string `dynamodbav:"created_at"`
+	UsedAt     string `dynamodbav:"used_at,omitempty"`
+	Version    *int   `dynamodbav:"version,omitempty"`
+}
+
+type emailEventDynamoItem struct {
+	PK           string `dynamodbav:"pk"`
+	SK           string `dynamodbav:"sk"`
+	EntityType   string `dynamodbav:"entity_type"`
+	EventKey     string `dynamodbav:"event_key"`
+	Kind         string `dynamodbav:"kind"`
+	OrderID      string `dynamodbav:"order_id"`
+	OrderVersion *int   `dynamodbav:"order_version"`
+	To           string `dynamodbav:"to"`
+	Status       string `dynamodbav:"status"`
+	Attempts     *int   `dynamodbav:"attempts"`
+	LastError    string `dynamodbav:"last_error,omitempty"`
+	CreatedAt    string `dynamodbav:"created_at"`
+	SentAt       string `dynamodbav:"sent_at,omitempty"`
+	FailedAt     string `dynamodbav:"failed_at,omitempty"`
+}
+
 type cartLineDynamoItem struct {
 	Slug      string `dynamodbav:"slug"`
 	VariantID string `dynamodbav:"variant_id,omitempty"`
@@ -1391,6 +1556,50 @@ func sessionFromItem(item map[string]types.AttributeValue) (Session, error) {
 		CreatedAt:  createdAt,
 		ExpiresAt:  time.Unix(record.ExpiresAt, 0).UTC(),
 	}, nil
+}
+
+func passwordResetTokenItem(token PasswordResetToken) (map[string]types.AttributeValue, error) {
+	return attributevalue.MarshalMap(passwordResetTokenDynamoItem{
+		PK:         customerPK(token.CustomerID),
+		SK:         passwordResetSK,
+		EntityType: entityPasswordReset,
+		CustomerID: token.CustomerID,
+		TokenHash:  token.TokenHash,
+		ExpiresAt:  token.ExpiresAt.UTC().Unix(),
+		CreatedAt:  formatCommerceTime(token.CreatedAt),
+		UsedAt:     formatCommerceTime(token.UsedAt),
+		Version:    intPtr(token.Version),
+	})
+}
+
+func passwordResetTokenFromItem(item map[string]types.AttributeValue) (PasswordResetToken, error) {
+	var record passwordResetTokenDynamoItem
+	if err := attributevalue.UnmarshalMap(item, &record); err != nil {
+		return PasswordResetToken{}, err
+	}
+	if record.EntityType != entityPasswordReset {
+		return PasswordResetToken{}, fmt.Errorf("commerce item is %q, not password reset token", record.EntityType)
+	}
+	createdAt, err := parseCommerceTime("created_at", record.CreatedAt)
+	if err != nil {
+		return PasswordResetToken{}, err
+	}
+	usedAt, err := parseCommerceTime("used_at", record.UsedAt)
+	if err != nil {
+		return PasswordResetToken{}, err
+	}
+	return PasswordResetToken{
+		CustomerID: record.CustomerID,
+		TokenHash:  record.TokenHash,
+		CreatedAt:  createdAt,
+		ExpiresAt:  time.Unix(record.ExpiresAt, 0).UTC(),
+		UsedAt:     usedAt,
+		Version:    intValue(record.Version),
+	}, nil
+}
+
+func passwordResetTokenUsable(token PasswordResetToken, tokenHash string, now time.Time) bool {
+	return token.TokenHash == tokenHash && token.UsedAt.IsZero() && token.ExpiresAt.After(now.UTC())
 }
 
 func cartItem(record CartRecord) (map[string]types.AttributeValue, error) {
@@ -1720,6 +1929,61 @@ func stripeEventItem(eventID string, eventType string, orderID string, now time.
 		ProcessedAt: formatCommerceTime(now),
 		ExpiresAt:   now.UTC().Add(stripeEventTTL).Unix(),
 	})
+}
+
+func emailEventItem(event EmailEvent) (map[string]types.AttributeValue, error) {
+	return attributevalue.MarshalMap(emailEventDynamoItem{
+		PK:           orderPK(event.OrderID),
+		SK:           emailEventSK(event.Key),
+		EntityType:   entityEmailEvent,
+		EventKey:     event.Key,
+		Kind:         event.Kind,
+		OrderID:      event.OrderID,
+		OrderVersion: intPtr(event.OrderVersion),
+		To:           event.To,
+		Status:       event.Status,
+		Attempts:     intPtr(event.Attempts),
+		LastError:    event.LastError,
+		CreatedAt:    formatCommerceTime(event.CreatedAt),
+		SentAt:       formatCommerceTime(event.SentAt),
+		FailedAt:     formatCommerceTime(event.FailedAt),
+	})
+}
+
+func emailEventFromItem(item map[string]types.AttributeValue) (EmailEvent, error) {
+	var record emailEventDynamoItem
+	if err := attributevalue.UnmarshalMap(item, &record); err != nil {
+		return EmailEvent{}, err
+	}
+	if record.EntityType != entityEmailEvent {
+		return EmailEvent{}, fmt.Errorf("commerce item is %q, not email event", record.EntityType)
+	}
+	createdAt, err := parseCommerceTime("created_at", record.CreatedAt)
+	if err != nil {
+		return EmailEvent{}, err
+	}
+	sentAt, err := parseCommerceTime("sent_at", record.SentAt)
+	if err != nil {
+		return EmailEvent{}, err
+	}
+	failedAt, err := parseCommerceTime("failed_at", record.FailedAt)
+	if err != nil {
+		return EmailEvent{}, err
+	}
+
+	return EmailEvent{
+		Key:          record.EventKey,
+		Kind:         record.Kind,
+		OrderID:      record.OrderID,
+		OrderVersion: intValue(record.OrderVersion),
+		To:           record.To,
+		Status:       record.Status,
+		Attempts:     intValue(record.Attempts),
+		LastError:    record.LastError,
+		CreatedAt:    createdAt,
+		SentAt:       sentAt,
+		FailedAt:     failedAt,
+	}, nil
 }
 
 func formatCommerceTime(value time.Time) string {

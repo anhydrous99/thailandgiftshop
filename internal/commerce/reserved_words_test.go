@@ -222,6 +222,26 @@ func TestWriteExpressionsContainNoUnaliasedReservedWords(t *testing.T) {
 				t.Fatalf("MarkStripeEventProcessed returned error: %v", err)
 			}
 		}},
+		{"ReserveEmailEvent", func(t *testing.T) {
+			reserved, err := store.ReserveEmailEvent(ctx, EmailEvent{Key: "order-placed-v1", Kind: "order_placed", OrderID: order.ID, OrderVersion: order.Version, To: "shopper@example.test", Status: "reserved", Attempts: 1, CreatedAt: clock.Now()})
+			if err != nil || !reserved {
+				t.Fatalf("ReserveEmailEvent reserved=%v err=%v, want reserved", reserved, err)
+			}
+		}},
+		{"MarkEmailEventSent", func(t *testing.T) {
+			if err := store.MarkEmailEventSent(ctx, order.ID, "order-placed-v1", clock.Now()); err != nil {
+				t.Fatalf("MarkEmailEventSent returned error: %v", err)
+			}
+		}},
+		{"MarkEmailEventFailed", func(t *testing.T) {
+			reserved, err := store.ReserveEmailEvent(ctx, EmailEvent{Key: "status-paid-v1", Kind: "status_change", OrderID: order.ID, OrderVersion: order.Version, To: "shopper@example.test", Status: "reserved", Attempts: 1, CreatedAt: clock.Now()})
+			if err != nil || !reserved {
+				t.Fatalf("ReserveEmailEvent for failed marker reserved=%v err=%v, want reserved", reserved, err)
+			}
+			if err := store.MarkEmailEventFailed(ctx, order.ID, "status-paid-v1", clock.Now(), "provider rejected recipient"); err != nil {
+				t.Fatalf("MarkEmailEventFailed returned error: %v", err)
+			}
+		}},
 		{"ReserveLoginAttempt", func(t *testing.T) {
 			// Walk the new-window, increment, and locking expressions.
 			for attempt := 0; attempt < LoginAttemptLimit; attempt++ {
@@ -237,6 +257,15 @@ func TestWriteExpressionsContainNoUnaliasedReservedWords(t *testing.T) {
 			}
 			if err := store.DeleteAllSessions(ctx, customer.ID); err != nil {
 				t.Fatalf("DeleteAllSessions returned error: %v", err)
+			}
+		}},
+		{"ConsumePasswordResetToken", func(t *testing.T) {
+			token := PasswordResetToken{CustomerID: customer.ID, TokenHash: "reset-token-hash", CreatedAt: clock.Now(), ExpiresAt: clock.Now().Add(time.Hour), Version: 1}
+			if err := store.PutPasswordResetToken(ctx, token); err != nil {
+				t.Fatalf("PutPasswordResetToken returned error: %v", err)
+			}
+			if _, found, err := store.ConsumePasswordResetToken(ctx, customer.ID, "reset-token-hash", clock.Now()); err != nil || !found {
+				t.Fatalf("ConsumePasswordResetToken found=%v err=%v, want found", found, err)
 			}
 		}},
 	}

@@ -98,6 +98,14 @@ func TestOnlyOrderItemsCarryGSIAttributes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sessionItem returned error: %v", err)
 	}
+	resetAttrs, err := passwordResetTokenItem(PasswordResetToken{CustomerID: "cust1", TokenHash: "hash", CreatedAt: now, ExpiresAt: now.Add(time.Hour), Version: 1})
+	if err != nil {
+		t.Fatalf("passwordResetTokenItem returned error: %v", err)
+	}
+	emailEventAttrs, err := emailEventItem(EmailEvent{Key: "order-placed-v1", Kind: "order_placed", OrderID: "order1", OrderVersion: 1, To: "shopper@example.test", Status: "reserved", Attempts: 1, CreatedAt: now})
+	if err != nil {
+		t.Fatalf("emailEventItem returned error: %v", err)
+	}
 	cartAttrs, err := cartItem(CartRecord{CustomerID: "cust1", Version: 1, UpdatedAt: now})
 	if err != nil {
 		t.Fatalf("cartItem returned error: %v", err)
@@ -116,12 +124,14 @@ func TestOnlyOrderItemsCarryGSIAttributes(t *testing.T) {
 	}
 
 	withoutGSI := map[string]map[string]types.AttributeValue{
-		"customer":     customerAttrs,
-		"email lock":   lockAttrs,
-		"session":      sessionAttrs,
-		"cart":         cartAttrs,
-		"address":      addressAttrs,
-		"stripe event": eventAttrs,
+		"customer":       customerAttrs,
+		"email lock":     lockAttrs,
+		"session":        sessionAttrs,
+		"password reset": resetAttrs,
+		"email event":    emailEventAttrs,
+		"cart":           cartAttrs,
+		"address":        addressAttrs,
+		"stripe event":   eventAttrs,
 	}
 	for name, attrs := range withoutGSI {
 		for _, gsiAttribute := range []string{"gsi1pk", "gsi1sk", "gsi2pk", "gsi2sk"} {
@@ -831,6 +841,10 @@ func conditionAtomHolds(clause string, names map[string]string, values map[strin
 		_, found := item[attribute]
 		return found
 	default:
+		if left, right, found := strings.Cut(clause, " > "); found {
+			attribute := resolveAttributeName(left, names)
+			return numberAttribute(item, attribute) > numberAttribute(values, strings.TrimSpace(right))
+		}
 		left, right, found := strings.Cut(clause, " = ")
 		if !found {
 			panic("unhandled condition clause: " + clause)

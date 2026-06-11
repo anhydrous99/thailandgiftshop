@@ -73,6 +73,33 @@ type Session struct {
 	ExpiresAt  time.Time
 }
 
+// PasswordResetToken is the server-side customer password reset row. TokenHash
+// is the lowercase hex SHA-256 of the raw reset token; the raw token is never
+// stored. ValidatePasswordResetToken reads this row without consuming it, while
+// ConsumePasswordResetToken marks UsedAt once for the reset-confirm POST.
+type PasswordResetToken struct {
+	CustomerID string
+	TokenHash  string
+	CreatedAt  time.Time
+	ExpiresAt  time.Time
+	UsedAt     time.Time
+	Version    int
+}
+
+type EmailEvent struct {
+	Key          string
+	Kind         string
+	OrderID      string
+	OrderVersion int
+	To           string
+	Status       string
+	Attempts     int
+	LastError    string
+	CreatedAt    time.Time
+	SentAt       time.Time
+	FailedAt     time.Time
+}
+
 // CartRecord is the authoritative signed-in cart. Lines reuse the exact
 // cart.Line shape so the tgs_cart cookie mirror round-trips losslessly.
 type CartRecord struct {
@@ -379,6 +406,11 @@ type Store interface {
 	DeleteSession(ctx context.Context, customerID string, tokenHash string) error
 	DeleteAllSessions(ctx context.Context, customerID string) error
 
+	PutPasswordResetToken(ctx context.Context, token PasswordResetToken) error
+	ValidatePasswordResetToken(ctx context.Context, customerID string, tokenHash string, now time.Time) (PasswordResetToken, bool, error)
+	ConsumePasswordResetToken(ctx context.Context, customerID string, tokenHash string, now time.Time) (PasswordResetToken, bool, error)
+	DeletePasswordResetToken(ctx context.Context, customerID string) error
+
 	GetCart(ctx context.Context, customerID string) (CartRecord, bool, error)
 	PutCart(ctx context.Context, c CartRecord) (CartRecord, error)
 
@@ -404,6 +436,9 @@ type Store interface {
 	PatchOrder(ctx context.Context, orderID string, expectedStatus OrderStatus, expectedVersion int, patch OrderPatch) (Order, error)
 
 	MarkStripeEventProcessed(ctx context.Context, eventID string, eventType string, orderID string) (alreadySeen bool, err error)
+	ReserveEmailEvent(ctx context.Context, event EmailEvent) (bool, error)
+	MarkEmailEventSent(ctx context.Context, orderID string, key string, sentAt time.Time) error
+	MarkEmailEventFailed(ctx context.Context, orderID string, key string, failedAt time.Time, reason string) error
 
 	ReserveLoginAttempt(ctx context.Context, key string, now time.Time) (ThrottleDecision, error)
 	ClearLoginAttempts(ctx context.Context, keys []string) error
