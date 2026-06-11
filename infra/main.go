@@ -9,6 +9,7 @@ import (
 	cartsession "github.com/anhydrous99/thailandgiftshop/internal/cart"
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
 	"github.com/anhydrous99/thailandgiftshop/internal/commerce"
+	"github.com/anhydrous99/thailandgiftshop/internal/email"
 	appobservability "github.com/anhydrous99/thailandgiftshop/internal/observability"
 	"github.com/anhydrous99/thailandgiftshop/internal/payments"
 	"github.com/aws/aws-cdk-go/awscdk/v2"
@@ -28,6 +29,7 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awss3"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awss3deployment"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssecretsmanager"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awsses"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssns"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssnssubscriptions"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awswafv2"
@@ -139,8 +141,10 @@ func NewThailandGiftshopStack(scope constructs.Construct, id string, props *Thai
 	productImagesBucket := addProductImagesBucket(stack)
 	adminLoginAttemptsTable := addAdminLoginAttempts(stack)
 	adminOriginHeaderSecret := addAdminOriginHeaderSecret(stack)
-	ssr := addSSR(stack, catalogTable, commerceTable, productImagesBucket, adminLoginAttemptsTable, adminOriginHeaderSecret)
-	site := addSite(stack, ssr.httpAPI, productImagesBucket, adminOriginHeaderSecret)
+	hostedZone := siteHostedZone(stack)
+	emailIdentity := addEmailIdentity(stack, hostedZone)
+	ssr := addSSR(stack, catalogTable, commerceTable, productImagesBucket, adminLoginAttemptsTable, adminOriginHeaderSecret, emailIdentity)
+	site := addSite(stack, ssr.httpAPI, productImagesBucket, adminOriginHeaderSecret, hostedZone)
 	addObservability(stack, observabilityResources{
 		catalogTable:            catalogTable,
 		commerceTable:           commerceTable,
@@ -346,7 +350,7 @@ func addAdminLoginAttempts(stack awscdk.Stack) awsdynamodb.Table {
 	})
 }
 
-func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable awsdynamodb.ITable, productImagesBucket awss3.IBucket, adminLoginAttemptsTable awsdynamodb.ITable, adminOriginHeaderSecret awssecretsmanager.ISecret) ssrResources {
+func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable awsdynamodb.ITable, productImagesBucket awss3.IBucket, adminLoginAttemptsTable awsdynamodb.ITable, adminOriginHeaderSecret awssecretsmanager.ISecret, emailIdentity awsses.IEmailIdentity) ssrResources {
 	lambdaLogGroup := awslogs.NewLogGroup(stack, jsii.String("SsrLambdaLogGroup"), &awslogs.LogGroupProps{
 		LogGroupName: jsii.String("/aws/lambda/thailandgiftshop-ssr"),
 		Retention:    awslogs.RetentionDays_THREE_MONTHS,
@@ -382,6 +386,9 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable a
 			commerce.EnvSessionSecret:               customerSessionSecretReference(customerSessionSecret),
 			payments.EnvStripeCredentialsSecretName: jsii.String(stripeCredentialsSecretName),
 			payments.EnvPublicBaseURL:               jsii.String(payments.DefaultPublicBaseURL),
+			email.EnvSenderMode:                     jsii.String(email.SenderKindSES),
+			email.EnvFromAddress:                    jsii.String(email.DefaultFromAddress),
+			email.EnvSESRegion:                      jsii.String(productionRegion),
 		},
 		FunctionName: jsii.String("thailandgiftshop-ssr"),
 		Handler:      jsii.String("bootstrap"),
@@ -405,6 +412,7 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable a
 	}))
 	commerceTable.GrantReadWriteData(ssrFunction)
 	stripeSecret.GrantRead(ssrFunction, nil)
+	grantEmailSend(ssrFunction, emailIdentity)
 	ssrFunction.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
 		Actions: &[]*string{
 			jsii.String("dynamodb:TransactWriteItems"),
@@ -428,7 +436,7 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable a
 			Timeout:              awscdk.Duration_Seconds(jsii.Number(10)),
 		}),
 	})
-	admin := addAdmin(stack, catalogTable, commerceTable, productImagesBucket, adminLoginAttemptsTable, adminOriginHeaderSecret, stripeSecret, httpAPI)
+	admin := addAdmin(stack, catalogTable, commerceTable, productImagesBucket, adminLoginAttemptsTable, adminOriginHeaderSecret, stripeSecret, emailIdentity, httpAPI)
 
 	accessLogGroup := awslogs.NewLogGroup(stack, jsii.String("SsrHttpApiAccessLogGroup"), &awslogs.LogGroupProps{
 		LogGroupName: jsii.String("/aws/apigateway/thailandgiftshop-ssr"),
@@ -461,7 +469,7 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable a
 	return ssrResources{httpAPI: httpAPI, function: ssrFunction, admin: admin}
 }
 
-func addAdmin(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable awsdynamodb.ITable, productImagesBucket awss3.IBucket, adminLoginAttemptsTable awsdynamodb.ITable, adminOriginHeaderSecret awssecretsmanager.ISecret, stripeSecret awssecretsmanager.ISecret, httpAPI awsapigatewayv2.HttpApi) adminResources {
+func addAdmin(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable awsdynamodb.ITable, productImagesBucket awss3.IBucket, adminLoginAttemptsTable awsdynamodb.ITable, adminOriginHeaderSecret awssecretsmanager.ISecret, stripeSecret awssecretsmanager.ISecret, emailIdentity awsses.IEmailIdentity, httpAPI awsapigatewayv2.HttpApi) adminResources {
 	lambdaLogGroup := awslogs.LogGroup_FromLogGroupName(stack, jsii.String("AdminLambdaLogGroup"), jsii.String(adminLambdaLogGroupName))
 	awslogs.NewLogRetention(stack, jsii.String("AdminLambdaLogRetention"), &awslogs.LogRetentionProps{
 		LogGroupName:  jsii.String(adminLambdaLogGroupName),
@@ -500,6 +508,9 @@ func addAdmin(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable
 			// Stripe checkout session before releasing stock; without the
 			// credentials the handler skips that session-expiry guard.
 			payments.EnvStripeCredentialsSecretName: jsii.String(stripeCredentialsSecretName),
+			email.EnvSenderMode:                     jsii.String(email.SenderKindSES),
+			email.EnvFromAddress:                    jsii.String(email.DefaultFromAddress),
+			email.EnvSESRegion:                      jsii.String(productionRegion),
 		},
 		FunctionName: jsii.String("thailandgiftshop-admin"),
 		Handler:      jsii.String("bootstrap"),
@@ -520,6 +531,7 @@ func addAdmin(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable
 	}))
 	commerceTable.GrantReadWriteData(adminFunction)
 	stripeSecret.GrantRead(adminFunction, nil)
+	grantEmailSend(adminFunction, emailIdentity)
 	// The admin Lambda reads its credentials JSON from Secrets Manager at
 	// runtime (not a deploy-time dynamic reference), so a rotation takes effect
 	// without redeploying.
@@ -561,6 +573,26 @@ func addAdmin(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable
 	})
 
 	return adminResources{routes: []awsapigatewayv2.HttpRoute{exactRoute, proxyRoute}, function: adminFunction}
+}
+
+func addEmailIdentity(stack awscdk.Stack, hostedZone awsroute53.IPublicHostedZone) awsses.EmailIdentity {
+	return awsses.NewEmailIdentity(stack, jsii.String("SiteEmailIdentity"), &awsses.EmailIdentityProps{
+		Identity: awsses.Identity_PublicHostedZone(hostedZone),
+		DkimIdentity: awsses.DkimIdentity_EasyDkim(
+			awsses.EasyDkimSigningKeyLength_RSA_2048_BIT,
+		),
+	})
+}
+
+func grantEmailSend(lambdaFunction awslambda.Function, identity awsses.IEmailIdentity) {
+	lambdaFunction.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+		Actions: &[]*string{
+			jsii.String("ses:SendEmail"),
+		},
+		Resources: &[]*string{
+			identity.EmailIdentityArn(),
+		},
+	}))
 }
 
 func adminCredentialsSecret(stack awscdk.Stack) awssecretsmanager.ISecret {
@@ -865,8 +897,7 @@ func canonicalHostRedirectAssociations(function awscloudfront.Function) *[]*awsc
 	}
 }
 
-func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi, productImagesBucket awss3.IBucket, adminOriginHeaderSecret awssecretsmanager.ISecret) siteResources {
-	hostedZone := siteHostedZone(stack)
+func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi, productImagesBucket awss3.IBucket, adminOriginHeaderSecret awssecretsmanager.ISecret, hostedZone awsroute53.IPublicHostedZone) siteResources {
 	certificate := awscertificatemanager.NewCertificate(stack, jsii.String("SiteCertificate"), &awscertificatemanager.CertificateProps{
 		DomainName: jsii.String(siteDomainName),
 		SubjectAlternativeNames: &[]*string{
@@ -1401,13 +1432,13 @@ func alarmMetrics(alarms ...awscloudwatch.Alarm) []awscloudwatch.IMetric {
 	return metrics
 }
 
-func siteHostedZone(stack awscdk.Stack) awsroute53.IHostedZone {
+func siteHostedZone(stack awscdk.Stack) awsroute53.IPublicHostedZone {
 	hostedZoneID := awscdk.NewCfnParameter(stack, jsii.String("HostedZoneId"), &awscdk.CfnParameterProps{
 		Description: jsii.String("Route 53 public hosted zone ID for thailandgiftshop.com"),
 		Type:        jsii.String("String"),
 	})
 
-	return awsroute53.HostedZone_FromHostedZoneAttributes(stack, jsii.String("SiteHostedZone"), &awsroute53.HostedZoneAttributes{
+	return awsroute53.PublicHostedZone_FromPublicHostedZoneAttributes(stack, jsii.String("SiteHostedZone"), &awsroute53.PublicHostedZoneAttributes{
 		HostedZoneId: hostedZoneID.ValueAsString(),
 		ZoneName:     jsii.String(siteDomainName),
 	})

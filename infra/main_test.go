@@ -11,6 +11,7 @@ import (
 	cartsession "github.com/anhydrous99/thailandgiftshop/internal/cart"
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
 	"github.com/anhydrous99/thailandgiftshop/internal/commerce"
+	"github.com/anhydrous99/thailandgiftshop/internal/email"
 	appobservability "github.com/anhydrous99/thailandgiftshop/internal/observability"
 	"github.com/anhydrous99/thailandgiftshop/internal/payments"
 	"github.com/aws/aws-cdk-go/awscdk/v2"
@@ -1054,6 +1055,51 @@ func TestStackWiresStripeCredentialsSecretName(t *testing.T) {
 	}
 }
 
+func TestStackIncludesSESDomainIdentityAndEmailPermissions(t *testing.T) {
+	defer jsii.Close()
+
+	app := awscdk.NewApp(nil)
+	stack := NewThailandGiftshopStack(app, "TestStack", nil)
+	template := assertions.Template_FromStack(stack, nil)
+
+	template.HasResourceProperties(jsii.String("AWS::SES::EmailIdentity"), map[string]any{
+		"EmailIdentity": siteDomainName,
+		"DkimSigningAttributes": assertions.Match_ObjectLike(&map[string]any{
+			"NextSigningKeyLength": "RSA_2048_BIT",
+		}),
+	})
+	template.HasResourceProperties(jsii.String("AWS::Route53::RecordSet"), map[string]any{
+		"HostedZoneId": map[string]any{"Ref": "HostedZoneId"},
+	})
+
+	templateJSON := template.ToJSON()
+	ssrVariables := lambdaEnvironmentVariables(t, templateJSON, "thailandgiftshop-ssr")
+	adminVariables := lambdaEnvironmentVariables(t, templateJSON, "thailandgiftshop-admin")
+	for name, variables := range map[string]map[string]any{
+		"thailandgiftshop-ssr":   ssrVariables,
+		"thailandgiftshop-admin": adminVariables,
+	} {
+		if got := variables[email.EnvSenderMode]; got != email.SenderKindSES {
+			t.Fatalf("%s %s = %v, want %q", name, email.EnvSenderMode, got, email.SenderKindSES)
+		}
+		if got := variables[email.EnvFromAddress]; got != email.DefaultFromAddress {
+			t.Fatalf("%s %s = %v, want %q", name, email.EnvFromAddress, got, email.DefaultFromAddress)
+		}
+		if got := variables[email.EnvSESRegion]; got != productionRegion {
+			t.Fatalf("%s %s = %v, want %q", name, email.EnvSESRegion, got, productionRegion)
+		}
+		if !policyForFunctionHasSESAction(t, templateJSON, name, "ses:SendEmail") {
+			t.Fatalf("%s lambda policy missing ses:SendEmail on SES identity", name)
+		}
+	}
+	if strings.Contains(templateValueString(t, templateJSON), "ses:*") {
+		t.Fatal("template must not grant ses:* wildcard permissions")
+	}
+	if strings.Contains(templateValueString(t, templateJSON), "ses:SendRawEmail") {
+		t.Fatal("template must not grant ses:SendRawEmail")
+	}
+}
+
 func TestStackIncludesStaticAssetsDistribution(t *testing.T) {
 	defer jsii.Close()
 
@@ -1832,6 +1878,39 @@ func policyStatementActions(t *testing.T, value any) []string {
 		t.Fatalf("policy action has unexpected shape: %#v", value)
 		return nil
 	}
+}
+
+func policyForFunctionHasSESAction(t *testing.T, templateJSON *map[string]any, functionName string, action string) bool {
+	t.Helper()
+
+	resources := templateResources(t, templateJSON)
+	roleID := lambdaRoleID(t, resources, functionName)
+	for _, resource := range resources {
+		resourceMap := asStringMap(t, resource)
+		if resourceMap["Type"] != "AWS::IAM::Policy" {
+			continue
+		}
+		properties := asStringMap(t, resourceMap["Properties"])
+		if !policyAppliesToRole(properties["Roles"], roleID) {
+			continue
+		}
+		policyDocument := asStringMap(t, properties["PolicyDocument"])
+		for _, statement := range asSlice(t, policyDocument["Statement"]) {
+			statementMap := asStringMap(t, statement)
+			if !containsAction(policyStatementActions(t, statementMap["Action"]), action) {
+				continue
+			}
+			resourceText := templateValueString(t, statementMap["Resource"])
+			if resourceText == `"*"` {
+				t.Fatalf("%s %s resource must be scoped to the SES identity, got wildcard", functionName, action)
+			}
+			if strings.Contains(resourceText, ":identity/thailandgiftshop.com") || strings.Contains(resourceText, "SiteEmailIdentity") {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func containsAction(actions []string, expected string) bool {
