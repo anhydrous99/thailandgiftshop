@@ -21,6 +21,7 @@ import (
 
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
 	"github.com/anhydrous99/thailandgiftshop/internal/commerce"
+	"github.com/anhydrous99/thailandgiftshop/internal/email"
 	"github.com/anhydrous99/thailandgiftshop/internal/observability"
 	"github.com/anhydrous99/thailandgiftshop/internal/payments"
 )
@@ -141,12 +142,13 @@ var checkoutLogger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
 // absolute public origin used to build success/cancel URLs; Now is the
 // injected clock (nil falls back to time.Now, the admin precedent).
 type Service struct {
-	Commerce commerce.Store
-	Payments payments.Provider
-	Stock    catalog.StockStore
-	Metrics  observability.Recorder
-	BaseURL  string
-	Now      func() time.Time
+	Commerce    commerce.Store
+	Payments    payments.Provider
+	Stock       catalog.StockStore
+	Metrics     observability.Recorder
+	EmailSender email.Sender
+	BaseURL     string
+	Now         func() time.Time
 }
 
 // PlaceOrderInput carries everything PlaceOrder needs, resolved by the ssr
@@ -433,6 +435,9 @@ func (s *Service) FinalizePayment(ctx context.Context, orderID string, paymentSe
 
 	switch {
 	case orderIsPaidOrLater(order.Status):
+		if order.Status == commerce.OrderStatusPaid {
+			s.sendOrderPlacedEmail(ctx, order)
+		}
 		// Replay: never downgrade (paid, shipped, delivered, or any
 		// refund-family status — payment was captured in all of them, so a
 		// late checkout.session.completed must never be misclassified as
@@ -477,6 +482,9 @@ func (s *Service) FinalizePayment(ctx context.Context, orderID string, paymentSe
 			current, stillFound, getErr := s.Commerce.GetOrder(ctx, orderID)
 			if getErr == nil && stillFound && orderIsPaidOrLater(current.Status) {
 				// Lost the race to another finalize: success either way.
+				if current.Status == commerce.OrderStatusPaid {
+					s.sendOrderPlacedEmail(ctx, current)
+				}
 				if cartErr := s.clearCartAfterPayment(ctx, current); cartErr != nil {
 					return current, cartErr
 				}
@@ -488,6 +496,7 @@ func (s *Service) FinalizePayment(ctx context.Context, orderID string, paymentSe
 	}
 
 	s.recordCheckoutPayment(outcomePaymentSuccess)
+	s.sendOrderPlacedEmail(ctx, updated)
 	if err := s.clearCartAfterPayment(ctx, updated); err != nil {
 		return updated, err
 	}
@@ -648,7 +657,8 @@ func (s *Service) failPendingOrder(ctx context.Context, order commerce.Order, ta
 		return nil
 	}
 
-	if _, err := s.Commerce.TransitionOrder(ctx, order.ID, commerce.OrderStatusPendingPayment, target, commerce.OrderPatch{Actor: commerce.OrderActorStripe}); err != nil {
+	updated, err := s.Commerce.TransitionOrder(ctx, order.ID, commerce.OrderStatusPendingPayment, target, commerce.OrderPatch{Actor: commerce.OrderActorStripe})
+	if err != nil {
 		if errors.Is(err, commerce.ErrOrderTransitionConflict) {
 			current, found, getErr := s.Commerce.GetOrder(ctx, order.ID)
 			if getErr == nil && found && current.Status != commerce.OrderStatusPendingPayment {
@@ -664,6 +674,7 @@ func (s *Service) failPendingOrder(ctx context.Context, order commerce.Order, ta
 		return err
 	}
 
+	s.sendOrderStatusChangedEmail(ctx, updated, commerce.OrderStatusPendingPayment, target)
 	return s.ClaimAndReleaseOrderStock(ctx, order.ID)
 }
 
@@ -696,7 +707,8 @@ func (s *Service) CancelPendingOrderAs(ctx context.Context, order commerce.Order
 		return err
 	}
 
-	if _, err := s.Commerce.TransitionOrder(ctx, order.ID, commerce.OrderStatusPendingPayment, commerce.OrderStatusCanceled, commerce.OrderPatch{Actor: actor}); err != nil {
+	updated, err := s.Commerce.TransitionOrder(ctx, order.ID, commerce.OrderStatusPendingPayment, commerce.OrderStatusCanceled, commerce.OrderPatch{Actor: actor})
+	if err != nil {
 		if errors.Is(err, commerce.ErrOrderTransitionConflict) {
 			current, found, getErr := s.Commerce.GetOrder(ctx, order.ID)
 			if getErr == nil && found && orderStockReleased(current.Status) {
@@ -708,6 +720,7 @@ func (s *Service) CancelPendingOrderAs(ctx context.Context, order commerce.Order
 		return err
 	}
 
+	s.sendOrderStatusChangedEmail(ctx, updated, commerce.OrderStatusPendingPayment, commerce.OrderStatusCanceled)
 	return s.ClaimAndReleaseOrderStock(ctx, order.ID)
 }
 
@@ -837,6 +850,7 @@ func (s *Service) RefundOrderAs(ctx context.Context, order commerce.Order, actor
 	updated, err := s.Commerce.TransitionOrder(ctx, order.ID, order.Status, commerce.OrderStatusRefundPending, patch)
 	switch {
 	case err == nil:
+		s.sendOrderStatusChangedEmail(ctx, updated, order.Status, commerce.OrderStatusRefundPending)
 		s.recordCheckoutRefund(outcomeRefundIssued)
 	case errors.Is(err, commerce.ErrOrderTransitionConflict):
 		// Adopt a concurrent winner already in the refund family (it wrote
@@ -906,6 +920,7 @@ func (s *Service) applyRefundOutcome(ctx context.Context, order commerce.Order, 
 		if err != nil {
 			return s.refundOutcomeTransitionFailed(ctx, order, refund, err)
 		}
+		s.sendOrderStatusChangedEmail(ctx, updated, commerce.OrderStatusRefundPending, commerce.OrderStatusRefunded)
 		s.recordCheckoutRefund(outcomeRefundSettled)
 		return updated
 	case payments.RefundStatusFailed:
@@ -917,6 +932,7 @@ func (s *Service) applyRefundOutcome(ctx context.Context, order commerce.Order, 
 		if err != nil {
 			return s.refundOutcomeTransitionFailed(ctx, order, refund, err)
 		}
+		s.sendOrderStatusChangedEmail(ctx, updated, commerce.OrderStatusRefundPending, commerce.OrderStatusRefundFailed)
 		s.recordCheckoutRefund(outcomeRefundFailed)
 		checkoutLogger.Error("stripe reported the refund as failed",
 			slog.String("order_id", order.ID),
@@ -1024,6 +1040,7 @@ func (s *Service) applyRefundEvent(ctx context.Context, order commerce.Order, ev
 			if err != nil {
 				return err // transient: Stripe retries
 			}
+			s.sendOrderStatusChangedEmail(ctx, updated, commerce.OrderStatusRefundFailed, commerce.OrderStatusRefundPending)
 			s.recordCheckoutRefund(outcomeRefundIssued)
 			order = updated
 		default:
@@ -1051,6 +1068,7 @@ func (s *Service) applyRefundEvent(ctx context.Context, order commerce.Order, ev
 		if err != nil {
 			return err // transient: Stripe retries
 		}
+		s.sendOrderStatusChangedEmail(ctx, updated, order.Status, commerce.OrderStatusRefundPending)
 		s.recordCheckoutRefund(outcomeRefundIssued)
 		order = updated
 	}
@@ -1377,6 +1395,104 @@ func GuestAddressID(address commerce.OrderAddress, email string) string {
 		strings.ToLower(strings.TrimSpace(email)),
 	}, "\n")))
 	return "guest-" + hex.EncodeToString(digest[:])
+}
+
+func (s *Service) sendOrderPlacedEmail(ctx context.Context, order commerce.Order) {
+	key := fmt.Sprintf("order:%s:placed:v%d", order.ID, order.Version)
+	message := email.BuildOrderPlaced(order, s.lifecycleEmailURL(order))
+	message.EventKey = key
+	s.sendOrderLifecycleEmail(ctx, order, message, key)
+}
+
+func (s *Service) sendOrderStatusChangedEmail(ctx context.Context, order commerce.Order, from commerce.OrderStatus, to commerce.OrderStatus) {
+	if from == to {
+		return
+	}
+	key := fmt.Sprintf("order:%s:status:%s:%s:v%d", order.ID, from, to, order.Version)
+	message := email.BuildOrderStatusChange(order, from, to, s.lifecycleEmailURL(order))
+	message.EventKey = key
+	s.sendOrderLifecycleEmail(ctx, order, message, key)
+}
+
+func (s *Service) NotifyOrderStatusChanged(ctx context.Context, order commerce.Order, from commerce.OrderStatus, to commerce.OrderStatus) {
+	s.sendOrderStatusChangedEmail(ctx, order, from, to)
+}
+
+func (s *Service) NotifyTrackingUpdated(ctx context.Context, order commerce.Order) {
+	key := fmt.Sprintf("order:%s:tracking:v%d", order.ID, order.Version)
+	message := email.BuildTrackingUpdate(order, s.lifecycleEmailURL(order))
+	message.EventKey = key
+	s.sendOrderLifecycleEmail(ctx, order, message, key)
+}
+
+func (s *Service) sendOrderLifecycleEmail(ctx context.Context, order commerce.Order, message email.Message, key string) {
+	if s.EmailSender == nil || strings.TrimSpace(order.Email) == "" {
+		return
+	}
+	now := s.now()
+	reserved, err := s.Commerce.ReserveEmailEvent(ctx, commerce.EmailEvent{
+		Key:          key,
+		Kind:         message.Kind,
+		OrderID:      order.ID,
+		OrderVersion: order.Version,
+		To:           strings.TrimSpace(order.Email),
+		Status:       "reserved",
+		Attempts:     1,
+		CreatedAt:    now,
+	})
+	if err != nil {
+		checkoutLogger.Error("checkout could not reserve the order email event",
+			slog.String("order_id", order.ID),
+			slog.String("email_event_key", key),
+			slog.String("email_kind", message.Kind),
+			slog.String("error", err.Error()),
+		)
+		return
+	}
+	if !reserved {
+		return
+	}
+
+	sent, err := s.EmailSender.Send(ctx, message)
+	if err != nil {
+		checkoutLogger.Error("checkout could not send the order lifecycle email",
+			slog.String("order_id", order.ID),
+			slog.String("email_event_key", key),
+			slog.String("email_kind", message.Kind),
+			slog.String("error", err.Error()),
+		)
+		if markErr := s.Commerce.MarkEmailEventFailed(ctx, order.ID, key, s.now(), err.Error()); markErr != nil {
+			checkoutLogger.Error("checkout could not mark the order email event failed",
+				slog.String("order_id", order.ID),
+				slog.String("email_event_key", key),
+				slog.String("email_kind", message.Kind),
+				slog.String("error", markErr.Error()),
+			)
+		}
+		return
+	}
+	if !sent.CreatedAt.IsZero() {
+		now = sent.CreatedAt
+	}
+	if err := s.Commerce.MarkEmailEventSent(ctx, order.ID, key, now); err != nil {
+		checkoutLogger.Error("checkout could not mark the order email event sent",
+			slog.String("order_id", order.ID),
+			slog.String("email_event_key", key),
+			slog.String("email_kind", message.Kind),
+			slog.String("error", err.Error()),
+		)
+	}
+}
+
+func (s *Service) orderURL(orderID string) string {
+	return s.baseURL() + "/orders/" + url.PathEscape(orderID)
+}
+
+func (s *Service) lifecycleEmailURL(order commerce.Order) string {
+	if order.CustomerID == "" && strings.TrimSpace(order.StripeCheckoutSessionID) != "" {
+		return s.confirmURL(order.StripeCheckoutSessionID)
+	}
+	return s.orderURL(order.ID)
 }
 
 // clearCartAfterPayment empties the server cart and clears its pending

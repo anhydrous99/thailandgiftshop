@@ -11,6 +11,7 @@ import (
 	"github.com/anhydrous99/thailandgiftshop/internal/cart"
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
 	"github.com/anhydrous99/thailandgiftshop/internal/commerce"
+	"github.com/anhydrous99/thailandgiftshop/internal/email"
 	"github.com/anhydrous99/thailandgiftshop/internal/observability"
 	"github.com/anhydrous99/thailandgiftshop/internal/payments"
 )
@@ -198,12 +199,23 @@ func (f *flakyStockStore) AdjustStock(ctx context.Context, adjustments []catalog
 // guest tests assert the service never touches a CART row for guest orders.
 type hookStore struct {
 	commerce.Store
-	getOrderErr             error
-	markStripeEventCalls    int
-	getCartCalls            int
-	putCartCalls            int
-	transitionConflictOnce  bool
-	transitionConflictFired bool
+	getOrderErr                 error
+	markStripeEventCalls        int
+	reserveEmailEventCalls      int
+	markEmailEventSentCalls     int
+	markEmailFailedEvents       []recordedEmailFailure
+	getCartCalls                int
+	putCartCalls                int
+	transitionConflictOnce      bool
+	transitionConflictFired     bool
+	transitionConflictAdvanceTo commerce.OrderStatus
+}
+
+type recordedEmailFailure struct {
+	orderID string
+	key     string
+	reason  string
+	at      time.Time
 }
 
 func (h *hookStore) GetCart(ctx context.Context, customerID string) (commerce.CartRecord, bool, error) {
@@ -228,6 +240,21 @@ func (h *hookStore) MarkStripeEventProcessed(ctx context.Context, eventID string
 	return h.Store.MarkStripeEventProcessed(ctx, eventID, eventType, orderID)
 }
 
+func (h *hookStore) ReserveEmailEvent(ctx context.Context, event commerce.EmailEvent) (bool, error) {
+	h.reserveEmailEventCalls++
+	return h.Store.ReserveEmailEvent(ctx, event)
+}
+
+func (h *hookStore) MarkEmailEventSent(ctx context.Context, orderID string, key string, sentAt time.Time) error {
+	h.markEmailEventSentCalls++
+	return h.Store.MarkEmailEventSent(ctx, orderID, key, sentAt)
+}
+
+func (h *hookStore) MarkEmailEventFailed(ctx context.Context, orderID string, key string, failedAt time.Time, reason string) error {
+	h.markEmailFailedEvents = append(h.markEmailFailedEvents, recordedEmailFailure{orderID: orderID, key: key, reason: reason, at: failedAt})
+	return h.Store.MarkEmailEventFailed(ctx, orderID, key, failedAt, reason)
+}
+
 // TransitionOrder optionally simulates losing a race: the underlying
 // transition is applied (as if a concurrent finalizer won) but the caller
 // sees a conflict and must re-read.
@@ -236,6 +263,12 @@ func (h *hookStore) TransitionOrder(ctx context.Context, orderID string, from co
 		h.transitionConflictFired = true
 		if _, err := h.Store.TransitionOrder(ctx, orderID, from, to, patch); err != nil {
 			return commerce.Order{}, err
+		}
+		if h.transitionConflictAdvanceTo != "" {
+			advancePatch := commerce.OrderPatch{Actor: commerce.OrderActorAdmin}
+			if _, err := h.Store.TransitionOrder(ctx, orderID, to, h.transitionConflictAdvanceTo, advancePatch); err != nil {
+				return commerce.Order{}, err
+			}
 		}
 		return commerce.Order{}, fmt.Errorf("%w: simulated race", commerce.ErrOrderTransitionConflict)
 	}
@@ -249,6 +282,7 @@ type testEnv struct {
 	catalogStore  *catalog.MemoryStore
 	provider      *stubProvider
 	metrics       *recordingMetrics
+	emailSender   *email.FakeSender
 	customer      commerce.Customer
 }
 
@@ -263,6 +297,7 @@ func newTestEnv(t *testing.T) *testEnv {
 	)
 	provider := &stubProvider{FakeProvider: payments.NewFakeProvider()}
 	metrics := &recordingMetrics{}
+	emailSender := email.NewFakeSenderWithClock(func() time.Time { return checkoutTestNow })
 
 	customer, err := commerceStore.CreateCustomer(context.Background(), "Shopper@example.test", "shopper@example.test", checkoutTestPasswordHash)
 	if err != nil {
@@ -271,18 +306,20 @@ func newTestEnv(t *testing.T) *testEnv {
 
 	return &testEnv{
 		service: &Service{
-			Commerce: hooks,
-			Payments: provider,
-			Stock:    catalogStore,
-			Metrics:  metrics,
-			BaseURL:  checkoutTestBaseURL + "/",
-			Now:      func() time.Time { return checkoutTestNow },
+			Commerce:    hooks,
+			Payments:    provider,
+			Stock:       catalogStore,
+			Metrics:     metrics,
+			EmailSender: emailSender,
+			BaseURL:     checkoutTestBaseURL + "/",
+			Now:         func() time.Time { return checkoutTestNow },
 		},
 		commerceStore: commerceStore,
 		hooks:         hooks,
 		catalogStore:  catalogStore,
 		provider:      provider,
 		metrics:       metrics,
+		emailSender:   emailSender,
 		customer:      customer,
 	}
 }
@@ -400,6 +437,299 @@ func (env *testEnv) mustPaidOrder(t *testing.T) commerce.Order {
 		t.Fatalf("FinalizePayment returned error: %v", err)
 	}
 	return paid
+}
+
+type failingEmailSender struct {
+	err   error
+	calls int
+}
+
+func (s *failingEmailSender) Kind() string { return "failing" }
+
+func (s *failingEmailSender) Send(ctx context.Context, message email.Message) (email.Message, error) {
+	_ = ctx
+	s.calls++
+	return email.Message{}, s.err
+}
+
+func assertEmailMessages(t *testing.T, sender *email.FakeSender, want []struct {
+	kind string
+	key  string
+	to   string
+}) {
+	t.Helper()
+	messages := sender.Messages()
+	if len(messages) != len(want) {
+		t.Fatalf("email messages = %d (%#v), want %d", len(messages), messages, len(want))
+	}
+	for i, message := range messages {
+		if message.Kind != want[i].kind || message.EventKey != want[i].key || message.To != want[i].to {
+			t.Fatalf("message[%d] = kind %q key %q to %q, want %q %q %q", i, message.Kind, message.EventKey, message.To, want[i].kind, want[i].key, want[i].to)
+		}
+	}
+}
+
+func TestFinalizePaymentSendsOrderPlacedEmailOnce(t *testing.T) {
+	env := newTestEnv(t)
+	_, order := env.mustPlaceOrder(t, checkoutTestLines())
+	session := env.paidSession(t, order.StripeCheckoutSessionID)
+
+	paid, err := env.service.FinalizePayment(context.Background(), order.ID, session)
+	if err != nil {
+		t.Fatalf("FinalizePayment returned error: %v", err)
+	}
+	placedKey := fmt.Sprintf("order:%s:placed:v%d", paid.ID, paid.Version)
+	assertEmailMessages(t, env.emailSender, []struct {
+		kind string
+		key  string
+		to   string
+	}{{email.MessageKindOrderPlaced, placedKey, order.Email}})
+
+	if _, err := env.service.FinalizePayment(context.Background(), order.ID, session); err != nil {
+		t.Fatalf("replayed FinalizePayment returned error: %v", err)
+	}
+	event := payments.Event{ID: "evt_completed_email_replay", Type: "checkout.session.completed", SessionID: session.ID, OrderID: order.ID, Session: session}
+	if err := env.service.ApplyWebhookEvent(context.Background(), event); err != nil {
+		t.Fatalf("ApplyWebhookEvent replay returned error: %v", err)
+	}
+	assertEmailMessages(t, env.emailSender, []struct {
+		kind string
+		key  string
+		to   string
+	}{{email.MessageKindOrderPlaced, placedKey, order.Email}})
+	if env.hooks.markEmailEventSentCalls != 1 {
+		t.Fatalf("MarkEmailEventSent calls = %d, want 1", env.hooks.markEmailEventSentCalls)
+	}
+}
+
+func TestCustomerLifecycleEmailsUseOrderDetailURL(t *testing.T) {
+	env := newTestEnv(t)
+	paid := env.mustPaidOrder(t)
+	message := env.emailSender.Messages()[0]
+
+	wantURL := checkoutTestBaseURL + "/orders/" + paid.ID
+	if !strings.Contains(message.Text, wantURL) || !strings.Contains(message.HTML, wantURL) {
+		t.Fatalf("customer placed email missing order detail URL")
+	}
+	if strings.Contains(message.Text, confirmURLPath) || strings.Contains(message.HTML, confirmURLPath) {
+		t.Fatalf("customer placed email used confirm URL instead of order detail URL")
+	}
+}
+
+func TestGuestLifecycleEmailsUseConfirmURL(t *testing.T) {
+	env := newTestEnv(t)
+	_, order := env.mustGuestPlaceOrder(t, checkoutTestLines(), guestTestEmail)
+	session := env.paidSession(t, order.StripeCheckoutSessionID)
+	paid, err := env.service.FinalizePayment(context.Background(), order.ID, session)
+	if err != nil {
+		t.Fatalf("FinalizePayment returned error: %v", err)
+	}
+
+	shipped := paid
+	shipped.Status = commerce.OrderStatusShipped
+	shipped.Version++
+	shipped.TrackingCarrier = "Thailand Post"
+	shipped.TrackingNumber = "TH1234567890"
+	env.service.NotifyTrackingUpdated(context.Background(), shipped)
+	delivered := shipped
+	delivered.Status = commerce.OrderStatusDelivered
+	delivered.Version++
+	env.service.NotifyOrderStatusChanged(context.Background(), delivered, commerce.OrderStatusShipped, commerce.OrderStatusDelivered)
+
+	messages := env.emailSender.Messages()
+	if len(messages) != 3 {
+		t.Fatalf("guest lifecycle message count = %d, want 3", len(messages))
+	}
+	confirmPath := confirmURLPath + "?session_id="
+	tokenlessOrderPath := "/orders/" + paid.ID
+	for _, message := range messages {
+		if !strings.Contains(message.Text, confirmPath) || !strings.Contains(message.HTML, confirmPath) {
+			t.Fatalf("guest %s email missing confirm URL", message.Kind)
+		}
+		if strings.Contains(message.Text, tokenlessOrderPath) || strings.Contains(message.HTML, tokenlessOrderPath) {
+			t.Fatalf("guest %s email contains tokenless order detail URL", message.Kind)
+		}
+	}
+}
+
+func TestFinalizePaymentLostRaceToShippedDoesNotSendLaterPlacedEmail(t *testing.T) {
+	env := newTestEnv(t)
+	_, order := env.mustPlaceOrder(t, checkoutTestLines())
+	session := env.paidSession(t, order.StripeCheckoutSessionID)
+	paidPlacedKey := fmt.Sprintf("order:%s:placed:v%d", order.ID, order.Version+1)
+	reserved, err := env.commerceStore.ReserveEmailEvent(context.Background(), commerce.EmailEvent{
+		Key:          paidPlacedKey,
+		Kind:         email.MessageKindOrderPlaced,
+		OrderID:      order.ID,
+		OrderVersion: order.Version + 1,
+		To:           order.Email,
+		Status:       "reserved",
+		Attempts:     1,
+		CreatedAt:    checkoutTestNow,
+	})
+	if err != nil || !reserved {
+		t.Fatalf("ReserveEmailEvent for prior placed email = %t %v, want reserved", reserved, err)
+	}
+	if err := env.commerceStore.MarkEmailEventSent(context.Background(), order.ID, paidPlacedKey, checkoutTestNow); err != nil {
+		t.Fatalf("MarkEmailEventSent for prior placed email returned error: %v", err)
+	}
+
+	env.hooks.transitionConflictOnce = true
+	env.hooks.transitionConflictAdvanceTo = commerce.OrderStatusShipped
+
+	current, err := env.service.FinalizePayment(context.Background(), order.ID, session)
+	if err != nil {
+		t.Fatalf("FinalizePayment returned error: %v", err)
+	}
+	if current.Status != commerce.OrderStatusShipped {
+		t.Fatalf("returned status = %q, want shipped winner adopted", current.Status)
+	}
+	if messages := env.emailSender.Messages(); len(messages) != 0 {
+		t.Fatalf("messages after shipped conflict adoption = %#v, want no later-version placed email", messages)
+	}
+	if env.hooks.reserveEmailEventCalls != 0 || env.hooks.markEmailEventSentCalls != 0 {
+		t.Fatalf("email event calls = reserve %d sent %d, want no checkout email attempts on shipped adoption", env.hooks.reserveEmailEventCalls, env.hooks.markEmailEventSentCalls)
+	}
+}
+
+func TestCheckoutLifecycleStatusEmails(t *testing.T) {
+	t.Run("pending payment failure and expiry transitions", func(t *testing.T) {
+		for _, target := range []struct {
+			name      string
+			eventType string
+			status    commerce.OrderStatus
+		}{
+			{name: "payment failed", eventType: "checkout.session.async_payment_failed", status: commerce.OrderStatusPaymentFailed},
+			{name: "expired", eventType: "checkout.session.expired", status: commerce.OrderStatusExpired},
+		} {
+			t.Run(target.name, func(t *testing.T) {
+				env := newTestEnv(t)
+				_, order := env.mustPlaceOrder(t, checkoutTestLines())
+				event := payments.Event{ID: "evt_email_" + string(target.status), Type: target.eventType, OrderID: order.ID}
+				if err := env.service.ApplyWebhookEvent(context.Background(), event); err != nil {
+					t.Fatalf("ApplyWebhookEvent returned error: %v", err)
+				}
+				_ = env.mustGetOrder(t, order.ID)
+				key := fmt.Sprintf("order:%s:status:%s:%s:v%d", order.ID, commerce.OrderStatusPendingPayment, target.status, order.Version+1)
+				assertEmailMessages(t, env.emailSender, []struct {
+					kind string
+					key  string
+					to   string
+				}{{email.MessageKindOrderStatusChange, key, order.Email}})
+			})
+		}
+	})
+
+	t.Run("cancel transition", func(t *testing.T) {
+		env := newTestEnv(t)
+		_, order := env.mustPlaceOrder(t, checkoutTestLines())
+		if err := env.service.CancelPendingOrder(context.Background(), env.mustGetOrder(t, order.ID)); err != nil {
+			t.Fatalf("CancelPendingOrder returned error: %v", err)
+		}
+		_ = env.mustGetOrder(t, order.ID)
+		key := fmt.Sprintf("order:%s:status:%s:%s:v%d", order.ID, commerce.OrderStatusPendingPayment, commerce.OrderStatusCanceled, order.Version+1)
+		assertEmailMessages(t, env.emailSender, []struct {
+			kind string
+			key  string
+			to   string
+		}{{email.MessageKindOrderStatusChange, key, order.Email}})
+	})
+
+	t.Run("refund issue and settlement transitions", func(t *testing.T) {
+		env := newTestEnv(t)
+		order := env.mustPaidOrder(t)
+		env.emailSender.Clear()
+		updated, err := env.service.RefundOrderAs(context.Background(), order, commerce.OrderActorAdmin)
+		if err != nil {
+			t.Fatalf("RefundOrderAs returned error: %v", err)
+		}
+		pendingKey := fmt.Sprintf("order:%s:status:%s:%s:v%d", order.ID, commerce.OrderStatusPaid, commerce.OrderStatusRefundPending, order.Version+1)
+		refundedKey := fmt.Sprintf("order:%s:status:%s:%s:v%d", order.ID, commerce.OrderStatusRefundPending, commerce.OrderStatusRefunded, updated.Version)
+		assertEmailMessages(t, env.emailSender, []struct {
+			kind string
+			key  string
+			to   string
+		}{
+			{email.MessageKindOrderStatusChange, pendingKey, order.Email},
+			{email.MessageKindOrderStatusChange, refundedKey, order.Email},
+		})
+	})
+
+	t.Run("refund failure and retry transitions", func(t *testing.T) {
+		env := newTestEnv(t)
+		order := env.mustPaidOrder(t)
+		env.provider.SetNextRefundOutcome(payments.RefundStatusPending, "")
+		pending, err := env.service.RefundOrderAs(context.Background(), order, commerce.OrderActorAdmin)
+		if err != nil {
+			t.Fatalf("RefundOrderAs returned error: %v", err)
+		}
+		env.emailSender.Clear()
+		failedEvent := refundWebhookEvent("evt_email_refund_failed", "refund.failed", payments.Refund{
+			ID:              pending.StripeRefundID,
+			PaymentIntentID: order.StripePaymentIntentID,
+			OrderID:         order.ID,
+			Attempt:         pending.RefundAttempt,
+			Status:          payments.RefundStatusFailed,
+			FailureReason:   "expired_or_canceled_card",
+		})
+		if err := env.service.ApplyWebhookEvent(context.Background(), failedEvent); err != nil {
+			t.Fatalf("ApplyWebhookEvent(failed) returned error: %v", err)
+		}
+		failed := env.mustGetOrder(t, order.ID)
+		failedKey := fmt.Sprintf("order:%s:status:%s:%s:v%d", order.ID, commerce.OrderStatusRefundPending, commerce.OrderStatusRefundFailed, failed.Version)
+		assertEmailMessages(t, env.emailSender, []struct {
+			kind string
+			key  string
+			to   string
+		}{{email.MessageKindOrderStatusChange, failedKey, order.Email}})
+
+		env.provider.SetNextRefundOutcome(payments.RefundStatusPending, "")
+		env.emailSender.Clear()
+		retried, err := env.service.RefundOrderAs(context.Background(), failed, commerce.OrderActorAdmin)
+		if err != nil {
+			t.Fatalf("retry RefundOrderAs returned error: %v", err)
+		}
+		retryKey := fmt.Sprintf("order:%s:status:%s:%s:v%d", order.ID, commerce.OrderStatusRefundFailed, commerce.OrderStatusRefundPending, retried.Version)
+		assertEmailMessages(t, env.emailSender, []struct {
+			kind string
+			key  string
+			to   string
+		}{{email.MessageKindOrderStatusChange, retryKey, order.Email}})
+	})
+}
+
+func TestOrderEmailFailureDoesNotRollbackState(t *testing.T) {
+	env := newTestEnv(t)
+	_, order := env.mustPlaceOrder(t, checkoutTestLines())
+	session := env.paidSession(t, order.StripeCheckoutSessionID)
+	failure := &failingEmailSender{err: errors.New("ses rejected recipient")}
+	env.service.EmailSender = failure
+
+	paid, err := env.service.FinalizePayment(context.Background(), order.ID, session)
+	if err != nil {
+		t.Fatalf("FinalizePayment returned error despite email failure: %v", err)
+	}
+	if paid.Status != commerce.OrderStatusPaid {
+		t.Fatalf("returned order status = %q, want paid", paid.Status)
+	}
+	stored := env.mustGetOrder(t, order.ID)
+	if stored.Status != commerce.OrderStatusPaid || stored.StripePaymentIntentID == "" {
+		t.Fatalf("stored order = %s payment intent %q, want paid state committed", stored.Status, stored.StripePaymentIntentID)
+	}
+	if failure.calls != 1 {
+		t.Fatalf("failing sender calls = %d, want 1", failure.calls)
+	}
+	if len(env.hooks.markEmailFailedEvents) != 1 {
+		t.Fatalf("failed email events = %#v, want one", env.hooks.markEmailFailedEvents)
+	}
+	failed := env.hooks.markEmailFailedEvents[0]
+	wantKey := fmt.Sprintf("order:%s:placed:v%d", order.ID, paid.Version)
+	if failed.orderID != order.ID || failed.key != wantKey || !strings.Contains(failed.reason, "ses rejected recipient") || !failed.at.Equal(checkoutTestNow) {
+		t.Fatalf("failed event = %#v, want order %s key %s sanitized failure metadata", failed, order.ID, wantKey)
+	}
+	if messages := env.emailSender.Messages(); len(messages) != 0 {
+		t.Fatalf("fake sender messages = %#v, want none after replacing sender with failing sender", messages)
+	}
 }
 
 func TestPlaceOrderCreatesPendingOrderAndSession(t *testing.T) {
