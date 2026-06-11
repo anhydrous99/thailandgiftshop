@@ -67,7 +67,8 @@ test.describe('without JavaScript', () => {
     await page.goto('/account');
     await expect(page).toHaveURL(/\/account\/sign-in\?return_to=%2Faccount$/);
     await expect(page.getByTestId('signin-form')).toBeVisible();
-    await expect(page.getByText('Forgot your password? Reset is not available yet')).toBeVisible();
+    await expect(page.getByText('Forgot your password?')).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Reset it by email' })).toHaveAttribute('href', '/account/password-reset');
 
     // A wrong password gets the generic error and never reveals whether the email exists.
     await page.getByLabel('Email').fill(email);
