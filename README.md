@@ -57,6 +57,28 @@ export PUBLIC_BASE_URL=http://127.0.0.1:8080   # success/cancel/webhook URL base
 
 Keep real Stripe keys outside the repository. Card entry happens only on Stripe's hosted checkout page; the site never sees or stores card numbers.
 
+Transactional email is selected by environment. Local, demo, and test runs use fake capture and never call AWS SES. Production uses AWS SESv2 simple text and HTML transactional mail through the verified `thailandgiftshop.com` identity and must fail closed when sender config is missing, invalid, or set to fake mode:
+
+```sh
+export EMAIL_SENDER_MODE=fake
+export PUBLIC_BASE_URL=http://127.0.0.1:8080
+
+export EMAIL_SENDER_MODE=ses
+export EMAIL_FROM_ADDRESS=noreply@thailandgiftshop.com
+export EMAIL_SES_REGION=us-east-1
+export PUBLIC_BASE_URL=https://thailandgiftshop.com
+```
+
+`PUBLIC_BASE_URL` builds password-reset and order links. Local defaults to `http://127.0.0.1:8080`; production defaults to `https://thailandgiftshop.com`. The app does not build these links from request `Host` headers.
+
+When `EMAIL_SENDER_MODE=fake` is enabled in the local devserver and `APP_ENV` is not production, browser tests can inspect captured mail with `GET /__test/emails` and clear it with `POST /__test/emails/clear`. These endpoints are devserver-only and are not registered by the SSR or admin Lambda handlers.
+
+Password reset is customer-only; admin password reset is out of scope. Reset request responses are enumeration-safe, links expire after 30 minutes, reset links are single-use, a successful reset invalidates customer sessions, and raw reset tokens are not stored at rest.
+
+Order emails use the order email snapshot, `Order.Email`, for both guest and signed-in orders. Payment finalization sends one `order_placed` email when an order moves from `pending_payment` to `paid`; later lifecycle transitions send status emails; admin tracking changes send tracking-update emails. Email send failures are best-effort metadata and do not roll back checkout, payment, refund, or admin order mutations.
+
+Bounce and complaint handling, queues, marketing email, SES templates, attachments, and preference centers are out of scope for this phase.
+
 Use deterministic demo data for local browser tests or admin/public E2E work by opting into the in-memory catalog store:
 
 ```sh
@@ -229,6 +251,21 @@ aws secretsmanager put-secret-value \
 
 The CDK stack passes the secret name to both the SSR and admin Lambdas as `STRIPE_CREDENTIALS_SECRET_NAME` and grants `secretsmanager:GetSecretValue` on that name. Deployments do not resolve the secret value, so a missing Stripe secret will not roll back CloudFormation; checkout remains unavailable until the secret exists and contains valid JSON.
 
+### Transactional email
+
+Before enabling production email delivery, make sure AWS SES is ready in `us-east-1`. The CDK stack creates a Route53-backed SES identity for `thailandgiftshop.com` with Easy DKIM and grants the SSR and admin Lambdas `ses:SendEmail` for transactional mail. SES identity verification, DKIM DNS, and SES production access must all be complete before production deliveries are expected to leave the account. Accounts still in the SES sandbox can only send to verified recipients.
+
+Production sender config should be:
+
+```sh
+EMAIL_SENDER_MODE=ses
+EMAIL_FROM_ADDRESS=noreply@thailandgiftshop.com
+EMAIL_SES_REGION=us-east-1
+PUBLIC_BASE_URL=https://thailandgiftshop.com
+```
+
+Do not run production with `EMAIL_SENDER_MODE=fake`. Startup and config validation should reject fake mode and incomplete SES sender settings in production. For local, demo, and Playwright runs, keep `EMAIL_SENDER_MODE=fake` so tests use the fake capture outbox and never call SES.
+
 Refunds are issued automatically from the admin order page: the Refund action returns the full payment to the shopper's original payment method through Stripe (paid orders also return their reserved stock; shipped/delivered orders do not), and the order settles to `refunded` via the `refund.*` webhooks or the admin page's reconcile-on-render. Payments captured for orders that already reached a terminal status (`paid_after_terminal`) are also refunded automatically and unattended; the existing `StripeWebhook` alarm's meaning for that outcome therefore changes from "go issue a refund" to "a refund was already issued unattended — verify in Stripe that it is legitimate (not a pay-then-expire abuse pattern, which burns non-returnable processing fees and can serve as card-testing cover; the WAF rate limit in front of checkout bounds it) and that it settles" — the dashboard's auto-issued refund series is the volume watch point. The Stripe dashboard remains the manual fallback only for orders without a payment-intent ID, refunds that fail again after a retry, failed terminal-order auto-refunds (those orders have no in-app retry), and the already-fully-refunded reconciliation case that appears when a refund is retried after Stripe's ~24h idempotency-key window. Refunds issued directly in the Stripe dashboard carry no order metadata and do not update order status.
 
 CloudFront has an AWS WAF web ACL with rate limits for `POST /admin/login`, `/admin*`, customer-auth `POST /account/sign-in` and `POST /account/sign-up`, and `POST /checkout/place-order` requests (guest checkout removes the account gate from place-order, so the edge throttle takes its place; the rule bounds request count, not units reserved). Direct API Gateway access through the `SsrHttpApiUrl` output remains useful for public SSR checks, but production admin access must use `https://thailandgiftshop.com/admin` so CloudFront can apply WAF rules and inject the admin origin header.
@@ -238,6 +275,15 @@ CloudFront has an AWS WAF web ACL with rate limits for `POST /admin/login`, `/ad
 Local deployers should build frontend assets before synthesizing or deploying so `web/static/` contains the generated CSS and vendored HTMX files used by CDK:
 
 ```sh
+npm --prefix web run build
+AWS_REGION=us-east-1 CDK_DEFAULT_REGION=us-east-1 npm --prefix infra run synth
+```
+
+Run Go and browser tests before deploying email, reset, or checkout behavior. Rebuild frontend assets when templates or static assets changed:
+
+```sh
+go test $(sh scripts/go-packages.sh)
+npm --prefix web test
 npm --prefix web run build
 AWS_REGION=us-east-1 CDK_DEFAULT_REGION=us-east-1 npm --prefix infra run synth
 ```
