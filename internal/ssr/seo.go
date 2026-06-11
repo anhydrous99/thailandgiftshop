@@ -280,6 +280,12 @@ func orderDetailBreadcrumbs(orderID string) []breadcrumbItem {
 	return []breadcrumbItem{homeBreadcrumb(), {Name: "Account", Path: "/account"}, {Name: "Orders", Path: "/orders"}, {Name: "Order " + orderID, Path: "/orders/" + orderID}}
 }
 
+// guestOrderDetailBreadcrumbs degrades the trail for tokenized guest access:
+// guests have no /account or /orders pages, so it is Home → this order.
+func guestOrderDetailBreadcrumbs(orderID string) []breadcrumbItem {
+	return []breadcrumbItem{homeBreadcrumb(), {Name: "Order " + orderID, Path: "/orders/" + orderID}}
+}
+
 func breadcrumbJSONLD(breadcrumbs []breadcrumbItem) map[string]any {
 	items := make([]map[string]any, 0, len(breadcrumbs))
 	for index, breadcrumb := range breadcrumbs {

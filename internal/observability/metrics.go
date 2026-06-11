@@ -16,6 +16,7 @@ const (
 	MetricCatalogOperationMs  = "CatalogOperationMs"
 	MetricCatalogWrite        = "CatalogWrite"
 	MetricCheckoutPayment     = "CheckoutPayment"
+	MetricCheckoutRefund      = "CheckoutRefund"
 	MetricCommerceOperation   = "CommerceOperation"
 	MetricCommerceOperationMs = "CommerceOperationMs"
 	MetricCustomerAuth        = "CustomerAuth"

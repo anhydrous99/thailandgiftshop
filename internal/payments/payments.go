@@ -34,6 +34,13 @@ var (
 	ErrSessionNotFound                    = errors.New("payment session not found")
 	ErrSessionExpired                     = errors.New("payment session expired")
 	ErrPaymentMethodNotFound              = errors.New("payment method not found")
+	// ErrRefundNotFound reports a refund ID the provider does not know.
+	ErrRefundNotFound = errors.New("payment refund not found")
+	// ErrChargeAlreadyRefunded reports a refund create rejected because the
+	// charge is already fully refunded at the provider but no settled refund is
+	// recorded on the order — the post-idempotency-window orphan case.
+	// Resolution is manual reconciliation in the provider dashboard.
+	ErrChargeAlreadyRefunded = errors.New("payment charge already fully refunded")
 )
 
 // Session lifecycle statuses (the Stripe checkout-session status values).
@@ -44,6 +51,17 @@ const (
 	SessionStatusOpen     = "open"
 	SessionStatusComplete = "complete"
 	SessionStatusExpired  = "expired"
+)
+
+// Refund lifecycle statuses (the Stripe refund status values). pending and
+// requires_action refunds are still settling; succeeded, failed, and canceled
+// are terminal.
+const (
+	RefundStatusPending        = "pending"
+	RefundStatusRequiresAction = "requires_action"
+	RefundStatusSucceeded      = "succeeded"
+	RefundStatusFailed         = "failed"
+	RefundStatusCanceled       = "canceled"
 )
 
 // Provider is the payment gateway used by checkout orchestration. Sessions
@@ -60,6 +78,12 @@ type Provider interface {
 	// session that is not open is a provider error the caller classifies by
 	// re-reading the session.
 	ExpireSession(ctx context.Context, sessionID string) error
+	// CreateRefund issues a full refund against the order's payment intent.
+	// Idempotent per (OrderID, Attempt) via the provider idempotency key.
+	CreateRefund(ctx context.Context, input RefundInput) (Refund, error)
+	// GetRefund retrieves a refund for reconciliation. Unknown IDs map to
+	// ErrRefundNotFound.
+	GetRefund(ctx context.Context, refundID string) (Refund, error)
 	ListPaymentMethods(ctx context.Context, stripeCustomerID string) ([]PaymentMethod, error)
 	DetachPaymentMethod(ctx context.Context, stripeCustomerID string, paymentMethodID string) error
 	ParseWebhook(payload []byte, signatureHeader string, now time.Time) (Event, error)
@@ -104,6 +128,34 @@ type Event struct {
 	SessionID string
 	OrderID   string
 	Session   Session
+	// Refund is populated only for refund.* events; OrderID rides in the
+	// refund's metadata (set by CreateRefund), so dashboard-issued refunds
+	// without it carry an empty OrderID and are ignored downstream.
+	Refund Refund
+}
+
+// RefundInput describes a full refund of an order's captured payment.
+// Attempt is the per-order refund counter persisted on the order record; it
+// scopes the provider idempotency key so a double-clicked refund reuses the
+// same refund while a deliberate retry after a failure mints a fresh one.
+type RefundInput struct {
+	OrderID         string
+	PaymentIntentID string
+	Attempt         int
+}
+
+// Refund is the provider-neutral view of a refund. Status is one of the
+// RefundStatus* values; FailureReason is set only for failed refunds.
+// OrderID and Attempt ride in the refund's metadata (set by CreateRefund);
+// both are zero for refunds we did not create.
+type Refund struct {
+	ID              string
+	PaymentIntentID string
+	OrderID         string
+	Attempt         int
+	Status          string
+	AmountCents     int
+	FailureReason   string
 }
 
 // SessionLine is one display line for the hosted checkout page, copied from

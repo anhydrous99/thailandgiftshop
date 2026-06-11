@@ -328,8 +328,10 @@ func (h *Handler) handleSignInSubmit(ctx context.Context, request events.APIGate
 
 // finishCustomerAuth runs the shared sign-in/sign-up tail: a fresh
 // server-minted session, the cookie-cart merge, and the PRG redirect. The
-// response carries up to four cookies: session, CSRF, guest-CSRF clear, and
-// the rewritten cart mirror.
+// response carries up to five cookies: session, CSRF, guest-CSRF clear, the
+// guest order-pointer clear (meaningless once signed in; any stranded guest
+// pending order self-heals via the 30-minute expiry webhook), and the
+// rewritten cart mirror.
 func (h *Handler) finishCustomerAuth(ctx context.Context, request events.APIGatewayV2HTTPRequest, kind pageKind, operation string, customerID string, returnTo string) events.APIGatewayV2HTTPResponse {
 	minted, err := h.mintCustomerSession(ctx, customerID)
 	if err != nil {
@@ -349,6 +351,7 @@ func (h *Handler) finishCustomerAuth(ctx context.Context, request events.APIGate
 		minted.sessionCookie,
 		minted.csrfCookie,
 		clearGuestCSRFCookie().String(),
+		clearGuestOrderCookie().String(),
 		mirrorCookie,
 	})
 }

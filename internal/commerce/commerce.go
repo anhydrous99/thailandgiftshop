@@ -17,9 +17,10 @@ const (
 	EnvOrdersIndexName         = "COMMERCE_ORDERS_INDEX_NAME"
 	EnvSessionSecret           = "CUSTOMER_SESSION_SECRET"
 
-	SessionCookieName   = "__Host-tgs_customer"
-	CSRFCookieName      = "__Host-tgs_customer_csrf"
-	GuestCSRFCookieName = "__Host-tgs_guest_csrf"
+	SessionCookieName    = "__Host-tgs_customer"
+	CSRFCookieName       = "__Host-tgs_customer_csrf"
+	GuestCSRFCookieName  = "__Host-tgs_guest_csrf"
+	GuestOrderCookieName = "__Host-tgs_guest_order"
 
 	DefaultCustomerOrdersIndexName = "customer-orders-index"
 	DefaultOrdersIndexName         = "orders-index"
@@ -109,19 +110,28 @@ const (
 	OrderStatusPaymentFailed  OrderStatus = "payment_failed"
 	OrderStatusExpired        OrderStatus = "expired"
 	OrderStatusCanceled       OrderStatus = "canceled"
+	OrderStatusRefundPending  OrderStatus = "refund_pending"
+	OrderStatusRefunded       OrderStatus = "refunded"
+	OrderStatusRefundFailed   OrderStatus = "refund_failed"
 )
 
 // OrderTransitions is the single source of truth for the order state machine:
 //
 //	pending_payment -> paid | payment_failed | expired | canceled
-//	paid            -> shipped | canceled
-//	shipped         -> delivered
-//	delivered, payment_failed, expired, canceled are terminal.
+//	paid            -> shipped | refund_pending
+//	shipped         -> delivered | refund_pending
+//	delivered       -> refund_pending
+//	refund_pending  -> refunded | refund_failed
+//	refund_failed   -> refund_pending            (admin retry)
+//	refunded, payment_failed, expired, canceled are terminal.
 var OrderTransitions = map[OrderStatus][]OrderStatus{
 	OrderStatusPendingPayment: {OrderStatusPaid, OrderStatusPaymentFailed, OrderStatusExpired, OrderStatusCanceled},
-	OrderStatusPaid:           {OrderStatusShipped, OrderStatusCanceled},
-	OrderStatusShipped:        {OrderStatusDelivered},
-	OrderStatusDelivered:      {},
+	OrderStatusPaid:           {OrderStatusShipped, OrderStatusRefundPending},
+	OrderStatusShipped:        {OrderStatusDelivered, OrderStatusRefundPending},
+	OrderStatusDelivered:      {OrderStatusRefundPending},
+	OrderStatusRefundPending:  {OrderStatusRefunded, OrderStatusRefundFailed},
+	OrderStatusRefundFailed:   {OrderStatusRefundPending},
+	OrderStatusRefunded:       {},
 	OrderStatusPaymentFailed:  {},
 	OrderStatusExpired:        {},
 	OrderStatusCanceled:       {},
@@ -201,13 +211,24 @@ type Order struct {
 	PaymentCardLast4        string
 	TrackingCarrier         string
 	TrackingNumber          string
-	CheckoutAttempt         int
-	StatusHistory           []StatusEvent
-	CreatedAt               time.Time
-	UpdatedAt               time.Time
-	PaidAt                  time.Time
-	ShippedAt               time.Time
-	DeliveredAt             time.Time
+	// StripeRefundID is the latest provider refund issued for this order.
+	StripeRefundID string
+	// RefundAttempt scopes the provider refund idempotency key (the
+	// CheckoutAttempt precedent): a retry after a failed refund mints a fresh
+	// key by incrementing it.
+	RefundAttempt int
+	// RefundFailureReason carries the provider failure_reason of the latest
+	// failed refund; cleared on every transition back to refund_pending.
+	RefundFailureReason string
+	CheckoutAttempt     int
+	StatusHistory       []StatusEvent
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	PaidAt              time.Time
+	ShippedAt           time.Time
+	DeliveredAt         time.Time
+	// RefundedAt is zero until the refund settles at the provider.
+	RefundedAt time.Time
 	// StockReleasedAt marks that the reserved stock for this order has been
 	// (or is being) released back to the catalog; the zero value means no
 	// release has been confirmed. The checkout release-claim protocol SETs it
@@ -227,14 +248,67 @@ type OrderPatch struct {
 	PaymentCardLast4        *string
 	TrackingCarrier         *string
 	TrackingNumber          *string
+	StripeRefundID          *string
+	RefundAttempt           *int
+	RefundFailureReason     *string
 	CheckoutAttempt         *int
 	PaidAt                  *time.Time
 	ShippedAt               *time.Time
 	DeliveredAt             *time.Time
+	RefundedAt              *time.Time
 	// StockReleasedAt follows the shared pointer convention: nil leaves the
 	// stored marker untouched, a pointer to the zero time clears (REMOVEs) it,
 	// and a pointer to any other time sets it.
 	StockReleasedAt *time.Time
+}
+
+// OrderCursor resumes a newest-first order listing immediately after the
+// order identified by OrderID and CreatedAt — the two components of the
+// order GSI sort keys ("ORDER#<RFC3339 created>#<id>" on gsi1,
+// "<RFC3339 created>#<id>" on gsi2). The zero value means "start at the
+// newest order". Cursor times are UTC at RFC3339 second precision, matching
+// formatCommerceTime; CreatedAt is immutable, so cursors are stable forever.
+type OrderCursor struct {
+	OrderID   string
+	CreatedAt time.Time
+}
+
+// IsZero reports whether the cursor is the start-of-listing marker. A cursor
+// missing either component is treated as the start so a half-built value can
+// never address an arbitrary position.
+func (c OrderCursor) IsZero() bool {
+	return c.OrderID == "" || c.CreatedAt.IsZero()
+}
+
+// OrderPage is one newest-first page of orders. NextCursor resumes the
+// listing after the last order in Orders; it is the zero cursor when no
+// further order existed at query time, so a non-zero NextCursor always leads
+// to a non-empty page (orders are never deleted).
+type OrderPage struct {
+	Orders     []Order
+	NextCursor OrderCursor
+}
+
+// probeLimit fetches one row beyond the requested page so NextCursor is only
+// emitted when a further row provably exists (never a dangling "older" link).
+// limit <= 0 keeps the existing fetch-everything contract.
+func probeLimit(limit int) int {
+	if limit <= 0 {
+		return 0
+	}
+	return limit + 1
+}
+
+// orderPageFromProbe converts a probe-sized listing into a page: when the
+// probe row is present, the page is trimmed back to limit and NextCursor
+// points after its last visible order.
+func orderPageFromProbe(orders []Order, limit int) OrderPage {
+	if limit <= 0 || len(orders) <= limit {
+		return OrderPage{Orders: orders}
+	}
+	page := orders[:limit:limit]
+	last := page[limit-1]
+	return OrderPage{Orders: page, NextCursor: OrderCursor{OrderID: last.ID, CreatedAt: last.CreatedAt}}
 }
 
 func orderActorOrDefault(actor string) string {
@@ -263,6 +337,15 @@ func applyOrderPatchFields(order *Order, patch OrderPatch) {
 	if patch.TrackingNumber != nil {
 		order.TrackingNumber = *patch.TrackingNumber
 	}
+	if patch.StripeRefundID != nil {
+		order.StripeRefundID = *patch.StripeRefundID
+	}
+	if patch.RefundAttempt != nil {
+		order.RefundAttempt = *patch.RefundAttempt
+	}
+	if patch.RefundFailureReason != nil {
+		order.RefundFailureReason = *patch.RefundFailureReason
+	}
 	if patch.CheckoutAttempt != nil {
 		order.CheckoutAttempt = *patch.CheckoutAttempt
 	}
@@ -274,6 +357,9 @@ func applyOrderPatchFields(order *Order, patch OrderPatch) {
 	}
 	if patch.DeliveredAt != nil {
 		order.DeliveredAt = *patch.DeliveredAt
+	}
+	if patch.RefundedAt != nil {
+		order.RefundedAt = *patch.RefundedAt
 	}
 	if patch.StockReleasedAt != nil {
 		order.StockReleasedAt = *patch.StockReleasedAt
@@ -304,8 +390,16 @@ type Store interface {
 
 	CreateOrder(ctx context.Context, o Order) (Order, error)
 	GetOrder(ctx context.Context, orderID string) (Order, bool, error)
-	ListOrdersByCustomer(ctx context.Context, customerID string, limit int) ([]Order, error)
-	ListOrders(ctx context.Context, limit int) ([]Order, error)
+	// ListOrdersByCustomer returns one newest-first page of the customer's
+	// orders, resuming after cursor. limit <= 0 returns the full listing.
+	// customerID == "" (guest marker) always returns an empty page: guest
+	// orders are sparse in gsi1 and must never be listable as a
+	// pseudo-customer.
+	ListOrdersByCustomer(ctx context.Context, customerID string, limit int, cursor OrderCursor) (OrderPage, error)
+	// ListOrders returns one newest-first page of all orders (admin order
+	// desk, gsi2 — includes guest orders), resuming after cursor. limit <= 0
+	// returns the full listing.
+	ListOrders(ctx context.Context, limit int, cursor OrderCursor) (OrderPage, error)
 	TransitionOrder(ctx context.Context, orderID string, from OrderStatus, to OrderStatus, patch OrderPatch) (Order, error)
 	PatchOrder(ctx context.Context, orderID string, expectedStatus OrderStatus, expectedVersion int, patch OrderPatch) (Order, error)
 

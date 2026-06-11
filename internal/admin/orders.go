@@ -11,12 +11,14 @@ import (
 	"github.com/anhydrous99/thailandgiftshop/internal/checkout"
 	"github.com/anhydrous99/thailandgiftshop/internal/commerce"
 	"github.com/anhydrous99/thailandgiftshop/internal/httpapi"
+	"github.com/anhydrous99/thailandgiftshop/internal/payments"
 	"github.com/aws/aws-lambda-go/events"
 )
 
 const adminOrderActionAllowedMethods = http.MethodPost
 
-// adminOrderListLimit caps the newest-first admin order list query (gsi2).
+// adminOrderListLimit is the page size of the newest-first admin order list
+// (gsi2 orders-index); older pages continue via the ?after=<orderID> cursor.
 const adminOrderListLimit = 100
 
 // adminOrderOverdueAfter flags pending_payment orders that should have been
@@ -30,6 +32,9 @@ const adminOrderFieldMaxLength = 100
 type adminOrderListViewModel struct {
 	CSRFValue string
 	Orders    []adminOrderRowViewModel
+	// NextCursor is the order ID the next-older page resumes after; empty on
+	// the last page. The detail handler re-reads the order for its CreatedAt.
+	NextCursor string
 }
 
 type adminOrderRowViewModel struct {
@@ -43,10 +48,11 @@ type adminOrderDetailViewModel struct {
 	Overdue          bool
 	AdvanceTargets   []commerce.OrderStatus
 	ShowTrackingForm bool
-	ShowCancelForm   bool
-	CancelFromPaid   bool
+	ShowCancelForm   bool // pending_payment only
+	ShowRefundForm   bool // paid | shipped | delivered | refund_failed
+	RefundRetry      bool // refund_failed (button copy "Retry refund")
+	RefundFromPaid   bool // paid (copy mentions stock return)
 	Flash            string
-	RefundNotice     bool
 	StockWarning     bool
 	Errors           []string
 }
@@ -70,7 +76,7 @@ func adminOrderIDAction(path string) (string, string, bool) {
 	if !hasAction {
 		return orderID, "", true
 	}
-	if action != "advance" && action != "tracking" && action != "cancel" {
+	if action != "advance" && action != "tracking" && action != "cancel" && action != "refund" {
 		return "", "", false
 	}
 	return orderID, action, true
@@ -107,7 +113,7 @@ func (h *Handler) handleAdminOrders(ctx context.Context, path string, request ev
 		if method != http.MethodGet && method != http.MethodHead {
 			return adminHTMLResponse(http.StatusMethodNotAllowed, "Method not allowed", map[string]string{"Allow": adminAllowedMethods}, nil)
 		}
-		return h.adminOrderListResponse(ctx, method, csrfValue, cookies)
+		return h.adminOrderListResponse(ctx, request, method, csrfValue, cookies)
 	}
 
 	orderID, action, ok := adminOrderIDAction(path)
@@ -127,9 +133,13 @@ func (h *Handler) handleAdminOrders(ctx context.Context, path string, request ev
 		if method != http.MethodGet && method != http.MethodHead {
 			return adminHTMLResponse(http.StatusMethodNotAllowed, "Method not allowed", map[string]string{"Allow": adminAllowedMethods}, nil)
 		}
+		// Reconcile-on-render: the missed-webhook backstop for refund
+		// settlement and the re-driver for a failed stock release.
+		// ReconcileRefund self-gates (non-refund-family orders are returned
+		// untouched), so no status check is needed here.
+		order = h.checkoutService().ReconcileRefund(ctx, order)
 		vm := h.adminOrderDetailView(order, csrfValue)
 		vm.Flash = adminOrderFlashMessage(request.QueryStringParameters["saved"])
-		vm.RefundNotice = request.QueryStringParameters["refund"] == "manual"
 		vm.StockWarning = request.QueryStringParameters["stock"] == "error"
 		body, err := renderAdminOrderDetail(ctx, vm)
 		if err != nil {
@@ -152,22 +162,25 @@ func (h *Handler) handleAdminOrders(ctx context.Context, path string, request ev
 		return h.setOrderTracking(ctx, request, order, csrfValue, cookies)
 	case "cancel":
 		return h.cancelOrder(ctx, order, csrfValue, cookies)
+	case "refund":
+		return h.refundOrder(ctx, order, csrfValue, cookies)
 	}
 	return adminHTMLResponse(http.StatusNotFound, "Not found", nil, nil)
 }
 
-func (h *Handler) adminOrderListResponse(ctx context.Context, method string, csrfValue string, cookies []string) events.APIGatewayV2HTTPResponse {
-	orders, err := h.commerceStore().ListOrders(ctx, adminOrderListLimit)
+func (h *Handler) adminOrderListResponse(ctx context.Context, request events.APIGatewayV2HTTPRequest, method string, csrfValue string, cookies []string) events.APIGatewayV2HTTPResponse {
+	cursor := h.adminOrdersCursor(ctx, request.QueryStringParameters["after"])
+	page, err := h.commerceStore().ListOrders(ctx, adminOrderListLimit, cursor)
 	if err != nil {
 		logAdminError("orders: list", err)
 		return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
 	}
 	now := h.currentTime()
-	rows := make([]adminOrderRowViewModel, 0, len(orders))
-	for _, order := range orders {
+	rows := make([]adminOrderRowViewModel, 0, len(page.Orders))
+	for _, order := range page.Orders {
 		rows = append(rows, adminOrderRowViewModel{Order: order, Overdue: adminOrderOverdue(order, now)})
 	}
-	body, err := renderAdminOrderList(ctx, adminOrderListViewModel{CSRFValue: csrfValue, Orders: rows})
+	body, err := renderAdminOrderList(ctx, adminOrderListViewModel{CSRFValue: csrfValue, Orders: rows, NextCursor: page.NextCursor.OrderID})
 	if err != nil {
 		logAdminError("orders: render list", err)
 		return adminHTMLResponse(http.StatusInternalServerError, "Internal server error", nil, nil)
@@ -176,6 +189,24 @@ func (h *Handler) adminOrderListResponse(ctx context.Context, method string, csr
 		body = ""
 	}
 	return adminHTMLResponse(http.StatusOK, body, nil, cookies)
+}
+
+// adminOrdersCursor resolves ?after=<orderID> by re-reading the order so the
+// URL never carries a sort-key timestamp. Malformed, unknown, or unreadable
+// IDs restart at the first page (the customer-page fallback convention).
+func (h *Handler) adminOrdersCursor(ctx context.Context, after string) commerce.OrderCursor {
+	if !validAdminOrderID(after) {
+		return commerce.OrderCursor{}
+	}
+	order, found, err := h.commerceStore().GetOrder(ctx, after)
+	if err != nil {
+		logAdminError("orders: resolve cursor", err)
+		return commerce.OrderCursor{}
+	}
+	if !found {
+		return commerce.OrderCursor{}
+	}
+	return commerce.OrderCursor{OrderID: order.ID, CreatedAt: order.CreatedAt}
 }
 
 func (h *Handler) advanceOrder(ctx context.Context, request events.APIGatewayV2HTTPRequest, order commerce.Order, csrfValue string, cookies []string) events.APIGatewayV2HTTPResponse {
@@ -235,9 +266,11 @@ func (h *Handler) setOrderTracking(ctx context.Context, request events.APIGatewa
 }
 
 // checkoutService assembles the shared checkout orchestration over the admin
-// handler's stores so admin cancels reuse the session-expiry and
-// stock-release-claim protocols. A nil payments provider (the v1 admin
-// Lambda has no Stripe credentials) degrades to skipping session expiry.
+// handler's stores so admin cancels and refunds reuse the session-expiry,
+// refund, and stock-release-claim protocols. The admin Lambda carries Stripe
+// credentials; should the provider still be nil (degraded wiring), cancels
+// skip session expiry while refunds refuse to proceed
+// (checkout.ErrRefundProviderUnavailable — refunds move money).
 func (h *Handler) checkoutService() *checkout.Service {
 	return &checkout.Service{
 		Commerce: h.commerceStore(),
@@ -249,23 +282,10 @@ func (h *Handler) checkoutService() *checkout.Service {
 }
 
 func (h *Handler) cancelOrder(ctx context.Context, order commerce.Order, csrfValue string, cookies []string) events.APIGatewayV2HTTPResponse {
-	if order.Status != commerce.OrderStatusPendingPayment && order.Status != commerce.OrderStatusPaid {
-		return h.orderDetailErrorResponse(ctx, order, csrfValue, cookies, []string{"Only pending or paid orders can be canceled."}, http.StatusConflict)
+	if order.Status != commerce.OrderStatusPendingPayment {
+		return h.orderDetailErrorResponse(ctx, order, csrfValue, cookies, []string{"Only pending orders can be canceled. Refund paid orders instead."}, http.StatusConflict)
 	}
 	location := adminOrderDetailPath(order.ID) + "?saved=canceled"
-
-	if order.Status == commerce.OrderStatusPaid {
-		canceled, err := h.commerceStore().TransitionOrder(ctx, order.ID, commerce.OrderStatusPaid, commerce.OrderStatusCanceled, commerce.OrderPatch{Actor: commerce.OrderActorAdmin})
-		if err != nil {
-			return h.orderWriteError(ctx, order, csrfValue, cookies, "orders: cancel", err)
-		}
-		if err := h.checkoutService().ClaimAndReleaseOrderStock(ctx, canceled.ID); err != nil {
-			logAdminError("orders: release stock after cancel", err)
-			location += "&stock=error"
-		}
-		location += "&refund=manual"
-		return adminRedirectResponse(http.StatusSeeOther, location, nil)
-	}
 
 	// pending_payment: the session-safe cancel expires the checkout session
 	// first so the shopper cannot pay a canceled order from an open tab.
@@ -276,22 +296,77 @@ func (h *Handler) cancelOrder(ctx context.Context, order commerce.Order, csrfVal
 		location += "&stock=error"
 	case errors.Is(err, checkout.ErrOrderPaidNotCanceled):
 		return h.refreshedOrderConflictResponse(ctx, order, csrfValue, cookies,
-			"This order's payment completed while you were canceling, so it is now paid instead of canceled.")
+			"This order's payment completed while you were canceling, so it is now paid instead of canceled.", http.StatusConflict)
 	case errors.Is(err, checkout.ErrPaymentSessionInFlight):
 		return h.refreshedOrderConflictResponse(ctx, order, csrfValue, cookies,
-			"A payment for this order is still processing. Wait for it to settle, then try again.")
+			"A payment for this order is still processing. Wait for it to settle, then try again.", http.StatusConflict)
 	default:
 		return h.orderWriteError(ctx, order, csrfValue, cookies, "orders: cancel", err)
 	}
 	return adminRedirectResponse(http.StatusSeeOther, location, nil)
 }
 
-func (h *Handler) refreshedOrderConflictResponse(ctx context.Context, order commerce.Order, csrfValue string, cookies []string, message string) events.APIGatewayV2HTTPResponse {
+// refundOrder issues an automatic Stripe refund for a paid, shipped, or
+// delivered order (or retries a failed one). The checkout service owns the
+// protocol; this handler translates its results.
+func (h *Handler) refundOrder(ctx context.Context, order commerce.Order, csrfValue string, cookies []string) events.APIGatewayV2HTTPResponse {
+	switch order.Status {
+	case commerce.OrderStatusPaid, commerce.OrderStatusShipped, commerce.OrderStatusDelivered, commerce.OrderStatusRefundFailed:
+	default:
+		return h.orderDetailErrorResponse(ctx, order, csrfValue, cookies,
+			[]string{"Only paid, shipped, or delivered orders can be refunded."}, http.StatusConflict)
+	}
+	updated, err := h.checkoutService().RefundOrderAs(ctx, order, commerce.OrderActorAdmin)
+	location := adminOrderDetailPath(order.ID)
+	switch {
+	case err == nil:
+	case errors.Is(err, checkout.ErrStockReleaseFailed):
+		logAdminError("orders: release stock after refund", err)
+		// The refund committed; the stock release is re-driven by webhook
+		// redelivery and the order-page reconcile.
+		return adminRedirectResponse(http.StatusSeeOther, location+refundSavedQuery(updated)+"&stock=error", nil)
+	case errors.Is(err, checkout.ErrRefundProviderUnavailable):
+		return h.orderDetailErrorResponse(ctx, order, csrfValue, cookies,
+			[]string{"The payments provider is unavailable, so the refund was not issued. Try again shortly, or refund in the Stripe dashboard; the order is unchanged."}, http.StatusBadGateway)
+	case errors.Is(err, checkout.ErrRefundNotIssuable):
+		return h.orderDetailErrorResponse(ctx, order, csrfValue, cookies,
+			[]string{"This order has no payment intent on file, so it must be refunded in the Stripe dashboard."}, http.StatusConflict)
+	case errors.Is(err, payments.ErrChargeAlreadyRefunded):
+		// Post-idempotency-window orphan: Stripe holds a full refund this
+		// order does not know about. Retrying can never succeed.
+		return h.orderDetailErrorResponse(ctx, order, csrfValue, cookies,
+			[]string{"Stripe reports this payment as already fully refunded, but no refund is recorded on this order. Reconcile it in the Stripe dashboard."}, http.StatusConflict)
+	case errors.Is(err, commerce.ErrOrderTransitionConflict):
+		return h.orderWriteError(ctx, order, csrfValue, cookies, "orders: refund", err)
+	default:
+		// Provider/API failure: order unchanged; the same idempotency key
+		// applies on a retry.
+		logAdminError("orders: refund", err)
+		return h.refreshedOrderConflictResponse(ctx, order, csrfValue, cookies,
+			"Stripe could not process the refund, so the order is unchanged. Try again, or refund in the Stripe dashboard.", http.StatusBadGateway)
+	}
+	return adminRedirectResponse(http.StatusSeeOther, location+refundSavedQuery(updated), nil)
+}
+
+// refundSavedQuery maps the post-refund order status onto the flash key: a
+// synchronously settled refund lands on refunded, a synchronous provider
+// failure on refund_failed, and an asynchronous one on refund_pending.
+func refundSavedQuery(order commerce.Order) string {
+	switch order.Status {
+	case commerce.OrderStatusRefunded:
+		return "?saved=refunded"
+	case commerce.OrderStatusRefundFailed:
+		return "?saved=refund_failed"
+	}
+	return "?saved=refund_pending"
+}
+
+func (h *Handler) refreshedOrderConflictResponse(ctx context.Context, order commerce.Order, csrfValue string, cookies []string, message string, statusCode int) events.APIGatewayV2HTTPResponse {
 	refreshed, found, err := h.commerceStore().GetOrder(ctx, order.ID)
 	if err == nil && found {
 		order = refreshed
 	}
-	return h.orderDetailErrorResponse(ctx, order, csrfValue, cookies, []string{message}, http.StatusConflict)
+	return h.orderDetailErrorResponse(ctx, order, csrfValue, cookies, []string{message}, statusCode)
 }
 
 func (h *Handler) orderWriteError(ctx context.Context, order commerce.Order, csrfValue string, cookies []string, operation string, err error) events.APIGatewayV2HTTPResponse {
@@ -324,9 +399,21 @@ func (h *Handler) adminOrderDetailView(order commerce.Order, csrfValue string) a
 		Overdue:          adminOrderOverdue(order, h.currentTime()),
 		AdvanceTargets:   adminAdvanceTargets(order.Status),
 		ShowTrackingForm: order.Status == commerce.OrderStatusPaid,
-		ShowCancelForm:   order.Status == commerce.OrderStatusPendingPayment || order.Status == commerce.OrderStatusPaid,
-		CancelFromPaid:   order.Status == commerce.OrderStatusPaid,
+		ShowCancelForm:   order.Status == commerce.OrderStatusPendingPayment,
+		ShowRefundForm:   adminOrderRefundable(order.Status),
+		RefundRetry:      order.Status == commerce.OrderStatusRefundFailed,
+		RefundFromPaid:   order.Status == commerce.OrderStatusPaid,
 	}
+}
+
+// adminOrderRefundable mirrors the refundOrder action gate: the Refund form
+// is offered exactly where a POST would be accepted.
+func adminOrderRefundable(status commerce.OrderStatus) bool {
+	switch status {
+	case commerce.OrderStatusPaid, commerce.OrderStatusShipped, commerce.OrderStatusDelivered, commerce.OrderStatusRefundFailed:
+		return true
+	}
+	return false
 }
 
 func adminOrderDetailPath(orderID string) string {
@@ -366,6 +453,12 @@ func adminOrderFlashMessage(saved string) string {
 		return "Tracking saved and order marked shipped."
 	case "canceled":
 		return "Order canceled."
+	case "refund_pending":
+		return "Refund issued. Stripe is processing it; the status updates when it settles."
+	case "refunded":
+		return "Refund issued and confirmed."
+	case "refund_failed":
+		return "Stripe reported the refund as failed. See the failure details below."
 	}
 	return ""
 }
@@ -386,6 +479,12 @@ func adminOrderStatusLabel(status commerce.OrderStatus) string {
 		return "Expired"
 	case commerce.OrderStatusCanceled:
 		return "Canceled"
+	case commerce.OrderStatusRefundPending:
+		return "Refund pending"
+	case commerce.OrderStatusRefunded:
+		return "Refunded"
+	case commerce.OrderStatusRefundFailed:
+		return "Refund failed"
 	}
 	return string(status)
 }
@@ -401,7 +500,12 @@ func adminOrderStatusChipClass(status commerce.OrderStatus) string {
 		return base + "bg-gold text-ink"
 	case commerce.OrderStatusDelivered:
 		return base + "bg-ink text-white"
+	case commerce.OrderStatusRefundPending:
+		return base + "bg-gold text-ink"
+	case commerce.OrderStatusRefunded:
+		return base + "bg-ink text-white"
 	}
+	// refund_failed shares the red terminal fallback.
 	return base + "bg-flag-red/10 text-flag-red"
 }
 

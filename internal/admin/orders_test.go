@@ -61,6 +61,76 @@ func TestAdminOrdersListRendersNewestFirstWithStatusChipsAndOverdueFlag(t *testi
 	if !strings.Contains(response.Body[overdueRowStart:], "Overdue pending") {
 		t.Fatalf("overdue pending order row missing overdue flag")
 	}
+	if strings.Contains(response.Body, `data-testid="admin-orders-next-page"`) {
+		t.Fatalf("3 orders fit on one page; the older-orders link must not render")
+	}
+}
+
+func TestAdminOrdersListPagesWithCursor(t *testing.T) {
+	handler, commerceStore, _, currentTime := newOrdersTestHandler(t)
+	now := *currentTime
+
+	// adminOrderListLimit+1 orders, distinct creation times: the list shows
+	// the newest 100 and links the next-older page after the 100th row.
+	orderIDs := make([]string, 0, adminOrderListLimit+1)
+	for i := 1; i <= adminOrderListLimit+1; i++ {
+		order := createTestOrder(t, commerceStore, adminTestOrder(testOrderID(i), commerce.OrderStatusPaid, now.Add(-time.Duration(i)*time.Minute)))
+		orderIDs = append(orderIDs, order.ID)
+	}
+	oldestID := orderIDs[adminOrderListLimit]
+	cursorID := orderIDs[adminOrderListLimit-1] // 100th-newest order
+
+	response := authenticatedProductGet(t, handler, "/admin/orders")
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	if got := strings.Count(response.Body, `data-testid="admin-order-row"`); got != adminOrderListLimit {
+		t.Fatalf("admin-order-row count = %d, want %d", got, adminOrderListLimit)
+	}
+	if strings.Contains(response.Body, `href="/admin/orders/`+oldestID+`"`) {
+		t.Fatalf("first page must not contain the oldest order")
+	}
+	if !strings.Contains(response.Body, `data-testid="admin-orders-next-page"`) {
+		t.Fatalf("first page is missing the older-orders link")
+	}
+	if !strings.Contains(response.Body, `href="/admin/orders?after=`+cursorID+`"`) {
+		t.Fatalf("older-orders link should resume after the 100th order %s", cursorID)
+	}
+
+	secondPage := authenticatedProductGet(t, handler, "/admin/orders?after="+cursorID)
+	if secondPage.StatusCode != http.StatusOK {
+		t.Fatalf("page 2 status = %d, want %d", secondPage.StatusCode, http.StatusOK)
+	}
+	if got := strings.Count(secondPage.Body, `data-testid="admin-order-row"`); got != 1 {
+		t.Fatalf("page 2 admin-order-row count = %d, want 1", got)
+	}
+	if !strings.Contains(secondPage.Body, `href="/admin/orders/`+oldestID+`"`) {
+		t.Fatalf("page 2 is missing the oldest order")
+	}
+	if strings.Contains(secondPage.Body, `data-testid="admin-orders-next-page"`) {
+		t.Fatalf("the last page must not offer another page")
+	}
+}
+
+func TestAdminOrdersListUnknownCursorRestartsAtFirstPage(t *testing.T) {
+	handler, commerceStore, _, currentTime := newOrdersTestHandler(t)
+	now := *currentTime
+
+	for i := 1; i <= 3; i++ {
+		createTestOrder(t, commerceStore, adminTestOrder(testOrderID(i), commerce.OrderStatusPaid, now.Add(-time.Duration(i)*time.Minute)))
+	}
+
+	// No t.Run subtests: the login helper derives the admin password from
+	// t.Name(), so authenticated requests must run under the parent test.
+	for _, after := range []string{strings.Repeat("z", 26), "abc"} {
+		response := authenticatedProductGet(t, handler, "/admin/orders?after="+after)
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("after=%q status = %d, want %d", after, response.StatusCode, http.StatusOK)
+		}
+		if got := strings.Count(response.Body, `data-testid="admin-order-row"`); got != 3 {
+			t.Fatalf("after=%q admin-order-row count = %d, want the full first page of 3", after, got)
+		}
+	}
 }
 
 func TestAdminOrdersListShowsEmptyState(t *testing.T) {
@@ -102,15 +172,19 @@ func TestAdminOrderDetailRendersSnapshotAddressHistoryAndPaymentIntent(t *testin
 		`data-testid="admin-order-history"`,
 		`data-testid="admin-order-payment-intent"`,
 		"pi_test_admin_123",
-		// Action forms for a paid order.
+		// Action forms for a paid order: advance, tracking, and refund.
 		`data-testid="admin-order-advance"`,
 		`data-testid="admin-order-tracking"`,
-		`data-testid="admin-order-cancel"`,
-		"refund the payment manually in the Stripe dashboard",
+		`data-testid="admin-order-refund"`,
+		"Cancel and refund",
+		"returns the full payment to the shopper through Stripe and returns the reserved stock to the shop",
 	} {
 		if !strings.Contains(response.Body, want) {
 			t.Fatalf("detail body missing %q", want)
 		}
+	}
+	if strings.Contains(response.Body, `data-testid="admin-order-cancel"`) {
+		t.Fatalf("paid order must not offer the cancel form; refunds replace paid cancels")
 	}
 	if !strings.Contains(response.Body, `value="shipped"`) {
 		t.Fatalf("advance form missing shipped option for a paid order")
@@ -164,7 +238,7 @@ func TestAdminOrderPathsRejectInvalidAndUnknownIDs(t *testing.T) {
 		{name: "too long", path: "/admin/orders/" + strings.Repeat("a", 27)},
 		{name: "uppercase", path: "/admin/orders/" + strings.Repeat("A", 26)},
 		{name: "unknown valid format", path: "/admin/orders/" + strings.Repeat("z", 26)},
-		{name: "unknown action", path: "/admin/orders/{orderID}/refund"},
+		{name: "unknown action", path: "/admin/orders/{orderID}/archive"},
 		{name: "nested action", path: "/admin/orders/{orderID}/advance/extra"},
 	}
 	for _, test := range tests {
@@ -193,6 +267,7 @@ func TestAdminOrdersMethodNotAllowed(t *testing.T) {
 		{name: "GET advance", method: http.MethodGet, path: "/admin/orders/{orderID}/advance", wantAllow: adminOrderActionAllowedMethods},
 		{name: "GET tracking", method: http.MethodGet, path: "/admin/orders/{orderID}/tracking", wantAllow: adminOrderActionAllowedMethods},
 		{name: "GET cancel", method: http.MethodGet, path: "/admin/orders/{orderID}/cancel", wantAllow: adminOrderActionAllowedMethods},
+		{name: "GET refund", method: http.MethodGet, path: "/admin/orders/{orderID}/refund", wantAllow: adminOrderActionAllowedMethods},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -392,34 +467,23 @@ func TestAdminOrderCancelFromPendingReleasesStock(t *testing.T) {
 	assertVariantStock(t, catalogStore, testOrderVariantStock+testOrderLineQuantity)
 }
 
-func TestAdminOrderCancelFromPaidReleasesStockAndShowsRefundNotice(t *testing.T) {
+func TestAdminOrderCancelFromPaidIsRefused(t *testing.T) {
 	handler, commerceStore, catalogStore, currentTime := newOrdersTestHandler(t)
 	order := createTestOrder(t, commerceStore, adminTestOrder(testOrderID(1), commerce.OrderStatusPaid, *currentTime))
 
 	response := authenticatedProductPost(t, handler, "/admin/orders/"+order.ID+"/cancel", url.Values{})
-	if response.StatusCode != http.StatusSeeOther {
-		t.Fatalf("status = %d, want %d; body = %q", response.StatusCode, http.StatusSeeOther, response.Body)
+	if response.StatusCode != http.StatusConflict {
+		t.Fatalf("status = %d, want %d; body = %q", response.StatusCode, http.StatusConflict, response.Body)
 	}
-	if response.Headers["Location"] != "/admin/orders/"+order.ID+"?saved=canceled&refund=manual" {
-		t.Fatalf("Location = %q, want saved=canceled&refund=manual", response.Headers["Location"])
+	if !strings.Contains(response.Body, "Refund paid orders instead.") {
+		t.Fatalf("body missing the refund-instead guidance: %q", response.Body)
 	}
 
-	canceled := getTestOrder(t, commerceStore, order.ID)
-	if canceled.Status != commerce.OrderStatusCanceled {
-		t.Fatalf("status = %q, want canceled", canceled.Status)
+	unchanged := getTestOrder(t, commerceStore, order.ID)
+	if unchanged.Status != commerce.OrderStatusPaid {
+		t.Fatalf("status = %q, want paid untouched", unchanged.Status)
 	}
-	assertVariantStock(t, catalogStore, testOrderVariantStock+testOrderLineQuantity)
-
-	detail := authenticatedProductGet(t, handler, "/admin/orders/"+order.ID+"?saved=canceled&refund=manual")
-	if !strings.Contains(detail.Body, `data-testid="admin-order-refund-notice"`) {
-		t.Fatalf("detail body missing refund notice")
-	}
-	if !strings.Contains(detail.Body, "Refund the payment manually in the Stripe dashboard") {
-		t.Fatalf("detail body missing manual Stripe refund copy")
-	}
-	if !strings.Contains(detail.Body, "Order canceled.") {
-		t.Fatalf("detail body missing canceled flash")
-	}
+	assertVariantStock(t, catalogStore, testOrderVariantStock)
 }
 
 func TestAdminOrderCancelPendingExpiresCheckoutSession(t *testing.T) {
@@ -549,7 +613,7 @@ func TestAdminOrderCancelRejectsTerminalAndShippedStatuses(t *testing.T) {
 			if response.StatusCode != http.StatusConflict {
 				t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusConflict)
 			}
-			if !strings.Contains(response.Body, "Only pending or paid orders can be canceled.") {
+			if !strings.Contains(response.Body, "Only pending orders can be canceled. Refund paid orders instead.") {
 				t.Fatalf("body missing cancel guard error: %q", response.Body)
 			}
 			unchanged := getTestOrder(t, commerceStore, order.ID)
@@ -749,5 +813,425 @@ func assertVariantStock(t *testing.T, store *catalog.MemoryStore, want int) {
 	}
 	if stock != want {
 		t.Fatalf("variant stock = %d, want %d", stock, want)
+	}
+}
+
+// refundStubProvider injects CreateRefund failures over the fake provider for
+// the admin error-path tests.
+type refundStubProvider struct {
+	*payments.FakeProvider
+	createRefundErr error
+}
+
+func (p *refundStubProvider) CreateRefund(ctx context.Context, input payments.RefundInput) (payments.Refund, error) {
+	if p.createRefundErr != nil {
+		return payments.Refund{}, p.createRefundErr
+	}
+	return p.FakeProvider.CreateRefund(ctx, input)
+}
+
+func TestAdminOrderRefundFromPaidSettlesAndReleasesStock(t *testing.T) {
+	handler, commerceStore, catalogStore, currentTime := newOrdersTestHandler(t)
+	handler.payments = payments.NewFakeProvider()
+	order := createTestOrder(t, commerceStore, adminTestOrder(testOrderID(1), commerce.OrderStatusPaid, *currentTime))
+
+	response := authenticatedProductPost(t, handler, "/admin/orders/"+order.ID+"/refund", url.Values{})
+	if response.StatusCode != http.StatusSeeOther {
+		t.Fatalf("status = %d, want %d; body = %q", response.StatusCode, http.StatusSeeOther, response.Body)
+	}
+	if response.Headers["Location"] != "/admin/orders/"+order.ID+"?saved=refunded" {
+		t.Fatalf("Location = %q, want saved=refunded", response.Headers["Location"])
+	}
+
+	refunded := getTestOrder(t, commerceStore, order.ID)
+	if refunded.Status != commerce.OrderStatusRefunded {
+		t.Fatalf("status = %q, want refunded", refunded.Status)
+	}
+	if refunded.StripeRefundID != "re_fake_"+order.ID+"_1" || refunded.RefundAttempt != 1 || refunded.RefundedAt.IsZero() {
+		t.Fatalf("refund fields = %#v, want attempt-1 settled refund", refunded)
+	}
+	history := refunded.StatusHistory
+	if len(history) != 3 || history[1].Status != commerce.OrderStatusRefundPending || history[1].Actor != commerce.OrderActorAdmin || history[2].Status != commerce.OrderStatusRefunded || history[2].Actor != commerce.OrderActorStripe {
+		t.Fatalf("history = %#v, want refund_pending(admin) then refunded(stripe)", history)
+	}
+	assertVariantStock(t, catalogStore, testOrderVariantStock+testOrderLineQuantity)
+
+	detail := authenticatedProductGet(t, handler, "/admin/orders/"+order.ID+"?saved=refunded")
+	for _, want := range []string{
+		"Refund issued and confirmed.",
+		`data-testid="admin-order-refund-id"`,
+		"re_fake_" + order.ID + "_1",
+		">Refunded</span>",
+	} {
+		if !strings.Contains(detail.Body, want) {
+			t.Fatalf("detail body missing %q", want)
+		}
+	}
+	for _, gone := range []string{`data-testid="admin-order-refund"`, `data-testid="admin-order-cancel"`} {
+		if strings.Contains(detail.Body, gone+`"`) || strings.Contains(detail.Body, gone+" ") {
+			t.Fatalf("detail body still offers %q for a refunded order", gone)
+		}
+	}
+	if strings.Contains(detail.Body, `data-testid="admin-order-refund-button"`) {
+		t.Fatalf("refunded order must not offer the refund form")
+	}
+}
+
+func TestAdminOrderRefundFromShippedKeepsStock(t *testing.T) {
+	handler, commerceStore, catalogStore, currentTime := newOrdersTestHandler(t)
+	handler.payments = payments.NewFakeProvider()
+	shippedAt := currentTime.UTC()
+	seed := adminTestOrder(testOrderID(1), commerce.OrderStatusShipped, *currentTime)
+	seed.ShippedAt = shippedAt
+	order := createTestOrder(t, commerceStore, seed)
+
+	response := authenticatedProductPost(t, handler, "/admin/orders/"+order.ID+"/refund", url.Values{})
+	if response.StatusCode != http.StatusSeeOther {
+		t.Fatalf("status = %d, want %d; body = %q", response.StatusCode, http.StatusSeeOther, response.Body)
+	}
+	if response.Headers["Location"] != "/admin/orders/"+order.ID+"?saved=refunded" {
+		t.Fatalf("Location = %q, want saved=refunded", response.Headers["Location"])
+	}
+	refunded := getTestOrder(t, commerceStore, order.ID)
+	if refunded.Status != commerce.OrderStatusRefunded {
+		t.Fatalf("status = %q, want refunded", refunded.Status)
+	}
+	// Shipped goods are never restocked.
+	assertVariantStock(t, catalogStore, testOrderVariantStock)
+	if !refunded.StockReleasedAt.IsZero() {
+		t.Fatalf("StockReleasedAt = %v, want zero for a shipped refund", refunded.StockReleasedAt)
+	}
+}
+
+func TestAdminOrderRefundPendingThenReconcileOnRender(t *testing.T) {
+	handler, commerceStore, catalogStore, currentTime := newOrdersTestHandler(t)
+	provider := payments.NewFakeProvider()
+	handler.payments = provider
+	order := createTestOrder(t, commerceStore, adminTestOrder(testOrderID(1), commerce.OrderStatusPaid, *currentTime))
+	provider.SetNextRefundOutcome(payments.RefundStatusPending, "")
+
+	response := authenticatedProductPost(t, handler, "/admin/orders/"+order.ID+"/refund", url.Values{})
+	if response.StatusCode != http.StatusSeeOther {
+		t.Fatalf("status = %d, want %d; body = %q", response.StatusCode, http.StatusSeeOther, response.Body)
+	}
+	if response.Headers["Location"] != "/admin/orders/"+order.ID+"?saved=refund_pending" {
+		t.Fatalf("Location = %q, want saved=refund_pending", response.Headers["Location"])
+	}
+
+	detail := authenticatedProductGet(t, handler, "/admin/orders/"+order.ID+"?saved=refund_pending")
+	if !strings.Contains(detail.Body, "Refund issued. Stripe is processing it; the status updates when it settles.") {
+		t.Fatalf("detail body missing the refund_pending flash")
+	}
+	if strings.Contains(detail.Body, `data-testid="admin-order-refund-button"`) {
+		t.Fatalf("refund_pending order must not offer the refund form")
+	}
+
+	// The refund settles at Stripe; opening the order page reconciles it.
+	if err := provider.SettleRefund("re_fake_"+order.ID+"_1", payments.RefundStatusSucceeded, ""); err != nil {
+		t.Fatalf("SettleRefund returned error: %v", err)
+	}
+	settledDetail := authenticatedProductGet(t, handler, "/admin/orders/"+order.ID)
+	if !strings.Contains(settledDetail.Body, ">Refunded</span>") {
+		t.Fatalf("detail body missing the Refunded chip after reconcile")
+	}
+	settled := getTestOrder(t, commerceStore, order.ID)
+	if settled.Status != commerce.OrderStatusRefunded || settled.RefundedAt.IsZero() {
+		t.Fatalf("order = %s refundedAt %v, want reconciled to refunded", settled.Status, settled.RefundedAt)
+	}
+	assertVariantStock(t, catalogStore, testOrderVariantStock+testOrderLineQuantity)
+}
+
+func TestAdminOrderRefundFailedThenRetrySucceeds(t *testing.T) {
+	handler, commerceStore, _, currentTime := newOrdersTestHandler(t)
+	provider := payments.NewFakeProvider()
+	handler.payments = provider
+	order := createTestOrder(t, commerceStore, adminTestOrder(testOrderID(1), commerce.OrderStatusPaid, *currentTime))
+	provider.SetNextRefundOutcome(payments.RefundStatusFailed, "expired_or_canceled_card")
+
+	response := authenticatedProductPost(t, handler, "/admin/orders/"+order.ID+"/refund", url.Values{})
+	if response.StatusCode != http.StatusSeeOther {
+		t.Fatalf("status = %d, want %d; body = %q", response.StatusCode, http.StatusSeeOther, response.Body)
+	}
+	if response.Headers["Location"] != "/admin/orders/"+order.ID+"?saved=refund_failed" {
+		t.Fatalf("Location = %q, want saved=refund_failed", response.Headers["Location"])
+	}
+
+	detail := authenticatedProductGet(t, handler, "/admin/orders/"+order.ID+"?saved=refund_failed")
+	for _, want := range []string{
+		`data-testid="admin-order-refund-failed"`,
+		"expired_or_canceled_card",
+		"Retry the refund below, or resolve it in the Stripe dashboard.",
+		"Retry refund",
+	} {
+		if !strings.Contains(detail.Body, want) {
+			t.Fatalf("detail body missing %q", want)
+		}
+	}
+
+	// Retry: a fresh attempt-2 refund settles and clears the banner.
+	retry := authenticatedProductPost(t, handler, "/admin/orders/"+order.ID+"/refund", url.Values{})
+	if retry.StatusCode != http.StatusSeeOther {
+		t.Fatalf("retry status = %d, want %d; body = %q", retry.StatusCode, http.StatusSeeOther, retry.Body)
+	}
+	if retry.Headers["Location"] != "/admin/orders/"+order.ID+"?saved=refunded" {
+		t.Fatalf("retry Location = %q, want saved=refunded", retry.Headers["Location"])
+	}
+	refunded := getTestOrder(t, commerceStore, order.ID)
+	if refunded.StripeRefundID != "re_fake_"+order.ID+"_2" || refunded.RefundAttempt != 2 || refunded.RefundFailureReason != "" {
+		t.Fatalf("retried order = %#v, want attempt-2 refund with the reason cleared", refunded)
+	}
+	afterRetry := authenticatedProductGet(t, handler, "/admin/orders/"+order.ID)
+	if strings.Contains(afterRetry.Body, `data-testid="admin-order-refund-failed"`) {
+		t.Fatalf("refund-failed banner still renders after a successful retry")
+	}
+}
+
+func TestAdminOrderTerminalAutoRefundFailureSurface(t *testing.T) {
+	handler, commerceStore, _, currentTime := newOrdersTestHandler(t)
+	seed := adminTestOrder(testOrderID(1), commerce.OrderStatusCanceled, *currentTime)
+	seed.StripeRefundID = "re_test_admin_1"
+	seed.RefundAttempt = 1
+	seed.RefundFailureReason = "expired_or_canceled_card"
+	order := createTestOrder(t, commerceStore, seed)
+
+	detail := authenticatedProductGet(t, handler, "/admin/orders/"+order.ID)
+	if detail.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", detail.StatusCode, http.StatusOK)
+	}
+	for _, want := range []string{
+		`data-testid="admin-order-refund-failed"`,
+		"expired_or_canceled_card",
+		"Resolve it in the Stripe dashboard.",
+	} {
+		if !strings.Contains(detail.Body, want) {
+			t.Fatalf("detail body missing %q", want)
+		}
+	}
+	// Terminal orders never get an in-app retry.
+	if strings.Contains(detail.Body, `data-testid="admin-order-refund"`) {
+		t.Fatalf("terminal order must not offer the refund form")
+	}
+	if strings.Contains(detail.Body, "Retry the refund below") {
+		t.Fatalf("terminal order banner must use the no-retry copy")
+	}
+}
+
+func TestAdminOrderRefundProviderErrorLeavesOrderUnchanged(t *testing.T) {
+	handler, commerceStore, _, currentTime := newOrdersTestHandler(t)
+	handler.payments = &refundStubProvider{FakeProvider: payments.NewFakeProvider(), createRefundErr: errors.New("stripe api down")}
+	order := createTestOrder(t, commerceStore, adminTestOrder(testOrderID(1), commerce.OrderStatusPaid, *currentTime))
+
+	response := authenticatedProductPost(t, handler, "/admin/orders/"+order.ID+"/refund", url.Values{})
+	if response.StatusCode != http.StatusBadGateway {
+		t.Fatalf("status = %d, want %d; body = %q", response.StatusCode, http.StatusBadGateway, response.Body)
+	}
+	if !strings.Contains(response.Body, "the order is unchanged") {
+		t.Fatalf("body missing the unchanged-order copy: %q", response.Body)
+	}
+	if got := getTestOrder(t, commerceStore, order.ID).Status; got != commerce.OrderStatusPaid {
+		t.Fatalf("status = %q, want paid untouched", got)
+	}
+}
+
+func TestAdminOrderRefundAlreadyRefundedDirectsToDashboard(t *testing.T) {
+	handler, commerceStore, _, currentTime := newOrdersTestHandler(t)
+	handler.payments = &refundStubProvider{FakeProvider: payments.NewFakeProvider(), createRefundErr: fmt.Errorf("%w: payment intent pi_test_admin_123", payments.ErrChargeAlreadyRefunded)}
+	order := createTestOrder(t, commerceStore, adminTestOrder(testOrderID(1), commerce.OrderStatusPaid, *currentTime))
+
+	response := authenticatedProductPost(t, handler, "/admin/orders/"+order.ID+"/refund", url.Values{})
+	if response.StatusCode != http.StatusConflict {
+		t.Fatalf("status = %d, want %d; body = %q", response.StatusCode, http.StatusConflict, response.Body)
+	}
+	if !strings.Contains(response.Body, "Reconcile it in the Stripe dashboard.") {
+		t.Fatalf("body missing the dashboard reconciliation copy: %q", response.Body)
+	}
+	if got := getTestOrder(t, commerceStore, order.ID).Status; got != commerce.OrderStatusPaid {
+		t.Fatalf("status = %q, want paid untouched", got)
+	}
+}
+
+func TestAdminOrderRefundRejectsNonRefundableStatuses(t *testing.T) {
+	for _, status := range []commerce.OrderStatus{
+		commerce.OrderStatusPendingPayment,
+		commerce.OrderStatusCanceled,
+		commerce.OrderStatusExpired,
+		commerce.OrderStatusPaymentFailed,
+	} {
+		t.Run(string(status), func(t *testing.T) {
+			handler, commerceStore, _, currentTime := newOrdersTestHandler(t)
+			handler.payments = payments.NewFakeProvider()
+			order := createTestOrder(t, commerceStore, adminTestOrder(testOrderID(1), status, *currentTime))
+
+			response := authenticatedProductPost(t, handler, "/admin/orders/"+order.ID+"/refund", url.Values{})
+			if response.StatusCode != http.StatusConflict {
+				t.Fatalf("status = %d, want %d; body = %q", response.StatusCode, http.StatusConflict, response.Body)
+			}
+			if !strings.Contains(response.Body, "Only paid, shipped, or delivered orders can be refunded.") {
+				t.Fatalf("body missing refund guard error: %q", response.Body)
+			}
+			if got := getTestOrder(t, commerceStore, order.ID).Status; got != status {
+				t.Fatalf("status = %q, want unchanged %q", got, status)
+			}
+		})
+	}
+}
+
+func TestAdminOrderRefundRequiresCSRF(t *testing.T) {
+	handler, commerceStore, catalogStore, currentTime := newOrdersTestHandler(t)
+	handler.payments = payments.NewFakeProvider()
+	order := createTestOrder(t, commerceStore, adminTestOrder(testOrderID(1), commerce.OrderStatusPaid, *currentTime))
+
+	login := loginResponse(t, handler)
+	request := adminFormRequest(http.MethodPost, "/admin/orders/"+order.ID+"/refund", url.Values{})
+	request.Cookies = []string{cookiePair(t, responseCookie(t, login, adminSessionCookieName))}
+	response, err := handler.Handle(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusForbidden)
+	}
+	unchanged := getTestOrder(t, commerceStore, order.ID)
+	if unchanged.Status != commerce.OrderStatusPaid || unchanged.StripeRefundID != "" {
+		t.Fatalf("order = %#v, want paid untouched after rejected CSRF", unchanged)
+	}
+	assertVariantStock(t, catalogStore, testOrderVariantStock)
+}
+
+// TestLocalDemoHandlerRefundsEndToEnd pins the devserver demo wiring: the
+// shared fake payment provider refunds a paid order end-to-end, so the demo
+// loop (pay via fake-pay, refund from the admin desk) works offline.
+func TestLocalDemoHandlerRefundsEndToEnd(t *testing.T) {
+	provider := payments.NewFakeProvider()
+	catalogStore := newOrdersTestCatalogStore()
+	commerceStore := commerce.NewMemoryStore()
+	handler := NewLocalDemoHandler(Credentials{
+		PasswordHash:  testPasswordHash(t),
+		SessionSecret: testSessionSecret,
+	}, catalogStore, commerceStore, catalogStore, provider)
+
+	order := createTestOrder(t, commerceStore, adminTestOrder(testOrderID(1), commerce.OrderStatusPaid, time.Now()))
+
+	response := authenticatedProductPost(t, handler, "/admin/orders/"+order.ID+"/refund", url.Values{})
+	if response.StatusCode != http.StatusSeeOther {
+		t.Fatalf("status = %d, want %d; body = %q", response.StatusCode, http.StatusSeeOther, response.Body)
+	}
+	if response.Headers["Location"] != "/admin/orders/"+order.ID+"?saved=refunded" {
+		t.Fatalf("Location = %q, want saved=refunded", response.Headers["Location"])
+	}
+	refunded := getTestOrder(t, commerceStore, order.ID)
+	if refunded.Status != commerce.OrderStatusRefunded || refunded.StripeRefundID == "" {
+		t.Fatalf("order = %#v, want a refunded order carrying its fake refund ID", refunded)
+	}
+	assertVariantStock(t, catalogStore, testOrderVariantStock+testOrderLineQuantity)
+}
+
+// adminGuestTestOrder is the adminTestOrder fixture with the guest marker:
+// CustomerID == "" and a guest contact email.
+func adminGuestTestOrder(id string, status commerce.OrderStatus, createdAt time.Time) commerce.Order {
+	order := adminTestOrder(id, status, createdAt)
+	order.CustomerID = ""
+	order.Email = "guest@example.test"
+	return order
+}
+
+// TestAdminGuestOrderLifecycle pins that customer-less orders ride the full
+// refund-era admin lifecycle: list + detail render (with the guest markers),
+// pending cancel releases stock, paid cancel is refused toward Refund, the
+// fulfillment chain works, and a paid guest refund settles end-to-end with the
+// stock released. Flat test on purpose: authenticated admin requests must not
+// run inside t.Run subtests (the test password derives from t.Name()).
+func TestAdminGuestOrderLifecycle(t *testing.T) {
+	handler, commerceStore, catalogStore, currentTime := newOrdersTestHandler(t)
+	handler.payments = payments.NewFakeProvider()
+
+	pendingGuest := createTestOrder(t, commerceStore, adminGuestTestOrder(testOrderID(1), commerce.OrderStatusPendingPayment, currentTime.Add(-3*time.Minute)))
+	fulfillGuest := createTestOrder(t, commerceStore, adminGuestTestOrder(testOrderID(2), commerce.OrderStatusPaid, currentTime.Add(-2*time.Minute)))
+	refundGuest := createTestOrder(t, commerceStore, adminGuestTestOrder(testOrderID(3), commerce.OrderStatusPaid, currentTime.Add(-1*time.Minute)))
+
+	// List: guest rows render the email plus the Guest suffix.
+	list := authenticatedProductGet(t, handler, "/admin/orders")
+	if list.StatusCode != http.StatusOK {
+		t.Fatalf("list status = %d, want %d", list.StatusCode, http.StatusOK)
+	}
+	if got := strings.Count(list.Body, `data-testid="admin-order-row"`); got != 3 {
+		t.Fatalf("admin-order-row count = %d, want 3", got)
+	}
+	if !strings.Contains(list.Body, "guest@example.test") {
+		t.Fatalf("list body missing the guest email")
+	}
+	if got := strings.Count(list.Body, "· Guest"); got != 3 {
+		t.Fatalf("list Guest suffix count = %d, want 3", got)
+	}
+
+	// Detail: guest chip next to the status chip.
+	detail := authenticatedProductGet(t, handler, "/admin/orders/"+pendingGuest.ID)
+	if detail.StatusCode != http.StatusOK {
+		t.Fatalf("detail status = %d, want %d", detail.StatusCode, http.StatusOK)
+	}
+	for _, want := range []string{`data-testid="admin-order-guest"`, "Guest checkout", "guest@example.test"} {
+		if !strings.Contains(detail.Body, want) {
+			t.Fatalf("detail body missing %q", want)
+		}
+	}
+
+	// Pending cancel releases the reservation.
+	cancel := authenticatedProductPost(t, handler, "/admin/orders/"+pendingGuest.ID+"/cancel", url.Values{})
+	if cancel.StatusCode != http.StatusSeeOther || cancel.Headers["Location"] != "/admin/orders/"+pendingGuest.ID+"?saved=canceled" {
+		t.Fatalf("pending cancel = %d %q, want 303 saved=canceled", cancel.StatusCode, cancel.Headers["Location"])
+	}
+	if got := getTestOrder(t, commerceStore, pendingGuest.ID).Status; got != commerce.OrderStatusCanceled {
+		t.Fatalf("pending guest order status = %q, want canceled", got)
+	}
+	assertVariantStock(t, catalogStore, testOrderVariantStock+testOrderLineQuantity)
+
+	// Paid cancel is refused toward the Refund action.
+	paidCancel := authenticatedProductPost(t, handler, "/admin/orders/"+fulfillGuest.ID+"/cancel", url.Values{})
+	if paidCancel.StatusCode != http.StatusConflict {
+		t.Fatalf("paid cancel status = %d, want %d", paidCancel.StatusCode, http.StatusConflict)
+	}
+	if !strings.Contains(paidCancel.Body, "Only pending orders can be canceled. Refund paid orders instead.") {
+		t.Fatalf("paid cancel body missing the refund-instead guidance: %q", paidCancel.Body)
+	}
+
+	// Fulfillment chain: tracking ships, advance delivers.
+	tracking := authenticatedProductPost(t, handler, "/admin/orders/"+fulfillGuest.ID+"/tracking", url.Values{
+		"carrier":         {"Thailand Post"},
+		"tracking_number": {"TH1234567890"},
+	})
+	if tracking.StatusCode != http.StatusSeeOther || tracking.Headers["Location"] != "/admin/orders/"+fulfillGuest.ID+"?saved=shipped" {
+		t.Fatalf("tracking = %d %q, want 303 saved=shipped", tracking.StatusCode, tracking.Headers["Location"])
+	}
+	if got := getTestOrder(t, commerceStore, fulfillGuest.ID).Status; got != commerce.OrderStatusShipped {
+		t.Fatalf("guest order status = %q, want shipped", got)
+	}
+	advance := authenticatedProductPost(t, handler, "/admin/orders/"+fulfillGuest.ID+"/advance", url.Values{"to_status": {"delivered"}})
+	if advance.StatusCode != http.StatusSeeOther {
+		t.Fatalf("advance status = %d, want %d", advance.StatusCode, http.StatusSeeOther)
+	}
+	if got := getTestOrder(t, commerceStore, fulfillGuest.ID).Status; got != commerce.OrderStatusDelivered {
+		t.Fatalf("guest order status = %q, want delivered", got)
+	}
+
+	// Refund of a paid guest order settles end-to-end through the shared fake
+	// provider; stock comes back because the order never shipped.
+	refund := authenticatedProductPost(t, handler, "/admin/orders/"+refundGuest.ID+"/refund", url.Values{})
+	if refund.StatusCode != http.StatusSeeOther || refund.Headers["Location"] != "/admin/orders/"+refundGuest.ID+"?saved=refunded" {
+		t.Fatalf("refund = %d %q, want 303 saved=refunded", refund.StatusCode, refund.Headers["Location"])
+	}
+	refunded := getTestOrder(t, commerceStore, refundGuest.ID)
+	if refunded.Status != commerce.OrderStatusRefunded {
+		t.Fatalf("refunded guest order status = %q, want refunded", refunded.Status)
+	}
+	if refunded.StripeRefundID != "re_fake_"+refundGuest.ID+"_1" {
+		t.Fatalf("refund id = %q, want the fake provider refund", refunded.StripeRefundID)
+	}
+	assertVariantStock(t, catalogStore, testOrderVariantStock+2*testOrderLineQuantity)
+
+	refundedDetail := authenticatedProductGet(t, handler, "/admin/orders/"+refundGuest.ID+"?saved=refunded")
+	for _, want := range []string{"Refund issued and confirmed.", `data-testid="admin-order-guest"`, ">Refunded</span>"} {
+		if !strings.Contains(refundedDetail.Body, want) {
+			t.Fatalf("refunded detail body missing %q", want)
+		}
 	}
 }

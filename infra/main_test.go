@@ -152,7 +152,7 @@ func TestStackIncludesObservabilityResources(t *testing.T) {
 		},
 		"TopicArn": assertions.Match_AnyValue(),
 	})
-	template.ResourceCountIs(jsii.String("AWS::CloudWatch::Alarm"), jsii.Number(19))
+	template.ResourceCountIs(jsii.String("AWS::CloudWatch::Alarm"), jsii.Number(20))
 	template.AllResourcesProperties(jsii.String("AWS::CloudWatch::Alarm"), map[string]any{
 		"TreatMissingData": "notBreaching",
 	})
@@ -167,6 +167,7 @@ func TestStackIncludesObservabilityResources(t *testing.T) {
 		"ThailandGiftshop-ProductImageUpload-Errors":  true,
 		"ThailandGiftshop-StripeWebhook-Errors":       true,
 		"ThailandGiftshop-CheckoutPayment-Errors":     true,
+		"ThailandGiftshop-CheckoutRefund-Errors":      true,
 		"ThailandGiftshop-StockAdjust-RollbackErrors": true,
 	}
 	assertCriticalAlarmActions(t, templateJSON, criticalAlarmNames)
@@ -179,8 +180,9 @@ func TestStackIncludesObservabilityResources(t *testing.T) {
 		"ThailandGiftshop-Admin-OriginRejected":       {appobservability.MetricAdminOriginRejected, "admin", []string{"rejected"}},
 		"ThailandGiftshop-CatalogWrite-Errors":        {appobservability.MetricCatalogWrite, "admin", []string{"error"}},
 		"ThailandGiftshop-ProductImageUpload-Errors":  {appobservability.MetricProductImageUpload, "admin", []string{"error"}},
-		"ThailandGiftshop-StripeWebhook-Errors":       {appobservability.MetricStripeWebhook, "ssr", []string{"invalid_signature", "amount_mismatch", "paid_after_terminal", "error"}},
+		"ThailandGiftshop-StripeWebhook-Errors":       {appobservability.MetricStripeWebhook, "ssr", []string{"invalid_signature", "amount_mismatch", "refund_mismatch", "paid_after_terminal", "error"}},
 		"ThailandGiftshop-CheckoutPayment-Errors":     {appobservability.MetricCheckoutPayment, "checkout", []string{"provider_error", "error"}},
+		"ThailandGiftshop-CheckoutRefund-Errors":      {appobservability.MetricCheckoutRefund, "checkout", []string{"failed", "provider_error", "error"}},
 		"ThailandGiftshop-StockAdjust-RollbackErrors": {appobservability.MetricStockAdjust, "catalog", []string{"rollback_error"}},
 	}
 	for alarmName, expected := range appAlarmMetrics {
@@ -475,6 +477,32 @@ func TestStackIncludesAdminCloudFrontWAFRateLimits(t *testing.T) {
 											}),
 										},
 									}),
+									byteMatchAssertion("Method", "POST", "EXACTLY"),
+								}),
+							},
+						},
+					}),
+				},
+			}),
+			assertions.Match_ObjectLike(&map[string]any{
+				"Name":     "CheckoutPlaceOrderRateLimit",
+				"Priority": 3,
+				"Action": map[string]any{
+					"Block": map[string]any{
+						"CustomResponse": map[string]any{
+							"ResponseCode": 429,
+						},
+					},
+				},
+				"Statement": map[string]any{
+					"RateBasedStatement": assertions.Match_ObjectLike(&map[string]any{
+						"AggregateKeyType":    "IP",
+						"Limit":               100,
+						"EvaluationWindowSec": 300,
+						"ScopeDownStatement": map[string]any{
+							"AndStatement": map[string]any{
+								"Statements": assertions.Match_ArrayWith(&[]any{
+									urlDecodedPathMatchAssertion("/checkout/place-order", "EXACTLY"),
 									byteMatchAssertion("Method", "POST", "EXACTLY"),
 								}),
 							},

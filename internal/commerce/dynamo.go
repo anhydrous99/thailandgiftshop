@@ -84,6 +84,31 @@ func ordersIndexSK(order Order) string {
 	return formatCommerceTime(order.CreatedAt) + "#" + order.ID
 }
 
+// customerOrdersStartKey rebuilds the gsi1 ExclusiveStartKey position for a
+// cursor. ExclusiveStartKey is a position, not a row reference: the item does
+// not need to exist. gsi1pk is always built from the queried customerID, so
+// the key can never address another customer's partition.
+func customerOrdersStartKey(customerID string, cursor OrderCursor) map[string]types.AttributeValue {
+	marker := Order{ID: cursor.OrderID, CreatedAt: cursor.CreatedAt}
+	return map[string]types.AttributeValue{
+		"pk":     &types.AttributeValueMemberS{Value: orderPK(cursor.OrderID)},
+		"sk":     &types.AttributeValueMemberS{Value: orderSK},
+		"gsi1pk": &types.AttributeValueMemberS{Value: customerOrdersIndexPK(customerID)},
+		"gsi1sk": &types.AttributeValueMemberS{Value: customerOrdersIndexSK(marker)},
+	}
+}
+
+// ordersStartKey rebuilds the gsi2 ExclusiveStartKey position for a cursor.
+func ordersStartKey(cursor OrderCursor) map[string]types.AttributeValue {
+	marker := Order{ID: cursor.OrderID, CreatedAt: cursor.CreatedAt}
+	return map[string]types.AttributeValue{
+		"pk":     &types.AttributeValueMemberS{Value: orderPK(cursor.OrderID)},
+		"sk":     &types.AttributeValueMemberS{Value: orderSK},
+		"gsi2pk": &types.AttributeValueMemberS{Value: ordersIndexPK},
+		"gsi2sk": &types.AttributeValueMemberS{Value: ordersIndexSK(marker)},
+	}
+}
+
 type DynamoConfig struct {
 	TableName               string
 	CustomerOrdersIndexName string
@@ -664,8 +689,14 @@ func (s *DynamoStore) GetOrder(ctx context.Context, orderID string) (Order, bool
 	return order, true, nil
 }
 
-func (s *DynamoStore) ListOrdersByCustomer(ctx context.Context, customerID string, limit int) ([]Order, error) {
-	items, err := s.queryItems(ctx, dynamodb.QueryInput{
+func (s *DynamoStore) ListOrdersByCustomer(ctx context.Context, customerID string, limit int, cursor OrderCursor) (OrderPage, error) {
+	if customerID == "" {
+		// Guest marker: guest orders are sparse in gsi1 and must never be
+		// listable as a pseudo-customer. The guard also keeps
+		// customerOrdersStartKey from ever building a key for an empty ID.
+		return OrderPage{}, nil
+	}
+	input := dynamodb.QueryInput{
 		TableName:              aws.String(s.tableName),
 		IndexName:              aws.String(s.customerOrdersIndexName),
 		KeyConditionExpression: aws.String("#gsi1pk = :pk"),
@@ -676,16 +707,23 @@ func (s *DynamoStore) ListOrdersByCustomer(ctx context.Context, customerID strin
 			":pk": &types.AttributeValueMemberS{Value: customerOrdersIndexPK(customerID)},
 		},
 		ScanIndexForward: aws.Bool(false),
-	}, limit, "ListOrdersByCustomer")
-	if err != nil {
-		return nil, err
 	}
-
-	return ordersFromItems(items)
+	if !cursor.IsZero() {
+		input.ExclusiveStartKey = customerOrdersStartKey(customerID, cursor)
+	}
+	items, err := s.queryItems(ctx, input, probeLimit(limit), "ListOrdersByCustomer")
+	if err != nil {
+		return OrderPage{}, err
+	}
+	orders, err := ordersFromItems(items)
+	if err != nil {
+		return OrderPage{}, err
+	}
+	return orderPageFromProbe(orders, limit), nil
 }
 
-func (s *DynamoStore) ListOrders(ctx context.Context, limit int) ([]Order, error) {
-	items, err := s.queryItems(ctx, dynamodb.QueryInput{
+func (s *DynamoStore) ListOrders(ctx context.Context, limit int, cursor OrderCursor) (OrderPage, error) {
+	input := dynamodb.QueryInput{
 		TableName:              aws.String(s.tableName),
 		IndexName:              aws.String(s.ordersIndexName),
 		KeyConditionExpression: aws.String("#gsi2pk = :pk"),
@@ -696,12 +734,19 @@ func (s *DynamoStore) ListOrders(ctx context.Context, limit int) ([]Order, error
 			":pk": &types.AttributeValueMemberS{Value: ordersIndexPK},
 		},
 		ScanIndexForward: aws.Bool(false),
-	}, limit, "ListOrders")
-	if err != nil {
-		return nil, err
 	}
-
-	return ordersFromItems(items)
+	if !cursor.IsZero() {
+		input.ExclusiveStartKey = ordersStartKey(cursor)
+	}
+	items, err := s.queryItems(ctx, input, probeLimit(limit), "ListOrders")
+	if err != nil {
+		return OrderPage{}, err
+	}
+	orders, err := ordersFromItems(items)
+	if err != nil {
+		return OrderPage{}, err
+	}
+	return orderPageFromProbe(orders, limit), nil
 }
 
 func (s *DynamoStore) TransitionOrder(ctx context.Context, orderID string, from OrderStatus, to OrderStatus, patch OrderPatch) (Order, error) {
@@ -1071,12 +1116,18 @@ func applyOrderPatchToBuilder(builder *updateExpressionBuilder, patch OrderPatch
 	setOrRemove("payment_card_last4", ":payment_card_last4", patch.PaymentCardLast4)
 	setOrRemove("tracking_carrier", ":tracking_carrier", patch.TrackingCarrier)
 	setOrRemove("tracking_number", ":tracking_number", patch.TrackingNumber)
+	setOrRemove("stripe_refund_id", ":stripe_refund_id", patch.StripeRefundID)
+	setOrRemove("refund_failure_reason", ":refund_failure_reason", patch.RefundFailureReason)
+	if patch.RefundAttempt != nil {
+		builder.set("refund_attempt", ":refund_attempt", numberValue(int64(*patch.RefundAttempt)))
+	}
 	if patch.CheckoutAttempt != nil {
 		builder.set("checkout_attempt", ":checkout_attempt", numberValue(int64(*patch.CheckoutAttempt)))
 	}
 	setOrRemoveTime("paid_at", ":paid_at", patch.PaidAt)
 	setOrRemoveTime("shipped_at", ":shipped_at", patch.ShippedAt)
 	setOrRemoveTime("delivered_at", ":delivered_at", patch.DeliveredAt)
+	setOrRemoveTime("refunded_at", ":refunded_at", patch.RefundedAt)
 	setOrRemoveTime("stock_released_at", ":stock_released_at", patch.StockReleasedAt)
 }
 
@@ -1208,6 +1259,9 @@ type orderDynamoItem struct {
 	PaymentCardLast4        string                 `dynamodbav:"payment_card_last4,omitempty"`
 	TrackingCarrier         string                 `dynamodbav:"tracking_carrier,omitempty"`
 	TrackingNumber          string                 `dynamodbav:"tracking_number,omitempty"`
+	StripeRefundID          string                 `dynamodbav:"stripe_refund_id,omitempty"`
+	RefundAttempt           *int                   `dynamodbav:"refund_attempt,omitempty"`
+	RefundFailureReason     string                 `dynamodbav:"refund_failure_reason,omitempty"`
 	CheckoutAttempt         *int                   `dynamodbav:"checkout_attempt,omitempty"`
 	StatusHistory           []statusEventItem      `dynamodbav:"status_history"`
 	CreatedAt               string                 `dynamodbav:"created_at,omitempty"`
@@ -1215,9 +1269,10 @@ type orderDynamoItem struct {
 	PaidAt                  string                 `dynamodbav:"paid_at,omitempty"`
 	ShippedAt               string                 `dynamodbav:"shipped_at,omitempty"`
 	DeliveredAt             string                 `dynamodbav:"delivered_at,omitempty"`
+	RefundedAt              string                 `dynamodbav:"refunded_at,omitempty"`
 	StockReleasedAt         string                 `dynamodbav:"stock_released_at,omitempty"`
-	GSI1PK                  string                 `dynamodbav:"gsi1pk"`
-	GSI1SK                  string                 `dynamodbav:"gsi1sk"`
+	GSI1PK                  string                 `dynamodbav:"gsi1pk,omitempty"`
+	GSI1SK                  string                 `dynamodbav:"gsi1sk,omitempty"`
 	GSI2PK                  string                 `dynamodbav:"gsi2pk"`
 	GSI2SK                  string                 `dynamodbav:"gsi2sk"`
 }
@@ -1507,20 +1562,31 @@ func orderItem(order Order) (map[string]types.AttributeValue, error) {
 		PaymentCardLast4:        order.PaymentCardLast4,
 		TrackingCarrier:         order.TrackingCarrier,
 		TrackingNumber:          order.TrackingNumber,
+		StripeRefundID:          order.StripeRefundID,
+		RefundFailureReason:     order.RefundFailureReason,
 		StatusHistory:           history,
 		CreatedAt:               formatCommerceTime(order.CreatedAt),
 		UpdatedAt:               formatCommerceTime(order.UpdatedAt),
 		PaidAt:                  formatCommerceTime(order.PaidAt),
 		ShippedAt:               formatCommerceTime(order.ShippedAt),
 		DeliveredAt:             formatCommerceTime(order.DeliveredAt),
+		RefundedAt:              formatCommerceTime(order.RefundedAt),
 		StockReleasedAt:         formatCommerceTime(order.StockReleasedAt),
-		GSI1PK:                  customerOrdersIndexPK(order.CustomerID),
-		GSI1SK:                  customerOrdersIndexSK(order),
 		GSI2PK:                  ordersIndexPK,
 		GSI2SK:                  ordersIndexSK(order),
 	}
+	if order.CustomerID != "" {
+		// Guest orders (CustomerID == "") are sparse in gsi1: DynamoDB skips
+		// items missing an index key attribute, so they never pollute the
+		// customer-orders index while staying fully listable on gsi2.
+		item.GSI1PK = customerOrdersIndexPK(order.CustomerID)
+		item.GSI1SK = customerOrdersIndexSK(order)
+	}
 	if order.CheckoutAttempt != 0 {
 		item.CheckoutAttempt = intPtr(order.CheckoutAttempt)
+	}
+	if order.RefundAttempt != 0 {
+		item.RefundAttempt = intPtr(order.RefundAttempt)
 	}
 
 	return attributevalue.MarshalMap(item)
@@ -1564,6 +1630,10 @@ func orderFromItem(item map[string]types.AttributeValue) (Order, error) {
 		return Order{}, err
 	}
 	deliveredAt, err := parseCommerceTime("delivered_at", record.DeliveredAt)
+	if err != nil {
+		return Order{}, err
+	}
+	refundedAt, err := parseCommerceTime("refunded_at", record.RefundedAt)
 	if err != nil {
 		return Order{}, err
 	}
@@ -1624,6 +1694,9 @@ func orderFromItem(item map[string]types.AttributeValue) (Order, error) {
 		PaymentCardLast4:        record.PaymentCardLast4,
 		TrackingCarrier:         record.TrackingCarrier,
 		TrackingNumber:          record.TrackingNumber,
+		StripeRefundID:          record.StripeRefundID,
+		RefundAttempt:           intValue(record.RefundAttempt),
+		RefundFailureReason:     record.RefundFailureReason,
 		CheckoutAttempt:         intValue(record.CheckoutAttempt),
 		StatusHistory:           history,
 		CreatedAt:               createdAt,
@@ -1631,6 +1704,7 @@ func orderFromItem(item map[string]types.AttributeValue) (Order, error) {
 		PaidAt:                  paidAt,
 		ShippedAt:               shippedAt,
 		DeliveredAt:             deliveredAt,
+		RefundedAt:              refundedAt,
 		StockReleasedAt:         stockReleasedAt,
 	}, nil
 }

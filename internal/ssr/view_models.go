@@ -102,11 +102,17 @@ type checkoutPageViewModel struct {
 	Lines           []checkoutLineView
 	Addresses       []addressView
 	SelectedAddress string
-	AddressForm     addressFormData
-	Subtotal        string
-	Total           string
-	Canceled        bool
-	ErrorMessage    string
+	// AddressForm carries the guest layout's address entry values (re-render
+	// preservation after a failed POST).
+	AddressForm  addressFormData
+	Subtotal     string
+	Total        string
+	Canceled     bool
+	ErrorMessage string
+	// Guest switches the layout to the account-less checkout: email + address
+	// entry on one form, posted with the guest_csrf_token field.
+	Guest      bool
+	GuestEmail string
 }
 
 type signInPageData struct {
@@ -229,7 +235,9 @@ type ordersPageData struct {
 	Breadcrumbs     []breadcrumbItem
 	HeaderCartLabel string
 	Orders          []orderRowView
-	NextCursor      string
+	// NextCursor is the URL-ready signed ?after token for the next-older
+	// page (already query-escaped); empty when this is the last page.
+	NextCursor string
 }
 
 // orderLineView renders one frozen order-snapshot line: every field was
@@ -280,6 +288,12 @@ type orderDetailPageData struct {
 	TrackingCarrier string
 	TrackingNumber  string
 	Timeline        []orderTimelineStep
+	// Guest marks the tokenized read-only view: no Back-to-orders link, the
+	// save-this-link notice, and the sign-up upsell on the placed banner.
+	Guest bool
+	// GuestAccessURL echoes the presented access token as a self-link; it is
+	// never minted on render (minting is the confirm branch's job alone).
+	GuestAccessURL string
 }
 
 type fakePayPageData struct {
@@ -289,6 +303,9 @@ type fakePayPageData struct {
 	SessionID       string
 	SetupMode       bool
 	Total           string
+	// Guest switches the hidden CSRF field name to guest_csrf_token and hides
+	// the save-card checkbox (guests have no provider customer to save to).
+	Guest bool
 }
 
 // checkoutProcessingPageData renders the no-JS payment-processing interstitial

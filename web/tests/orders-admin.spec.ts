@@ -90,3 +90,42 @@ test('admin order desk advances a paid order through tracking shipping and deliv
   await expect(steps.nth(2)).toContainText('Shipped');
   await expect(steps.nth(3)).toContainText('Delivered');
 });
+
+test('admin refunds a paid order and the shopper sees it refunded', async ({ page }, testInfo) => {
+  // Draws one transient elephant-pouch-set unit, returned to stock when the
+  // refund settles (parallel-safe against the advance test's one paid unit).
+  const email = uniqueEmail(testInfo, 'refunddesk');
+  const orderID = await placePaidOrder(page, email);
+
+  await adminLogin(page);
+
+  // The paid order's detail page offers the refund action.
+  await page.goto(`/admin/orders/${orderID}`);
+  await expect(page.getByTestId('admin-order-status')).toHaveText('Paid');
+  await expect(page.getByTestId('admin-order-refund')).toBeVisible();
+  await page.getByTestId('admin-order-refund-button').click();
+
+  // The demo provider settles synchronously: issued and confirmed in one step.
+  await expect(page).toHaveURL(/\?saved=refunded$/);
+  await expect(page.getByTestId('admin-flash')).toContainText('Refund issued and confirmed.');
+  await expect(page.getByTestId('admin-order-status')).toHaveText('Refunded');
+  await expect(page.getByTestId('admin-order-refund-id')).toHaveText(/re_fake_[a-z0-9]{26}_1/);
+  await expect(page.getByTestId('admin-order-refund')).toHaveCount(0);
+  await expect(page.getByTestId('admin-order-cancel')).toHaveCount(0);
+  await expect(page.getByTestId('admin-order-refund-failed')).toHaveCount(0);
+
+  // The status history records both refund steps.
+  const history = page.getByTestId('admin-order-history');
+  await expect(history).toContainText('Refund pending');
+  await expect(history).toContainText('Refunded');
+
+  // The shopper's order page renders the refund status and full timeline.
+  await page.goto(`/orders/${orderID}`);
+  await expect(page.getByTestId('order-status')).toHaveText('Refunded');
+  const steps = page.getByTestId('order-timeline-step');
+  await expect(steps).toHaveCount(4);
+  await expect(steps.nth(0)).toContainText('Pending payment');
+  await expect(steps.nth(1)).toContainText('Paid');
+  await expect(steps.nth(2)).toContainText('Refund pending');
+  await expect(steps.nth(3)).toContainText('Refunded');
+});

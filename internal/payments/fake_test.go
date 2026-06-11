@@ -157,6 +157,31 @@ func TestFakeProviderMarkSessionPaidSavesCard(t *testing.T) {
 	}
 }
 
+// TestFakeProviderGuestSessionNeverSavesCard pins the guest guard: a session
+// created without a Stripe customer must not key a demo card under "".
+func TestFakeProviderGuestSessionNeverSavesCard(t *testing.T) {
+	provider := NewFakeProvider()
+	input := testPaymentSessionInput("ord0000000000000000000000a")
+	input.CustomerID = ""
+	input.StripeCustomerID = ""
+	session, err := provider.CreatePaymentSession(context.Background(), input)
+	if err != nil {
+		t.Fatalf("CreatePaymentSession returned error: %v", err)
+	}
+
+	if _, err := provider.MarkSessionPaid(session.ID, true); err != nil {
+		t.Fatalf("MarkSessionPaid returned error: %v", err)
+	}
+
+	methods, err := provider.ListPaymentMethods(context.Background(), "")
+	if err != nil {
+		t.Fatalf("ListPaymentMethods returned error: %v", err)
+	}
+	if len(methods) != 0 {
+		t.Fatalf("methods = %#v, want none for guest sessions", methods)
+	}
+}
+
 func TestFakeProviderExpireSession(t *testing.T) {
 	provider := NewFakeProvider()
 	input := testPaymentSessionInput("ord0000000000000000000000a")
@@ -438,5 +463,126 @@ func TestFakeProviderParseWebhook(t *testing.T) {
 				t.Fatalf("event = %#v, want mapped checkout.session.completed", event)
 			}
 		})
+	}
+}
+
+func TestFakeProviderCreateRefundIsDeterministicAndIdempotent(t *testing.T) {
+	provider := NewFakeProvider()
+	input := testPaymentSessionInput("ord0000000000000000000000a")
+	if _, err := provider.CreatePaymentSession(context.Background(), input); err != nil {
+		t.Fatalf("CreatePaymentSession returned error: %v", err)
+	}
+	if _, err := provider.MarkSessionPaid("cs_fake_ord0000000000000000000000a", false); err != nil {
+		t.Fatalf("MarkSessionPaid returned error: %v", err)
+	}
+
+	refund, err := provider.CreateRefund(context.Background(), RefundInput{
+		OrderID:         "ord0000000000000000000000a",
+		PaymentIntentID: "pi_fake_ord0000000000000000000000a",
+		Attempt:         1,
+	})
+	if err != nil {
+		t.Fatalf("CreateRefund returned error: %v", err)
+	}
+	want := Refund{
+		ID:              "re_fake_ord0000000000000000000000a_1",
+		PaymentIntentID: "pi_fake_ord0000000000000000000000a",
+		OrderID:         "ord0000000000000000000000a",
+		Attempt:         1,
+		Status:          RefundStatusSucceeded,
+		AmountCents:     900,
+	}
+	if refund != want {
+		t.Fatalf("CreateRefund = %#v, want %#v", refund, want)
+	}
+
+	// A replay (double-click) returns the identical refund instead of minting
+	// a second one — Stripe's "a charge can't be refunded twice" contract.
+	replay, err := provider.CreateRefund(context.Background(), RefundInput{
+		OrderID:         "ord0000000000000000000000a",
+		PaymentIntentID: "pi_fake_ord0000000000000000000000a",
+		Attempt:         2,
+	})
+	if err != nil || replay != want {
+		t.Fatalf("replayed CreateRefund = %#v %v, want identical refund", replay, err)
+	}
+}
+
+func TestFakeProviderCreateRefundFailedOutcomeAndRetry(t *testing.T) {
+	provider := NewFakeProvider()
+	provider.SetNextRefundOutcome(RefundStatusFailed, "expired_or_canceled_card")
+
+	failed, err := provider.CreateRefund(context.Background(), RefundInput{
+		OrderID:         "ord0000000000000000000000a",
+		PaymentIntentID: "pi_fake_ord0000000000000000000000a",
+		Attempt:         1,
+	})
+	if err != nil {
+		t.Fatalf("CreateRefund returned error: %v", err)
+	}
+	if failed.Status != RefundStatusFailed || failed.FailureReason != "expired_or_canceled_card" || failed.ID != "re_fake_ord0000000000000000000000a_1" {
+		t.Fatalf("failed refund = %#v, want failed with reason", failed)
+	}
+
+	// A retry after a failure mints a fresh refund (the override was consumed,
+	// so the default succeeded outcome applies).
+	retry, err := provider.CreateRefund(context.Background(), RefundInput{
+		OrderID:         "ord0000000000000000000000a",
+		PaymentIntentID: "pi_fake_ord0000000000000000000000a",
+		Attempt:         2,
+	})
+	if err != nil {
+		t.Fatalf("retry CreateRefund returned error: %v", err)
+	}
+	if retry.ID != "re_fake_ord0000000000000000000000a_2" || retry.Attempt != 2 || retry.Status != RefundStatusSucceeded {
+		t.Fatalf("retry refund = %#v, want fresh attempt-2 succeeded refund", retry)
+	}
+}
+
+func TestFakeProviderCreateRefundRequiresPaymentIntent(t *testing.T) {
+	provider := NewFakeProvider()
+	if _, err := provider.CreateRefund(context.Background(), RefundInput{OrderID: "ord0000000000000000000000a", Attempt: 1}); err == nil {
+		t.Fatal("CreateRefund with empty payment intent returned nil error, want error")
+	}
+}
+
+func TestFakeProviderGetRefundAndSettleRefund(t *testing.T) {
+	provider := NewFakeProvider()
+	provider.SetNextRefundOutcome(RefundStatusPending, "")
+	created, err := provider.CreateRefund(context.Background(), RefundInput{
+		OrderID:         "ord0000000000000000000000a",
+		PaymentIntentID: "pi_fake_ord0000000000000000000000a",
+		Attempt:         1,
+	})
+	if err != nil || created.Status != RefundStatusPending {
+		t.Fatalf("CreateRefund = %#v %v, want pending refund", created, err)
+	}
+
+	fetched, err := provider.GetRefund(context.Background(), created.ID)
+	if err != nil || fetched != created {
+		t.Fatalf("GetRefund = %#v %v, want stored refund", fetched, err)
+	}
+	if _, err := provider.GetRefund(context.Background(), "re_unknown"); !errors.Is(err, ErrRefundNotFound) {
+		t.Fatalf("GetRefund(unknown) error = %v, want %v", err, ErrRefundNotFound)
+	}
+
+	// SettleRefund flips the pending refund to a terminal status.
+	if err := provider.SettleRefund(created.ID, RefundStatusFailed, "expired_or_canceled_card"); err != nil {
+		t.Fatalf("SettleRefund returned error: %v", err)
+	}
+	settled, err := provider.GetRefund(context.Background(), created.ID)
+	if err != nil || settled.Status != RefundStatusFailed || settled.FailureReason != "expired_or_canceled_card" {
+		t.Fatalf("settled refund = %#v %v, want failed with reason", settled, err)
+	}
+	if err := provider.SettleRefund(created.ID, RefundStatusSucceeded, ""); err != nil {
+		t.Fatalf("SettleRefund returned error: %v", err)
+	}
+	settled, err = provider.GetRefund(context.Background(), created.ID)
+	if err != nil || settled.Status != RefundStatusSucceeded || settled.FailureReason != "" {
+		t.Fatalf("re-settled refund = %#v %v, want succeeded", settled, err)
+	}
+
+	if err := provider.SettleRefund("re_unknown", RefundStatusSucceeded, ""); !errors.Is(err, ErrRefundNotFound) {
+		t.Fatalf("SettleRefund(unknown) error = %v, want %v", err, ErrRefundNotFound)
 	}
 }

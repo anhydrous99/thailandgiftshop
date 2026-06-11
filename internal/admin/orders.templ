@@ -54,7 +54,11 @@ templ adminOrderListPage(vm adminOrderListViewModel) {
 									<article data-testid="admin-order-row" class="grid gap-4 p-5 md:grid-cols-[1fr_auto_auto] md:items-center">
 										<div>
 											<a href={ "/admin/orders/" + row.Order.ID } class="break-all font-display text-xl font-medium text-flag-blue transition hover:text-flag-red">Order { row.Order.ID }</a>
-											<p class="mt-1 text-sm leading-6 text-muted">{ row.Order.Email } · { formatAdminOrderTime(row.Order.CreatedAt) } · { strconv.Itoa(adminOrderItemCount(row.Order)) } items</p>
+											if row.Order.CustomerID == "" {
+												<p class="mt-1 text-sm leading-6 text-muted">{ row.Order.Email } · { formatAdminOrderTime(row.Order.CreatedAt) } · { strconv.Itoa(adminOrderItemCount(row.Order)) } items · Guest</p>
+											} else {
+												<p class="mt-1 text-sm leading-6 text-muted">{ row.Order.Email } · { formatAdminOrderTime(row.Order.CreatedAt) } · { strconv.Itoa(adminOrderItemCount(row.Order)) } items</p>
+											}
 											<p class="mt-2 flex flex-wrap gap-2">
 												<span data-testid="admin-order-status" class={ adminOrderStatusChipClass(row.Order.Status) }>{ adminOrderStatusLabel(row.Order.Status) }</span>
 												if row.Overdue {
@@ -67,6 +71,11 @@ templ adminOrderListPage(vm adminOrderListViewModel) {
 									</article>
 								}
 							</div>
+							if vm.NextCursor != "" {
+								<div class="border-t border-flag-blue/10 p-5">
+									<a data-testid="admin-orders-next-page" href={ "/admin/orders?after=" + vm.NextCursor } class="inline-flex h-11 items-center justify-center bg-flag-blue px-5 text-sm font-bold text-white transition hover:bg-ink">Older orders</a>
+								</div>
+							}
 						}
 					</section>
 				</main>

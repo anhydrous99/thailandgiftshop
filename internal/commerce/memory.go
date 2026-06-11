@@ -344,7 +344,12 @@ func (s *MemoryStore) GetOrder(ctx context.Context, orderID string) (Order, bool
 	return cloneOrder(order), true, nil
 }
 
-func (s *MemoryStore) ListOrdersByCustomer(ctx context.Context, customerID string, limit int) ([]Order, error) {
+func (s *MemoryStore) ListOrdersByCustomer(ctx context.Context, customerID string, limit int, cursor OrderCursor) (OrderPage, error) {
+	if customerID == "" {
+		// Guest marker: without this guard the filter below would match every
+		// guest order ("" == ""), turning guests into a pseudo-customer.
+		return OrderPage{}, nil
+	}
 	_ = ctx
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -356,10 +361,10 @@ func (s *MemoryStore) ListOrdersByCustomer(ctx context.Context, customerID strin
 		}
 	}
 	sortOrdersNewestFirst(orders)
-	return applyOrderLimit(orders, limit), nil
+	return orderPageFromProbe(ordersAfterCursor(orders, cursor), limit), nil
 }
 
-func (s *MemoryStore) ListOrders(ctx context.Context, limit int) ([]Order, error) {
+func (s *MemoryStore) ListOrders(ctx context.Context, limit int, cursor OrderCursor) (OrderPage, error) {
 	_ = ctx
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -369,7 +374,7 @@ func (s *MemoryStore) ListOrders(ctx context.Context, limit int) ([]Order, error
 		orders = append(orders, cloneOrder(order))
 	}
 	sortOrdersNewestFirst(orders)
-	return applyOrderLimit(orders, limit), nil
+	return orderPageFromProbe(ordersAfterCursor(orders, cursor), limit), nil
 }
 
 func (s *MemoryStore) TransitionOrder(ctx context.Context, orderID string, from OrderStatus, to OrderStatus, patch OrderPatch) (Order, error) {
@@ -453,9 +458,20 @@ func sortOrdersNewestFirst(orders []Order) {
 	})
 }
 
-func applyOrderLimit(orders []Order, limit int) []Order {
-	if limit > 0 && len(orders) > limit {
-		return orders[:limit]
+// ordersAfterCursor mirrors DynamoDB ExclusiveStartKey semantics positionally:
+// skip every order whose newest-first sort key is at or before the cursor's.
+// Comparison runs on the formatted index sort key (second-precision RFC3339 +
+// order-ID tiebreak), exactly like the GSI, so nanosecond CreatedAt values in
+// memory cannot diverge from Dynamo behavior.
+func ordersAfterCursor(orders []Order, cursor OrderCursor) []Order {
+	if cursor.IsZero() {
+		return orders
 	}
-	return orders
+	startSK := ordersIndexSK(Order{ID: cursor.OrderID, CreatedAt: cursor.CreatedAt})
+	for index, order := range orders {
+		if ordersIndexSK(order) < startSK {
+			return orders[index:]
+		}
+	}
+	return nil
 }

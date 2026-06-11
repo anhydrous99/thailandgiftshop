@@ -123,6 +123,30 @@ type stubProvider struct {
 	getSessionErr            error
 	getSessionStatusOverride string
 	ensureCustomerCalls      int
+	createRefundErr          error
+	createRefundFn           func(ctx context.Context, input payments.RefundInput) (payments.Refund, error)
+	createRefundCalls        int
+	getRefundErr             error
+	getRefundCalls           int
+}
+
+func (p *stubProvider) CreateRefund(ctx context.Context, input payments.RefundInput) (payments.Refund, error) {
+	p.createRefundCalls++
+	if p.createRefundErr != nil {
+		return payments.Refund{}, p.createRefundErr
+	}
+	if p.createRefundFn != nil {
+		return p.createRefundFn(ctx, input)
+	}
+	return p.FakeProvider.CreateRefund(ctx, input)
+}
+
+func (p *stubProvider) GetRefund(ctx context.Context, refundID string) (payments.Refund, error) {
+	p.getRefundCalls++
+	if p.getRefundErr != nil {
+		return payments.Refund{}, p.getRefundErr
+	}
+	return p.FakeProvider.GetRefund(ctx, refundID)
 }
 
 func (p *stubProvider) EnsureCustomer(ctx context.Context, customerID string, email string) (string, error) {
@@ -170,13 +194,26 @@ func (f *flakyStockStore) AdjustStock(ctx context.Context, adjustments []catalog
 }
 
 // hookStore wraps the commerce memory store with injectable failures and
-// call counters for the webhook dedupe assertions.
+// call counters for the webhook dedupe assertions. The cart counters let the
+// guest tests assert the service never touches a CART row for guest orders.
 type hookStore struct {
 	commerce.Store
 	getOrderErr             error
 	markStripeEventCalls    int
+	getCartCalls            int
+	putCartCalls            int
 	transitionConflictOnce  bool
 	transitionConflictFired bool
+}
+
+func (h *hookStore) GetCart(ctx context.Context, customerID string) (commerce.CartRecord, bool, error) {
+	h.getCartCalls++
+	return h.Store.GetCart(ctx, customerID)
+}
+
+func (h *hookStore) PutCart(ctx context.Context, record commerce.CartRecord) (commerce.CartRecord, error) {
+	h.putCartCalls++
+	return h.Store.PutCart(ctx, record)
 }
 
 func (h *hookStore) GetOrder(ctx context.Context, orderID string) (commerce.Order, bool, error) {
@@ -309,11 +346,11 @@ func (env *testEnv) mustGetOrder(t *testing.T, orderID string) commerce.Order {
 
 func (env *testEnv) orderCount(t *testing.T) int {
 	t.Helper()
-	orders, err := env.commerceStore.ListOrders(context.Background(), 0)
+	page, err := env.commerceStore.ListOrders(context.Background(), 0, commerce.OrderCursor{})
 	if err != nil {
 		t.Fatalf("ListOrders returned error: %v", err)
 	}
-	return len(orders)
+	return len(page.Orders)
 }
 
 func (env *testEnv) assertStock(t *testing.T, wantBase int, wantVarM int) {
@@ -350,6 +387,19 @@ func (env *testEnv) paidSession(t *testing.T, sessionID string) payments.Session
 		t.Fatalf("GetSession(%q) returned error: %v", sessionID, err)
 	}
 	return session
+}
+
+// mustPaidOrder places an order with the standard test lines and finalizes
+// its payment, returning the paid order (stock 3/3 reserved).
+func (env *testEnv) mustPaidOrder(t *testing.T) commerce.Order {
+	t.Helper()
+	_, order := env.mustPlaceOrder(t, checkoutTestLines())
+	session := env.paidSession(t, order.StripeCheckoutSessionID)
+	paid, err := env.service.FinalizePayment(context.Background(), order.ID, session)
+	if err != nil {
+		t.Fatalf("FinalizePayment returned error: %v", err)
+	}
+	return paid
 }
 
 func TestPlaceOrderCreatesPendingOrderAndSession(t *testing.T) {
@@ -598,10 +648,11 @@ func TestPlaceOrderProviderFailureCompensates(t *testing.T) {
 
 			// Reservation released; order canceled by the system actor.
 			env.assertStock(t, 5, 4)
-			orders, listErr := env.commerceStore.ListOrders(context.Background(), 0)
+			page, listErr := env.commerceStore.ListOrders(context.Background(), 0, commerce.OrderCursor{})
 			if listErr != nil {
 				t.Fatalf("ListOrders returned error: %v", listErr)
 			}
+			orders := page.Orders
 			if len(orders) != 1 {
 				t.Fatalf("order count = %d, want 1 compensated order", len(orders))
 			}
@@ -1153,7 +1204,7 @@ func TestCancelPendingOrderPaymentInFlightRefusesCancel(t *testing.T) {
 	}
 }
 
-func TestApplyWebhookEventPaidAfterTerminalAcksWithMetric(t *testing.T) {
+func TestApplyWebhookEventPaidAfterTerminalIssuesAutoRefund(t *testing.T) {
 	env := newTestEnv(t)
 	_, order := env.mustPlaceOrder(t, checkoutTestLines())
 	session := env.paidSession(t, order.StripeCheckoutSessionID)
@@ -1170,14 +1221,100 @@ func TestApplyWebhookEventPaidAfterTerminalAcksWithMetric(t *testing.T) {
 	if err := env.service.ApplyWebhookEvent(context.Background(), event); err != nil {
 		t.Fatalf("ApplyWebhookEvent error = %v, want nil (a retry can never reconcile a terminal order)", err)
 	}
-	if got := env.mustGetOrder(t, order.ID).Status; got != commerce.OrderStatusCanceled {
-		t.Errorf("order status = %q, want it left %q", got, commerce.OrderStatusCanceled)
+	refunded := env.mustGetOrder(t, order.ID)
+	if refunded.Status != commerce.OrderStatusCanceled {
+		t.Errorf("order status = %q, want it left %q", refunded.Status, commerce.OrderStatusCanceled)
+	}
+	if refunded.StripeRefundID != "re_fake_"+order.ID+"_1" || refunded.RefundAttempt != 1 {
+		t.Errorf("audit marker = %q attempt %d, want the auto-refund recorded", refunded.StripeRefundID, refunded.RefundAttempt)
+	}
+	if env.provider.createRefundCalls != 1 {
+		t.Errorf("CreateRefund calls = %d, want 1", env.provider.createRefundCalls)
 	}
 	if got := env.metrics.count(observability.MetricStripeWebhook, "paid_after_terminal"); got != 1 {
 		t.Errorf("paid_after_terminal metric count = %d, want 1", got)
 	}
 	if got := env.metrics.count(observability.MetricStripeWebhook, "error"); got != 0 {
 		t.Errorf("error metric count = %d, want 0 (this is an ops condition, not a transient failure)", got)
+	}
+	// System-initiated refunds ride the distinct issued_auto outcome.
+	if got := env.metrics.count(observability.MetricCheckoutRefund, "issued_auto"); got != 1 {
+		t.Errorf("issued_auto metric count = %d, want 1", got)
+	}
+	if got := env.metrics.count(observability.MetricCheckoutRefund, "issued"); got != 0 {
+		t.Errorf("issued metric count = %d, want 0 for the auto path", got)
+	}
+
+	// A redelivery short-circuits on the marker: no second provider refund.
+	if err := env.service.ApplyWebhookEvent(context.Background(), event); err != nil {
+		t.Fatalf("redelivered ApplyWebhookEvent returned error: %v", err)
+	}
+	if env.provider.createRefundCalls != 1 {
+		t.Errorf("CreateRefund calls after redelivery = %d, want still 1", env.provider.createRefundCalls)
+	}
+}
+
+func TestApplyWebhookEventPaidAfterTerminalRefundFailureIsRetryable(t *testing.T) {
+	env := newTestEnv(t)
+	_, order := env.mustPlaceOrder(t, checkoutTestLines())
+	session := env.paidSession(t, order.StripeCheckoutSessionID)
+	if _, err := env.commerceStore.TransitionOrder(context.Background(), order.ID, commerce.OrderStatusPendingPayment, commerce.OrderStatusCanceled, commerce.OrderPatch{Actor: commerce.OrderActorAdmin}); err != nil {
+		t.Fatalf("TransitionOrder returned error: %v", err)
+	}
+	env.provider.createRefundErr = errors.New("stripe api down")
+
+	event := payments.Event{ID: "evt_terminal_retry", Type: "checkout.session.completed", SessionID: session.ID, OrderID: order.ID, Session: session}
+	if err := env.service.ApplyWebhookEvent(context.Background(), event); err == nil {
+		t.Fatal("ApplyWebhookEvent returned nil, want a retryable error so Stripe redelivers")
+	}
+	if got := env.mustGetOrder(t, order.ID).StripeRefundID; got != "" {
+		t.Errorf("StripeRefundID = %q, want empty after the failed create", got)
+	}
+	if got := env.metrics.count(observability.MetricCheckoutRefund, "provider_error"); got != 1 {
+		t.Errorf("provider_error metric count = %d, want 1", got)
+	}
+
+	// The redelivery succeeds once the provider recovers.
+	env.provider.createRefundErr = nil
+	if err := env.service.ApplyWebhookEvent(context.Background(), event); err != nil {
+		t.Fatalf("redelivered ApplyWebhookEvent returned error: %v", err)
+	}
+	if got := env.mustGetOrder(t, order.ID).StripeRefundID; got == "" {
+		t.Errorf("StripeRefundID empty after recovery, want the auto-refund marker")
+	}
+}
+
+func TestApplyWebhookEventPaidAfterTerminalWithoutPaymentIntentFallsBackToManualLog(t *testing.T) {
+	env := newTestEnv(t)
+	_, order := env.mustPlaceOrder(t, checkoutTestLines())
+	env.paidSession(t, order.StripeCheckoutSessionID)
+	if _, err := env.commerceStore.TransitionOrder(context.Background(), order.ID, commerce.OrderStatusPendingPayment, commerce.OrderStatusCanceled, commerce.OrderPatch{Actor: commerce.OrderActorAdmin}); err != nil {
+		t.Fatalf("TransitionOrder returned error: %v", err)
+	}
+
+	// The event session has no payment intent and is unknown to the provider,
+	// so the GetSession expansion cannot fill it either: retries cannot
+	// conjure a PI, so the webhook ACKs with the manual-refund log line.
+	event := payments.Event{
+		ID:      "evt_terminal_no_pi",
+		Type:    "checkout.session.completed",
+		OrderID: order.ID,
+		Session: payments.Session{ID: "cs_unknown_session", OrderID: order.ID, PaymentStatus: "paid"},
+	}
+	if err := env.service.ApplyWebhookEvent(context.Background(), event); err != nil {
+		t.Fatalf("ApplyWebhookEvent error = %v, want nil ACK", err)
+	}
+	if env.provider.createRefundCalls != 0 {
+		t.Errorf("CreateRefund calls = %d, want 0 without a payment intent", env.provider.createRefundCalls)
+	}
+	if got := env.mustGetOrder(t, order.ID).StripeRefundID; got != "" {
+		t.Errorf("StripeRefundID = %q, want empty", got)
+	}
+	if got := env.metrics.count(observability.MetricCheckoutRefund, "provider_error"); got != 1 {
+		t.Errorf("provider_error metric count = %d, want 1 (the alarmed manual fallback)", got)
+	}
+	if got := env.metrics.count(observability.MetricCheckoutRefund, "issued_auto"); got != 0 {
+		t.Errorf("issued_auto metric count = %d, want 0", got)
 	}
 }
 
@@ -1305,10 +1442,11 @@ func TestPlaceOrderCartPointerRaceAdoptsExistingPendingOrder(t *testing.T) {
 
 	// This request's fresh order was canceled, its stock released, and its
 	// session expired.
-	orders, listErr := env.commerceStore.ListOrders(context.Background(), 0)
+	page, listErr := env.commerceStore.ListOrders(context.Background(), 0, commerce.OrderCursor{})
 	if listErr != nil {
 		t.Fatalf("ListOrders returned error: %v", listErr)
 	}
+	orders := page.Orders
 	if len(orders) != 2 {
 		t.Fatalf("order count = %d, want 2", len(orders))
 	}
@@ -1404,4 +1542,1059 @@ func TestFingerprint(t *testing.T) {
 			t.Errorf("fingerprint = %q, want 64 lowercase hex characters", base)
 		}
 	})
+}
+
+// --- Automated refund tests ---
+
+// refundWebhookEvent builds a refund.* event the way eventFromStripeEvent
+// would map it: OrderID lifted from the refund's metadata.
+func refundWebhookEvent(eventID string, eventType string, refund payments.Refund) payments.Event {
+	return payments.Event{ID: eventID, Type: eventType, OrderID: refund.OrderID, Refund: refund}
+}
+
+func TestRefundOrderAsFromPaidSettlesSynchronously(t *testing.T) {
+	env := newTestEnv(t)
+	order := env.mustPaidOrder(t)
+	env.assertStock(t, 3, 3)
+
+	updated, err := env.service.RefundOrderAs(context.Background(), order, commerce.OrderActorAdmin)
+	if err != nil {
+		t.Fatalf("RefundOrderAs returned error: %v", err)
+	}
+	if updated.Status != commerce.OrderStatusRefunded {
+		t.Fatalf("order status = %q, want refunded", updated.Status)
+	}
+	stored := env.mustGetOrder(t, order.ID)
+	if stored.StripeRefundID != "re_fake_"+order.ID+"_1" || stored.RefundAttempt != 1 {
+		t.Errorf("refund fields = %q attempt %d, want re_fake_%s_1 attempt 1", stored.StripeRefundID, stored.RefundAttempt, order.ID)
+	}
+	if stored.RefundedAt.IsZero() {
+		t.Errorf("RefundedAt is zero, want settlement timestamp")
+	}
+	wantHistory := []struct {
+		status commerce.OrderStatus
+		actor  string
+	}{
+		{commerce.OrderStatusPendingPayment, commerce.OrderActorCustomer},
+		{commerce.OrderStatusPaid, commerce.OrderActorStripe},
+		{commerce.OrderStatusRefundPending, commerce.OrderActorAdmin},
+		{commerce.OrderStatusRefunded, commerce.OrderActorStripe},
+	}
+	if len(stored.StatusHistory) != len(wantHistory) {
+		t.Fatalf("history length = %d, want %d: %#v", len(stored.StatusHistory), len(wantHistory), stored.StatusHistory)
+	}
+	for i, want := range wantHistory {
+		if stored.StatusHistory[i].Status != want.status || stored.StatusHistory[i].Actor != want.actor {
+			t.Errorf("history[%d] = %s/%s, want %s/%s", i, stored.StatusHistory[i].Status, stored.StatusHistory[i].Actor, want.status, want.actor)
+		}
+	}
+	// Stock released exactly once through the claim protocol.
+	env.assertStock(t, 5, 4)
+	if stored.StockReleasedAt.IsZero() {
+		t.Errorf("StockReleasedAt is zero, want the release claim recorded")
+	}
+	if got := env.metrics.count(observability.MetricCheckoutRefund, "issued"); got != 1 {
+		t.Errorf("issued metric count = %d, want 1", got)
+	}
+	if got := env.metrics.count(observability.MetricCheckoutRefund, "settled"); got != 1 {
+		t.Errorf("settled metric count = %d, want 1", got)
+	}
+}
+
+func TestRefundOrderAsFromShippedAndDeliveredKeepsStock(t *testing.T) {
+	for _, target := range []commerce.OrderStatus{commerce.OrderStatusShipped, commerce.OrderStatusDelivered} {
+		env := newTestEnv(t)
+		order := env.mustPaidOrder(t)
+		shippedAt := checkoutTestNow
+		shipped, err := env.commerceStore.TransitionOrder(context.Background(), order.ID, commerce.OrderStatusPaid, commerce.OrderStatusShipped, commerce.OrderPatch{Actor: commerce.OrderActorAdmin, ShippedAt: &shippedAt})
+		if err != nil {
+			t.Fatalf("TransitionOrder to shipped returned error: %v", err)
+		}
+		current := shipped
+		if target == commerce.OrderStatusDelivered {
+			current, err = env.commerceStore.TransitionOrder(context.Background(), order.ID, commerce.OrderStatusShipped, commerce.OrderStatusDelivered, commerce.OrderPatch{Actor: commerce.OrderActorAdmin})
+			if err != nil {
+				t.Fatalf("TransitionOrder to delivered returned error: %v", err)
+			}
+		}
+		counting := &flakyStockStore{StockStore: env.catalogStore}
+		env.service.Stock = counting
+
+		updated, err := env.service.RefundOrderAs(context.Background(), current, commerce.OrderActorAdmin)
+		if err != nil {
+			t.Fatalf("RefundOrderAs from %s returned error: %v", target, err)
+		}
+		if updated.Status != commerce.OrderStatusRefunded {
+			t.Fatalf("order status = %q, want refunded", updated.Status)
+		}
+		// Shipped goods are never restocked: zero stock adjustments.
+		if counting.calls != 0 {
+			t.Errorf("AdjustStock calls = %d, want 0 for a %s refund", counting.calls, target)
+		}
+		env.assertStock(t, 3, 3)
+		if !env.mustGetOrder(t, order.ID).StockReleasedAt.IsZero() {
+			t.Errorf("StockReleasedAt set for a shipped refund, want zero")
+		}
+	}
+}
+
+func TestRefundOrderAsRejectsNonRefundableStatuses(t *testing.T) {
+	env := newTestEnv(t)
+	_, pending := env.mustPlaceOrder(t, checkoutTestLines())
+
+	if _, err := env.service.RefundOrderAs(context.Background(), pending, commerce.OrderActorAdmin); !errors.Is(err, ErrOrderNotRefundable) {
+		t.Fatalf("RefundOrderAs(pending) error = %v, want %v", err, ErrOrderNotRefundable)
+	}
+	if err := env.service.CancelPendingOrder(context.Background(), env.mustGetOrder(t, pending.ID)); err != nil {
+		t.Fatalf("CancelPendingOrder returned error: %v", err)
+	}
+	canceled := env.mustGetOrder(t, pending.ID)
+	if _, err := env.service.RefundOrderAs(context.Background(), canceled, commerce.OrderActorAdmin); !errors.Is(err, ErrOrderNotRefundable) {
+		t.Fatalf("RefundOrderAs(canceled) error = %v, want %v", err, ErrOrderNotRefundable)
+	}
+	if got := env.mustGetOrder(t, pending.ID).Status; got != commerce.OrderStatusCanceled {
+		t.Errorf("order status = %q, want canceled untouched", got)
+	}
+	if env.provider.createRefundCalls != 0 {
+		t.Errorf("CreateRefund calls = %d, want 0", env.provider.createRefundCalls)
+	}
+}
+
+func TestRefundOrderAsRequiresPaymentIntentAndProvider(t *testing.T) {
+	env := newTestEnv(t)
+	order := env.mustPaidOrder(t)
+
+	empty := ""
+	stripped, err := env.commerceStore.PatchOrder(context.Background(), order.ID, commerce.OrderStatusPaid, order.Version, commerce.OrderPatch{StripePaymentIntentID: &empty})
+	if err != nil {
+		t.Fatalf("PatchOrder returned error: %v", err)
+	}
+	if _, err := env.service.RefundOrderAs(context.Background(), stripped, commerce.OrderActorAdmin); !errors.Is(err, ErrRefundNotIssuable) {
+		t.Fatalf("RefundOrderAs(no PI) error = %v, want %v", err, ErrRefundNotIssuable)
+	}
+
+	env.service.Payments = nil
+	if _, err := env.service.RefundOrderAs(context.Background(), stripped, commerce.OrderActorAdmin); !errors.Is(err, ErrRefundProviderUnavailable) {
+		t.Fatalf("RefundOrderAs(nil provider) error = %v, want %v", err, ErrRefundProviderUnavailable)
+	}
+	if got := env.metrics.count(observability.MetricCheckoutRefund, "provider_error"); got != 1 {
+		t.Errorf("provider_error metric count = %d, want 1 (nil provider only)", got)
+	}
+	if got := env.mustGetOrder(t, order.ID).Status; got != commerce.OrderStatusPaid {
+		t.Errorf("order status = %q, want paid untouched", got)
+	}
+}
+
+func TestRefundOrderAsProviderFailureLeavesOrderUntouched(t *testing.T) {
+	env := newTestEnv(t)
+	order := env.mustPaidOrder(t)
+	env.provider.createRefundErr = errors.New("stripe api down")
+
+	_, err := env.service.RefundOrderAs(context.Background(), order, commerce.OrderActorAdmin)
+	if err == nil || errors.Is(err, ErrOrderNotRefundable) {
+		t.Fatalf("RefundOrderAs error = %v, want the provider error", err)
+	}
+	stored := env.mustGetOrder(t, order.ID)
+	if stored.Status != commerce.OrderStatusPaid || stored.StripeRefundID != "" || stored.RefundAttempt != 0 {
+		t.Errorf("order = %#v, want paid and untouched", stored)
+	}
+	env.assertStock(t, 3, 3)
+	if got := env.metrics.count(observability.MetricCheckoutRefund, "provider_error"); got != 1 {
+		t.Errorf("provider_error metric count = %d, want 1", got)
+	}
+}
+
+func TestRefundOrderAsAlreadyRefundedSentinelPropagates(t *testing.T) {
+	env := newTestEnv(t)
+	order := env.mustPaidOrder(t)
+	env.provider.createRefundErr = fmt.Errorf("%w: payment intent pi_fake_%s", payments.ErrChargeAlreadyRefunded, order.ID)
+
+	_, err := env.service.RefundOrderAs(context.Background(), order, commerce.OrderActorAdmin)
+	if !errors.Is(err, payments.ErrChargeAlreadyRefunded) {
+		t.Fatalf("RefundOrderAs error = %v, want %v", err, payments.ErrChargeAlreadyRefunded)
+	}
+	if got := env.mustGetOrder(t, order.ID).Status; got != commerce.OrderStatusPaid {
+		t.Errorf("order status = %q, want paid untouched", got)
+	}
+	if got := env.metrics.count(observability.MetricCheckoutRefund, "provider_error"); got != 1 {
+		t.Errorf("provider_error metric count = %d, want 1", got)
+	}
+}
+
+func TestRefundOrderAsReplayConvergesWithoutSecondRefund(t *testing.T) {
+	env := newTestEnv(t)
+	order := env.mustPaidOrder(t)
+
+	first, err := env.service.RefundOrderAs(context.Background(), order, commerce.OrderActorAdmin)
+	if err != nil || first.Status != commerce.OrderStatusRefunded {
+		t.Fatalf("first RefundOrderAs = %s %v, want refunded", first.Status, err)
+	}
+	env.assertStock(t, 5, 4)
+
+	// Replayed POST with the refreshed order: replay branch, no second
+	// provider refund, no double stock release.
+	replayed, err := env.service.RefundOrderAs(context.Background(), env.mustGetOrder(t, order.ID), commerce.OrderActorAdmin)
+	if err != nil || replayed.Status != commerce.OrderStatusRefunded {
+		t.Fatalf("replayed RefundOrderAs = %s %v, want refunded no-op", replayed.Status, err)
+	}
+	if env.provider.createRefundCalls != 1 {
+		t.Errorf("CreateRefund calls = %d, want 1", env.provider.createRefundCalls)
+	}
+	env.assertStock(t, 5, 4)
+}
+
+func TestRefundOrderAsAsyncSettlesViaWebhook(t *testing.T) {
+	env := newTestEnv(t)
+	order := env.mustPaidOrder(t)
+	env.provider.SetNextRefundOutcome(payments.RefundStatusPending, "")
+
+	updated, err := env.service.RefundOrderAs(context.Background(), order, commerce.OrderActorAdmin)
+	if err != nil {
+		t.Fatalf("RefundOrderAs returned error: %v", err)
+	}
+	if updated.Status != commerce.OrderStatusRefundPending {
+		t.Fatalf("order status = %q, want refund_pending while settling", updated.Status)
+	}
+	// Unshipped: the reservation is already returned at refund_pending.
+	env.assertStock(t, 5, 4)
+
+	event := refundWebhookEvent("evt_refund_settle", "refund.updated", payments.Refund{
+		ID:              "re_fake_" + order.ID + "_1",
+		PaymentIntentID: "pi_fake_" + order.ID,
+		OrderID:         order.ID,
+		Attempt:         1,
+		Status:          payments.RefundStatusSucceeded,
+		AmountCents:     order.TotalCents,
+	})
+	if err := env.service.ApplyWebhookEvent(context.Background(), event); err != nil {
+		t.Fatalf("ApplyWebhookEvent returned error: %v", err)
+	}
+	settled := env.mustGetOrder(t, order.ID)
+	if settled.Status != commerce.OrderStatusRefunded || settled.RefundedAt.IsZero() {
+		t.Fatalf("order = %s refundedAt %v, want refunded with timestamp", settled.Status, settled.RefundedAt)
+	}
+	env.assertStock(t, 5, 4)
+
+	// Duplicate delivery no-ops.
+	if err := env.service.ApplyWebhookEvent(context.Background(), event); err != nil {
+		t.Fatalf("duplicate ApplyWebhookEvent returned error: %v", err)
+	}
+	env.assertStock(t, 5, 4)
+	if got := env.metrics.count(observability.MetricCheckoutRefund, "settled"); got != 1 {
+		t.Errorf("settled metric count = %d, want 1 across the duplicate delivery", got)
+	}
+}
+
+func TestRefundFailedWebhookThenAdminRetry(t *testing.T) {
+	env := newTestEnv(t)
+	order := env.mustPaidOrder(t)
+	env.provider.SetNextRefundOutcome(payments.RefundStatusPending, "")
+	if _, err := env.service.RefundOrderAs(context.Background(), order, commerce.OrderActorAdmin); err != nil {
+		t.Fatalf("RefundOrderAs returned error: %v", err)
+	}
+
+	refundID := "re_fake_" + order.ID + "_1"
+	event := refundWebhookEvent("evt_refund_fail", "refund.failed", payments.Refund{
+		ID:              refundID,
+		PaymentIntentID: "pi_fake_" + order.ID,
+		OrderID:         order.ID,
+		Attempt:         1,
+		Status:          payments.RefundStatusFailed,
+		FailureReason:   "expired_or_canceled_card",
+	})
+	if err := env.service.ApplyWebhookEvent(context.Background(), event); err != nil {
+		t.Fatalf("ApplyWebhookEvent returned error: %v", err)
+	}
+	failed := env.mustGetOrder(t, order.ID)
+	if failed.Status != commerce.OrderStatusRefundFailed || failed.RefundFailureReason != "expired_or_canceled_card" {
+		t.Fatalf("order = %s reason %q, want refund_failed with reason", failed.Status, failed.RefundFailureReason)
+	}
+	if got := env.metrics.count(observability.MetricCheckoutRefund, "failed"); got != 1 {
+		t.Errorf("failed metric count = %d, want 1", got)
+	}
+
+	// Sync the fake's view, then the admin retries: attempt 2 mints a fresh
+	// refund and the stale failure reason is cleared.
+	if err := env.provider.SettleRefund(refundID, payments.RefundStatusFailed, "expired_or_canceled_card"); err != nil {
+		t.Fatalf("SettleRefund returned error: %v", err)
+	}
+	env.provider.SetNextRefundOutcome(payments.RefundStatusPending, "")
+	retried, err := env.service.RefundOrderAs(context.Background(), failed, commerce.OrderActorAdmin)
+	if err != nil {
+		t.Fatalf("retry RefundOrderAs returned error: %v", err)
+	}
+	if retried.Status != commerce.OrderStatusRefundPending {
+		t.Fatalf("retried order status = %q, want refund_pending", retried.Status)
+	}
+	stored := env.mustGetOrder(t, order.ID)
+	if stored.StripeRefundID != "re_fake_"+order.ID+"_2" || stored.RefundAttempt != 2 {
+		t.Errorf("retried refund fields = %q attempt %d, want attempt-2 refund", stored.StripeRefundID, stored.RefundAttempt)
+	}
+	if stored.RefundFailureReason != "" {
+		t.Errorf("RefundFailureReason = %q, want cleared on retry", stored.RefundFailureReason)
+	}
+}
+
+func TestRefundCreatedWebhookHealsIssueCrashWindow(t *testing.T) {
+	env := newTestEnv(t)
+	order := env.mustPaidOrder(t)
+
+	// The admin's refund POST crashed after CreateRefund, before the
+	// transition: the refund.created webhook heals paid -> refund_pending.
+	event := refundWebhookEvent("evt_refund_heal", "refund.created", payments.Refund{
+		ID:              "re_fake_" + order.ID + "_1",
+		PaymentIntentID: "pi_fake_" + order.ID,
+		OrderID:         order.ID,
+		Attempt:         1,
+		Status:          payments.RefundStatusPending,
+		AmountCents:     order.TotalCents,
+	})
+	if err := env.service.ApplyWebhookEvent(context.Background(), event); err != nil {
+		t.Fatalf("ApplyWebhookEvent returned error: %v", err)
+	}
+	healed := env.mustGetOrder(t, order.ID)
+	if healed.Status != commerce.OrderStatusRefundPending || healed.StripeRefundID != "re_fake_"+order.ID+"_1" || healed.RefundAttempt != 1 {
+		t.Fatalf("healed order = %#v, want adopted refund_pending", healed)
+	}
+	if last := healed.StatusHistory[len(healed.StatusHistory)-1]; last.Actor != commerce.OrderActorStripe {
+		t.Errorf("heal actor = %q, want stripe", last.Actor)
+	}
+	env.assertStock(t, 5, 4)
+	if got := env.metrics.count(observability.MetricCheckoutRefund, "issued"); got != 1 {
+		t.Errorf("issued metric count = %d, want 1", got)
+	}
+}
+
+func TestRefundCreatedWebhookHealOnShippedOrderKeepsStock(t *testing.T) {
+	env := newTestEnv(t)
+	order := env.mustPaidOrder(t)
+	shippedAt := checkoutTestNow
+	if _, err := env.commerceStore.TransitionOrder(context.Background(), order.ID, commerce.OrderStatusPaid, commerce.OrderStatusShipped, commerce.OrderPatch{Actor: commerce.OrderActorAdmin, ShippedAt: &shippedAt}); err != nil {
+		t.Fatalf("TransitionOrder returned error: %v", err)
+	}
+
+	event := refundWebhookEvent("evt_refund_heal_shipped", "refund.created", payments.Refund{
+		ID:              "re_fake_" + order.ID + "_1",
+		PaymentIntentID: "pi_fake_" + order.ID,
+		OrderID:         order.ID,
+		Attempt:         1,
+		Status:          payments.RefundStatusPending,
+	})
+	if err := env.service.ApplyWebhookEvent(context.Background(), event); err != nil {
+		t.Fatalf("ApplyWebhookEvent returned error: %v", err)
+	}
+	healed := env.mustGetOrder(t, order.ID)
+	if healed.Status != commerce.OrderStatusRefundPending {
+		t.Fatalf("order status = %q, want refund_pending", healed.Status)
+	}
+	env.assertStock(t, 3, 3)
+	if !healed.StockReleasedAt.IsZero() {
+		t.Errorf("StockReleasedAt set for a shipped refund heal, want zero")
+	}
+}
+
+func TestRefundWebhookHealsRetryCrashWindow(t *testing.T) {
+	env := newTestEnv(t)
+	order := env.mustPaidOrder(t)
+	// Attempt 1 failed.
+	env.provider.SetNextRefundOutcome(payments.RefundStatusFailed, "expired_or_canceled_card")
+	failed, err := env.service.RefundOrderAs(context.Background(), order, commerce.OrderActorAdmin)
+	if err != nil || failed.Status != commerce.OrderStatusRefundFailed {
+		t.Fatalf("RefundOrderAs = %s %v, want refund_failed", failed.Status, err)
+	}
+
+	// The admin's retry minted attempt 2 at the provider but crashed before
+	// the transition; the newer attempt's webhooks adopt it.
+	created := refundWebhookEvent("evt_retry_created", "refund.created", payments.Refund{
+		ID:              "re_fake_" + order.ID + "_2",
+		PaymentIntentID: "pi_fake_" + order.ID,
+		OrderID:         order.ID,
+		Attempt:         2,
+		Status:          payments.RefundStatusPending,
+	})
+	if err := env.service.ApplyWebhookEvent(context.Background(), created); err != nil {
+		t.Fatalf("ApplyWebhookEvent(created) returned error: %v", err)
+	}
+	adopted := env.mustGetOrder(t, order.ID)
+	if adopted.Status != commerce.OrderStatusRefundPending || adopted.StripeRefundID != "re_fake_"+order.ID+"_2" || adopted.RefundAttempt != 2 {
+		t.Fatalf("adopted order = %#v, want attempt-2 refund_pending", adopted)
+	}
+	if adopted.RefundFailureReason != "" {
+		t.Errorf("RefundFailureReason = %q, want cleared on adoption", adopted.RefundFailureReason)
+	}
+
+	updated := refundWebhookEvent("evt_retry_updated", "refund.updated", payments.Refund{
+		ID:              "re_fake_" + order.ID + "_2",
+		PaymentIntentID: "pi_fake_" + order.ID,
+		OrderID:         order.ID,
+		Attempt:         2,
+		Status:          payments.RefundStatusSucceeded,
+		AmountCents:     order.TotalCents,
+	})
+	if err := env.service.ApplyWebhookEvent(context.Background(), updated); err != nil {
+		t.Fatalf("ApplyWebhookEvent(updated) returned error: %v", err)
+	}
+	settled := env.mustGetOrder(t, order.ID)
+	if settled.Status != commerce.OrderStatusRefunded {
+		t.Fatalf("order status = %q, want refunded with no human interaction", settled.Status)
+	}
+	// Duplicate deliveries no-op.
+	if err := env.service.ApplyWebhookEvent(context.Background(), created); err != nil {
+		t.Fatalf("duplicate created delivery returned error: %v", err)
+	}
+	if err := env.service.ApplyWebhookEvent(context.Background(), updated); err != nil {
+		t.Fatalf("duplicate updated delivery returned error: %v", err)
+	}
+	if got := env.mustGetOrder(t, order.ID).Status; got != commerce.OrderStatusRefunded {
+		t.Errorf("order status after duplicates = %q, want refunded", got)
+	}
+	env.assertStock(t, 5, 4)
+}
+
+func TestRefundWebhookDropsStaleAttempts(t *testing.T) {
+	env := newTestEnv(t)
+	order := env.mustPaidOrder(t)
+	// Attempt 1 failed, attempt 2 pending.
+	env.provider.SetNextRefundOutcome(payments.RefundStatusFailed, "expired_or_canceled_card")
+	if _, err := env.service.RefundOrderAs(context.Background(), order, commerce.OrderActorAdmin); err != nil {
+		t.Fatalf("RefundOrderAs returned error: %v", err)
+	}
+	if err := env.provider.SettleRefund("re_fake_"+order.ID+"_1", payments.RefundStatusFailed, "expired_or_canceled_card"); err != nil {
+		t.Fatalf("SettleRefund returned error: %v", err)
+	}
+	env.provider.SetNextRefundOutcome(payments.RefundStatusPending, "")
+	pending, err := env.service.RefundOrderAs(context.Background(), env.mustGetOrder(t, order.ID), commerce.OrderActorAdmin)
+	if err != nil || pending.Status != commerce.OrderStatusRefundPending {
+		t.Fatalf("retry RefundOrderAs = %s %v, want refund_pending on attempt 2", pending.Status, err)
+	}
+
+	// A late refund.failed for the superseded attempt-1 refund is ignored.
+	// (The synchronous attempt-1 failure above already recorded one failed
+	// metric; the stale event must not add another.)
+	failedBefore := env.metrics.count(observability.MetricCheckoutRefund, "failed")
+	stale := refundWebhookEvent("evt_stale_fail", "refund.failed", payments.Refund{
+		ID:              "re_fake_" + order.ID + "_1",
+		PaymentIntentID: "pi_fake_" + order.ID,
+		OrderID:         order.ID,
+		Attempt:         1,
+		Status:          payments.RefundStatusFailed,
+		FailureReason:   "expired_or_canceled_card",
+	})
+	if err := env.service.ApplyWebhookEvent(context.Background(), stale); err != nil {
+		t.Fatalf("ApplyWebhookEvent(stale) returned error: %v", err)
+	}
+	current := env.mustGetOrder(t, order.ID)
+	if current.Status != commerce.OrderStatusRefundPending || current.StripeRefundID != "re_fake_"+order.ID+"_2" {
+		t.Fatalf("order = %s %q, want attempt-2 refund_pending unchanged", current.Status, current.StripeRefundID)
+	}
+	if got := env.metrics.count(observability.MetricCheckoutRefund, "failed"); got != failedBefore {
+		t.Errorf("failed metric count = %d, want unchanged %d after the stale event", got, failedBefore)
+	}
+}
+
+func TestRefundFailedOrderDropsOlderAndUnattributableEvents(t *testing.T) {
+	env := newTestEnv(t)
+	order := env.mustPaidOrder(t)
+	// Reach refund_failed on attempt 2.
+	env.provider.SetNextRefundOutcome(payments.RefundStatusFailed, "expired_or_canceled_card")
+	if _, err := env.service.RefundOrderAs(context.Background(), order, commerce.OrderActorAdmin); err != nil {
+		t.Fatalf("RefundOrderAs returned error: %v", err)
+	}
+	if err := env.provider.SettleRefund("re_fake_"+order.ID+"_1", payments.RefundStatusFailed, "expired_or_canceled_card"); err != nil {
+		t.Fatalf("SettleRefund returned error: %v", err)
+	}
+	env.provider.SetNextRefundOutcome(payments.RefundStatusFailed, "lost_or_stolen_card")
+	failed, err := env.service.RefundOrderAs(context.Background(), env.mustGetOrder(t, order.ID), commerce.OrderActorAdmin)
+	if err != nil || failed.Status != commerce.OrderStatusRefundFailed || failed.RefundAttempt != 2 {
+		t.Fatalf("retry RefundOrderAs = %#v %v, want refund_failed attempt 2", failed, err)
+	}
+
+	for _, event := range []payments.Event{
+		refundWebhookEvent("evt_old_attempt", "refund.updated", payments.Refund{
+			ID:              "re_fake_" + order.ID + "_1",
+			PaymentIntentID: "pi_fake_" + order.ID,
+			OrderID:         order.ID,
+			Attempt:         1,
+			Status:          payments.RefundStatusSucceeded,
+		}),
+		refundWebhookEvent("evt_foreign_attempt0", "refund.updated", payments.Refund{
+			ID:              "re_foreign_dashboard",
+			PaymentIntentID: "pi_fake_" + order.ID,
+			OrderID:         order.ID,
+			Attempt:         0,
+			Status:          payments.RefundStatusSucceeded,
+		}),
+	} {
+		if err := env.service.ApplyWebhookEvent(context.Background(), event); err != nil {
+			t.Fatalf("ApplyWebhookEvent(%s) returned error: %v", event.ID, err)
+		}
+	}
+	current := env.mustGetOrder(t, order.ID)
+	if current.Status != commerce.OrderStatusRefundFailed || current.StripeRefundID != "re_fake_"+order.ID+"_2" {
+		t.Fatalf("order = %s %q, want refund_failed attempt 2 unchanged", current.Status, current.StripeRefundID)
+	}
+}
+
+func TestRefundWebhookPaymentIntentMismatchIsRejected(t *testing.T) {
+	env := newTestEnv(t)
+	order := env.mustPaidOrder(t)
+	markCallsBefore := env.hooks.markStripeEventCalls
+
+	event := refundWebhookEvent("evt_mismatch", "refund.created", payments.Refund{
+		ID:              "re_foreign",
+		PaymentIntentID: "pi_someone_else",
+		OrderID:         order.ID,
+		Attempt:         1,
+		Status:          payments.RefundStatusSucceeded,
+	})
+	if err := env.service.ApplyWebhookEvent(context.Background(), event); err != nil {
+		t.Fatalf("ApplyWebhookEvent returned error %v, want nil ACK", err)
+	}
+	current := env.mustGetOrder(t, order.ID)
+	if current.Status != commerce.OrderStatusPaid || current.StripeRefundID != "" {
+		t.Fatalf("order = %s %q, want paid and untouched", current.Status, current.StripeRefundID)
+	}
+	env.assertStock(t, 3, 3)
+	if got := env.metrics.count(observability.MetricStripeWebhook, "refund_mismatch"); got != 1 {
+		t.Errorf("refund_mismatch metric count = %d, want 1", got)
+	}
+	if env.hooks.markStripeEventCalls != markCallsBefore {
+		t.Errorf("event was marked processed, want it left unmarked")
+	}
+}
+
+func TestRefundWebhookMismatchCheckSkippedForEmptyOrderPI(t *testing.T) {
+	env := newTestEnv(t)
+	order := env.mustPaidOrder(t)
+	empty := ""
+	if _, err := env.commerceStore.PatchOrder(context.Background(), order.ID, commerce.OrderStatusPaid, env.mustGetOrder(t, order.ID).Version, commerce.OrderPatch{StripePaymentIntentID: &empty}); err != nil {
+		t.Fatalf("PatchOrder returned error: %v", err)
+	}
+
+	event := refundWebhookEvent("evt_skip_check", "refund.created", payments.Refund{
+		ID:              "re_fake_" + order.ID + "_1",
+		PaymentIntentID: "pi_someone_else",
+		OrderID:         order.ID,
+		Attempt:         1,
+		Status:          payments.RefundStatusSucceeded,
+		AmountCents:     order.TotalCents,
+	})
+	if err := env.service.ApplyWebhookEvent(context.Background(), event); err != nil {
+		t.Fatalf("ApplyWebhookEvent returned error: %v", err)
+	}
+	current := env.mustGetOrder(t, order.ID)
+	if current.Status != commerce.OrderStatusRefunded {
+		t.Fatalf("order status = %q, want the heal to proceed for the known empty-PI case", current.Status)
+	}
+	if got := env.metrics.count(observability.MetricStripeWebhook, "refund_mismatch"); got != 0 {
+		t.Errorf("refund_mismatch metric count = %d, want 0", got)
+	}
+}
+
+func TestRefundAmountMismatchWarnsButSettles(t *testing.T) {
+	env := newTestEnv(t)
+	order := env.mustPaidOrder(t)
+	env.provider.SetNextRefundOutcome(payments.RefundStatusPending, "")
+	if _, err := env.service.RefundOrderAs(context.Background(), order, commerce.OrderActorAdmin); err != nil {
+		t.Fatalf("RefundOrderAs returned error: %v", err)
+	}
+
+	event := refundWebhookEvent("evt_amount_mismatch", "refund.updated", payments.Refund{
+		ID:              "re_fake_" + order.ID + "_1",
+		PaymentIntentID: "pi_fake_" + order.ID,
+		OrderID:         order.ID,
+		Attempt:         1,
+		Status:          payments.RefundStatusSucceeded,
+		AmountCents:     order.TotalCents - 100,
+	})
+	if err := env.service.ApplyWebhookEvent(context.Background(), event); err != nil {
+		t.Fatalf("ApplyWebhookEvent returned error: %v", err)
+	}
+	if got := env.mustGetOrder(t, order.ID).Status; got != commerce.OrderStatusRefunded {
+		t.Errorf("order status = %q, want refunded despite the amount warning", got)
+	}
+}
+
+func TestTerminalOrderRefundEventsSettleOrAlarm(t *testing.T) {
+	env := newTestEnv(t)
+	_, order := env.mustPlaceOrder(t, checkoutTestLines())
+	env.paidSession(t, order.StripeCheckoutSessionID)
+	if _, err := env.commerceStore.TransitionOrder(context.Background(), order.ID, commerce.OrderStatusPendingPayment, commerce.OrderStatusCanceled, commerce.OrderPatch{Actor: commerce.OrderActorAdmin}); err != nil {
+		t.Fatalf("TransitionOrder returned error: %v", err)
+	}
+	refundID := "re_fake_" + order.ID + "_1"
+	attempt := 1
+	canceled := env.mustGetOrder(t, order.ID)
+	if _, err := env.commerceStore.PatchOrder(context.Background(), order.ID, commerce.OrderStatusCanceled, canceled.Version, commerce.OrderPatch{StripeRefundID: &refundID, RefundAttempt: &attempt}); err != nil {
+		t.Fatalf("PatchOrder returned error: %v", err)
+	}
+
+	// Matching-ID success: info ACK, no transition, no failed metric.
+	success := refundWebhookEvent("evt_term_ok", "refund.updated", payments.Refund{
+		ID:              refundID,
+		PaymentIntentID: "pi_fake_" + order.ID,
+		OrderID:         order.ID,
+		Attempt:         1,
+		Status:          payments.RefundStatusSucceeded,
+	})
+	if err := env.service.ApplyWebhookEvent(context.Background(), success); err != nil {
+		t.Fatalf("ApplyWebhookEvent(success) returned error: %v", err)
+	}
+	if got := env.mustGetOrder(t, order.ID).Status; got != commerce.OrderStatusCanceled {
+		t.Fatalf("order status = %q, want canceled untouched", got)
+	}
+	if got := env.metrics.count(observability.MetricCheckoutRefund, "failed"); got != 0 {
+		t.Errorf("failed metric count = %d, want 0 after the success event", got)
+	}
+
+	// Matching-ID failure: alarmed metric + persisted reason, status kept.
+	failure := refundWebhookEvent("evt_term_fail", "refund.failed", payments.Refund{
+		ID:              refundID,
+		PaymentIntentID: "pi_fake_" + order.ID,
+		OrderID:         order.ID,
+		Attempt:         1,
+		Status:          payments.RefundStatusFailed,
+		FailureReason:   "expired_or_canceled_card",
+	})
+	if err := env.service.ApplyWebhookEvent(context.Background(), failure); err != nil {
+		t.Fatalf("ApplyWebhookEvent(failure) returned error: %v", err)
+	}
+	current := env.mustGetOrder(t, order.ID)
+	if current.Status != commerce.OrderStatusCanceled || current.RefundFailureReason != "expired_or_canceled_card" {
+		t.Fatalf("order = %s reason %q, want canceled with persisted reason", current.Status, current.RefundFailureReason)
+	}
+	if got := env.metrics.count(observability.MetricCheckoutRefund, "failed"); got != 1 {
+		t.Errorf("failed metric count = %d, want 1", got)
+	}
+
+	// Replay converges: reason already set, no second metric or patch.
+	if err := env.service.ApplyWebhookEvent(context.Background(), failure); err != nil {
+		t.Fatalf("replayed ApplyWebhookEvent(failure) returned error: %v", err)
+	}
+	if got := env.metrics.count(observability.MetricCheckoutRefund, "failed"); got != 1 {
+		t.Errorf("failed metric count after replay = %d, want still 1", got)
+	}
+
+	// Non-matching refund ID: warn ACK, no metric, no patch.
+	foreign := refundWebhookEvent("evt_term_foreign", "refund.failed", payments.Refund{
+		ID:              "re_other",
+		PaymentIntentID: "pi_fake_" + order.ID,
+		OrderID:         order.ID,
+		Status:          payments.RefundStatusFailed,
+		FailureReason:   "unknown",
+	})
+	if err := env.service.ApplyWebhookEvent(context.Background(), foreign); err != nil {
+		t.Fatalf("ApplyWebhookEvent(foreign) returned error: %v", err)
+	}
+	after := env.mustGetOrder(t, order.ID)
+	if after.RefundFailureReason != "expired_or_canceled_card" {
+		t.Errorf("RefundFailureReason = %q, want unchanged", after.RefundFailureReason)
+	}
+	if got := env.metrics.count(observability.MetricCheckoutRefund, "failed"); got != 1 {
+		t.Errorf("failed metric count after foreign event = %d, want still 1", got)
+	}
+}
+
+func TestRefundStockReleaseFailureIsRetriedViaReconcile(t *testing.T) {
+	env := newTestEnv(t)
+	order := env.mustPaidOrder(t)
+	flaky := &flakyStockStore{StockStore: env.catalogStore, failures: 1}
+	env.service.Stock = flaky
+
+	updated, err := env.service.RefundOrderAs(context.Background(), order, commerce.OrderActorAdmin)
+	if !errors.Is(err, ErrStockReleaseFailed) {
+		t.Fatalf("RefundOrderAs error = %v, want %v", err, ErrStockReleaseFailed)
+	}
+	if updated.Status != commerce.OrderStatusRefunded {
+		t.Fatalf("order status = %q, want refunded (the refund itself committed)", updated.Status)
+	}
+	stored := env.mustGetOrder(t, order.ID)
+	if !stored.StockReleasedAt.IsZero() {
+		t.Errorf("StockReleasedAt = %v, want the claim returned after the failed release", stored.StockReleasedAt)
+	}
+	env.assertStock(t, 3, 3)
+
+	// The admin order-page reconcile re-drives the release exactly once.
+	reconciled := env.service.ReconcileRefund(context.Background(), stored)
+	if reconciled.Status != commerce.OrderStatusRefunded {
+		t.Fatalf("reconciled status = %q, want refunded", reconciled.Status)
+	}
+	env.assertStock(t, 5, 4)
+	if env.mustGetOrder(t, order.ID).StockReleasedAt.IsZero() {
+		t.Errorf("StockReleasedAt is zero after the re-driven release")
+	}
+	// A second reconcile must not release again.
+	env.service.ReconcileRefund(context.Background(), env.mustGetOrder(t, order.ID))
+	env.assertStock(t, 5, 4)
+	if flaky.calls != 2 {
+		t.Errorf("AdjustStock calls = %d, want exactly 2 (one failure, one success)", flaky.calls)
+	}
+}
+
+func TestFinalizePaymentReplayOnRefundFamilyIsNoOp(t *testing.T) {
+	env := newTestEnv(t)
+	order := env.mustPaidOrder(t)
+	session, err := env.provider.GetSession(context.Background(), order.StripeCheckoutSessionID)
+	if err != nil {
+		t.Fatalf("GetSession returned error: %v", err)
+	}
+	if _, err := env.service.RefundOrderAs(context.Background(), order, commerce.OrderActorAdmin); err != nil {
+		t.Fatalf("RefundOrderAs returned error: %v", err)
+	}
+
+	// A late checkout.session.completed replay must be a no-op success, never
+	// ErrOrderNotFinalizable (which would fire a second auto-refund).
+	replayed, err := env.service.FinalizePayment(context.Background(), order.ID, session)
+	if err != nil {
+		t.Fatalf("FinalizePayment replay error = %v, want nil", err)
+	}
+	if replayed.Status != commerce.OrderStatusRefunded {
+		t.Fatalf("replayed order status = %q, want refunded", replayed.Status)
+	}
+	event := payments.Event{ID: "evt_late_completed", Type: "checkout.session.completed", SessionID: session.ID, OrderID: order.ID, Session: session}
+	if err := env.service.ApplyWebhookEvent(context.Background(), event); err != nil {
+		t.Fatalf("ApplyWebhookEvent returned error: %v", err)
+	}
+	if got := env.metrics.count(observability.MetricStripeWebhook, "paid_after_terminal"); got != 0 {
+		t.Errorf("paid_after_terminal metric count = %d, want 0 for refund-family replays", got)
+	}
+	if got := env.metrics.count(observability.MetricCheckoutRefund, "issued_auto"); got != 0 {
+		t.Errorf("issued_auto metric count = %d, want 0", got)
+	}
+}
+
+func TestReconcileRefundSettlesPendingRefund(t *testing.T) {
+	env := newTestEnv(t)
+	order := env.mustPaidOrder(t)
+	env.provider.SetNextRefundOutcome(payments.RefundStatusPending, "")
+	pending, err := env.service.RefundOrderAs(context.Background(), order, commerce.OrderActorAdmin)
+	if err != nil || pending.Status != commerce.OrderStatusRefundPending {
+		t.Fatalf("RefundOrderAs = %s %v, want refund_pending", pending.Status, err)
+	}
+
+	// Provider error: degraded to unchanged.
+	env.provider.getRefundErr = errors.New("stripe api down")
+	unchanged := env.service.ReconcileRefund(context.Background(), env.mustGetOrder(t, order.ID))
+	if unchanged.Status != commerce.OrderStatusRefundPending {
+		t.Fatalf("reconciled status = %q, want refund_pending on provider error", unchanged.Status)
+	}
+	env.provider.getRefundErr = nil
+
+	// The refund settles at the provider; reconcile-on-render picks it up.
+	if err := env.provider.SettleRefund("re_fake_"+order.ID+"_1", payments.RefundStatusSucceeded, ""); err != nil {
+		t.Fatalf("SettleRefund returned error: %v", err)
+	}
+	settled := env.service.ReconcileRefund(context.Background(), env.mustGetOrder(t, order.ID))
+	if settled.Status != commerce.OrderStatusRefunded || settled.RefundedAt.IsZero() {
+		t.Fatalf("reconciled order = %s refundedAt %v, want refunded", settled.Status, settled.RefundedAt)
+	}
+	if got := env.metrics.count(observability.MetricCheckoutRefund, "settled"); got != 1 {
+		t.Errorf("settled metric count = %d, want 1", got)
+	}
+}
+
+func TestReconcileRefundIgnoresNonRefundFamilyOrders(t *testing.T) {
+	env := newTestEnv(t)
+	order := env.mustPaidOrder(t)
+	callsBefore := env.provider.getRefundCalls
+
+	reconciled := env.service.ReconcileRefund(context.Background(), order)
+	if reconciled.Status != commerce.OrderStatusPaid {
+		t.Fatalf("reconciled status = %q, want paid untouched", reconciled.Status)
+	}
+	if env.provider.getRefundCalls != callsBefore {
+		t.Errorf("GetRefund calls = %d, want %d (no provider lookups)", env.provider.getRefundCalls, callsBefore)
+	}
+	env.assertStock(t, 3, 3)
+}
+
+// --- Guest checkout (CustomerID == "" marker) service tests ---
+
+const guestTestEmail = "guest@example.test"
+
+// guestPlaceOrderInput builds the guest-flow input: zero Customer, contact
+// email, GuestAddressID fingerprint surrogate, and a Cart record carrying only
+// the cookie-pointer fields (guests have no server CART row).
+func (env *testEnv) guestPlaceOrderInput(lines []commerce.OrderLine, email string) PlaceOrderInput {
+	return PlaceOrderInput{
+		Guest:     true,
+		Email:     email,
+		AddressID: GuestAddressID(checkoutTestAddress(), email),
+		Address:   checkoutTestAddress(),
+		Lines:     lines,
+	}
+}
+
+func (env *testEnv) mustGuestPlaceOrder(t *testing.T, lines []commerce.OrderLine, email string) (string, commerce.Order) {
+	t.Helper()
+	redirectURL, order, err := env.service.PlaceOrder(context.Background(), env.guestPlaceOrderInput(lines, email))
+	if err != nil {
+		t.Fatalf("guest PlaceOrder returned error: %v", err)
+	}
+	return redirectURL, order
+}
+
+func TestGuestPlaceOrderHappyPath(t *testing.T) {
+	env := newTestEnv(t)
+	redirectURL, order := env.mustGuestPlaceOrder(t, checkoutTestLines(), guestTestEmail)
+
+	if order.CustomerID != "" {
+		t.Errorf("order customer id = %q, want empty (guest marker)", order.CustomerID)
+	}
+	if order.Email != guestTestEmail {
+		t.Errorf("order email = %q, want %q", order.Email, guestTestEmail)
+	}
+	if order.CheckoutAttempt != 1 {
+		t.Errorf("order checkout attempt = %d, want 1", order.CheckoutAttempt)
+	}
+	if wantURL := "/checkout/fake-pay?session_id=cs_fake_" + order.ID; redirectURL != wantURL {
+		t.Errorf("redirect URL = %q, want %q", redirectURL, wantURL)
+	}
+	wantFingerprint := env.service.Fingerprint(checkoutTestLines(), GuestAddressID(checkoutTestAddress(), guestTestEmail))
+	if order.CartFingerprint != wantFingerprint {
+		t.Errorf("order fingerprint = %q, want %q", order.CartFingerprint, wantFingerprint)
+	}
+	env.assertStock(t, 3, 3)
+	if env.provider.ensureCustomerCalls != 0 {
+		t.Errorf("EnsureCustomer calls = %d, want 0 (guests get no provider customer)", env.provider.ensureCustomerCalls)
+	}
+	if env.hooks.getCartCalls != 0 || env.hooks.putCartCalls != 0 {
+		t.Errorf("cart store ops = %d gets / %d puts, want 0/0 (guests have no server cart)", env.hooks.getCartCalls, env.hooks.putCartCalls)
+	}
+}
+
+func TestGuestPlaceOrderValidation(t *testing.T) {
+	env := newTestEnv(t)
+	withCustomer := env.guestPlaceOrderInput(checkoutTestLines(), guestTestEmail)
+	withCustomer.Customer = env.customer
+	noEmail := env.guestPlaceOrderInput(checkoutTestLines(), "   ")
+
+	tests := []struct {
+		name  string
+		input PlaceOrderInput
+	}{
+		{name: "guest with customer", input: withCustomer},
+		{name: "guest without email", input: noEmail},
+		{name: "non-guest without customer", input: PlaceOrderInput{Lines: checkoutTestLines()}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if _, _, err := env.service.PlaceOrder(context.Background(), test.input); err == nil {
+				t.Fatalf("PlaceOrder accepted invalid input")
+			}
+			if count := env.orderCount(t); count != 0 {
+				t.Errorf("order count = %d, want 0", count)
+			}
+		})
+	}
+}
+
+func TestGuestPlaceOrderResumesPendingPointer(t *testing.T) {
+	env := newTestEnv(t)
+	firstURL, first := env.mustGuestPlaceOrder(t, checkoutTestLines(), guestTestEmail)
+
+	resumed := env.guestPlaceOrderInput(checkoutTestLines(), guestTestEmail)
+	resumed.Cart = commerce.CartRecord{PendingOrderID: first.ID, PendingFingerprint: first.CartFingerprint}
+	secondURL, second, err := env.service.PlaceOrder(context.Background(), resumed)
+	if err != nil {
+		t.Fatalf("guest re-entry PlaceOrder returned error: %v", err)
+	}
+
+	if secondURL != firstURL {
+		t.Errorf("re-entry URL = %q, want the original %q", secondURL, firstURL)
+	}
+	if second.ID != first.ID {
+		t.Errorf("re-entry order id = %q, want the original %q", second.ID, first.ID)
+	}
+	if count := env.orderCount(t); count != 1 {
+		t.Errorf("order count = %d, want 1 (no duplicate order)", count)
+	}
+	env.assertStock(t, 3, 3)
+}
+
+func TestGuestPlaceOrderFingerprintMismatchCancelsStale(t *testing.T) {
+	changedLines := checkoutTestLines()
+	changedLines[0].Quantity = 1
+	changedLines[0].LineTotalCents = 1899
+	changedAddress := checkoutTestAddress()
+	changedAddress.Line1 = "2 Different Street"
+
+	tests := []struct {
+		name      string
+		lines     []commerce.OrderLine
+		address   commerce.OrderAddress
+		email     string
+		wantStock int
+	}{
+		{name: "changed lines", lines: changedLines, address: checkoutTestAddress(), email: guestTestEmail, wantStock: 4},
+		{name: "changed address", lines: checkoutTestLines(), address: changedAddress, email: guestTestEmail, wantStock: 3},
+		{name: "email-only change", lines: checkoutTestLines(), address: checkoutTestAddress(), email: "corrected@example.test", wantStock: 3},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			env := newTestEnv(t)
+			_, first := env.mustGuestPlaceOrder(t, checkoutTestLines(), guestTestEmail)
+
+			input := PlaceOrderInput{
+				Guest:     true,
+				Email:     test.email,
+				AddressID: GuestAddressID(test.address, test.email),
+				Address:   test.address,
+				Lines:     test.lines,
+				Cart:      commerce.CartRecord{PendingOrderID: first.ID, PendingFingerprint: first.CartFingerprint},
+			}
+			_, second, err := env.service.PlaceOrder(context.Background(), input)
+			if err != nil {
+				t.Fatalf("guest PlaceOrder returned error: %v", err)
+			}
+			if second.ID == first.ID {
+				t.Fatalf("expected a fresh order, got the stale one %q", first.ID)
+			}
+			if second.Email != test.email {
+				t.Errorf("fresh order email = %q, want %q stamped", second.Email, test.email)
+			}
+			stale := env.mustGetOrder(t, first.ID)
+			if stale.Status != commerce.OrderStatusCanceled {
+				t.Errorf("stale order status = %q, want %q", stale.Status, commerce.OrderStatusCanceled)
+			}
+			if _, err := env.provider.MarkSessionPaid(first.StripeCheckoutSessionID, false); !errors.Is(err, payments.ErrSessionExpired) {
+				t.Errorf("MarkSessionPaid on the stale session error = %v, want %v", err, payments.ErrSessionExpired)
+			}
+			// Old reservation released, new one held.
+			env.assertStock(t, test.wantStock, 3)
+		})
+	}
+}
+
+func TestGuestPointerCannotTouchForeignOrder(t *testing.T) {
+	t.Run("guest pointer naming a customer order", func(t *testing.T) {
+		env := newTestEnv(t)
+		_, foreign := env.mustPlaceOrder(t, checkoutTestLines())
+
+		input := env.guestPlaceOrderInput(checkoutTestLines(), guestTestEmail)
+		// Match the foreign order's fingerprint exactly: only the owner check
+		// may reject the pointer.
+		input.AddressID = "addr00000000000000000000ab"
+		input.Cart = commerce.CartRecord{PendingOrderID: foreign.ID, PendingFingerprint: foreign.CartFingerprint}
+		_, fresh, err := env.service.PlaceOrder(context.Background(), input)
+		if err != nil {
+			t.Fatalf("guest PlaceOrder returned error: %v", err)
+		}
+		if fresh.ID == foreign.ID {
+			t.Fatalf("guest pointer resumed a customer order")
+		}
+		after := env.mustGetOrder(t, foreign.ID)
+		if after.Status != foreign.Status || after.Version != foreign.Version || after.StripeCheckoutSessionID != foreign.StripeCheckoutSessionID {
+			t.Errorf("foreign order changed: %+v, want untouched %+v", after, foreign)
+		}
+		if count := env.orderCount(t); count != 2 {
+			t.Errorf("order count = %d, want 2", count)
+		}
+	})
+
+	t.Run("customer pointer naming a guest order", func(t *testing.T) {
+		env := newTestEnv(t)
+		_, foreign := env.mustGuestPlaceOrder(t, checkoutTestLines(), guestTestEmail)
+
+		input := env.placeOrderInput(t, checkoutTestLines())
+		input.AddressID = "addr00000000000000000000ab"
+		input.Cart.PendingOrderID = foreign.ID
+		input.Cart.PendingFingerprint = foreign.CartFingerprint
+		_, fresh, err := env.service.PlaceOrder(context.Background(), input)
+		if err != nil {
+			t.Fatalf("PlaceOrder returned error: %v", err)
+		}
+		if fresh.ID == foreign.ID {
+			t.Fatalf("customer pointer resumed a guest order")
+		}
+		after := env.mustGetOrder(t, foreign.ID)
+		if after.Status != foreign.Status || after.Version != foreign.Version || after.StripeCheckoutSessionID != foreign.StripeCheckoutSessionID {
+			t.Errorf("guest order changed: %+v, want untouched %+v", after, foreign)
+		}
+	})
+}
+
+func TestGuestFinalizePaymentSkipsCartClear(t *testing.T) {
+	env := newTestEnv(t)
+	_, order := env.mustGuestPlaceOrder(t, checkoutTestLines(), guestTestEmail)
+	session := env.paidSession(t, order.StripeCheckoutSessionID)
+
+	finalized, err := env.service.FinalizePayment(context.Background(), order.ID, session)
+	if err != nil {
+		t.Fatalf("FinalizePayment returned error: %v", err)
+	}
+	if finalized.Status != commerce.OrderStatusPaid {
+		t.Errorf("order status = %q, want %q", finalized.Status, commerce.OrderStatusPaid)
+	}
+	if got := env.metrics.count(observability.MetricCheckoutPayment, "success"); got != 1 {
+		t.Errorf("success metric count = %d, want 1", got)
+	}
+	if env.hooks.getCartCalls != 0 || env.hooks.putCartCalls != 0 {
+		t.Errorf("cart store ops after finalize = %d gets / %d puts, want 0/0", env.hooks.getCartCalls, env.hooks.putCartCalls)
+	}
+
+	replayed, err := env.service.FinalizePayment(context.Background(), order.ID, session)
+	if err != nil {
+		t.Fatalf("replayed FinalizePayment returned error: %v", err)
+	}
+	if replayed.Version != finalized.Version {
+		t.Errorf("replay bumped version %d -> %d, want a no-op", finalized.Version, replayed.Version)
+	}
+	if env.hooks.getCartCalls != 0 || env.hooks.putCartCalls != 0 {
+		t.Errorf("cart store ops after replay = %d gets / %d puts, want 0/0", env.hooks.getCartCalls, env.hooks.putCartCalls)
+	}
+}
+
+func TestGuestWebhookExpiredReleasesStock(t *testing.T) {
+	env := newTestEnv(t)
+	_, order := env.mustGuestPlaceOrder(t, checkoutTestLines(), guestTestEmail)
+	session, err := env.provider.GetSession(context.Background(), order.StripeCheckoutSessionID)
+	if err != nil {
+		t.Fatalf("GetSession returned error: %v", err)
+	}
+	event := payments.Event{ID: "evt_guest_expired_1", Type: "checkout.session.expired", SessionID: session.ID, OrderID: order.ID, Session: session}
+
+	if err := env.service.ApplyWebhookEvent(context.Background(), event); err != nil {
+		t.Fatalf("ApplyWebhookEvent returned error: %v", err)
+	}
+	if got := env.mustGetOrder(t, order.ID).Status; got != commerce.OrderStatusExpired {
+		t.Errorf("order status = %q, want %q", got, commerce.OrderStatusExpired)
+	}
+	env.assertStock(t, 5, 4)
+}
+
+func TestGuestAddressID(t *testing.T) {
+	address := checkoutTestAddress()
+	base := GuestAddressID(address, guestTestEmail)
+
+	if !strings.HasPrefix(base, "guest-") {
+		t.Errorf("GuestAddressID = %q, want the guest- prefix", base)
+	}
+	if again := GuestAddressID(checkoutTestAddress(), guestTestEmail); again != base {
+		t.Errorf("GuestAddressID is not deterministic: %q != %q", again, base)
+	}
+	if normalized := GuestAddressID(address, "  Guest@Example.TEST "); normalized != base {
+		t.Errorf("GuestAddressID is email case/whitespace sensitive: %q != %q", normalized, base)
+	}
+	if changedEmail := GuestAddressID(address, "other@example.test"); changedEmail == base {
+		t.Errorf("GuestAddressID ignored an email change")
+	}
+
+	variants := []func(a *commerce.OrderAddress){
+		func(a *commerce.OrderAddress) { a.FullName = "Different Name" },
+		func(a *commerce.OrderAddress) { a.Line1 = "9 Other Road" },
+		func(a *commerce.OrderAddress) { a.Line2 = "Unit 5" },
+		func(a *commerce.OrderAddress) { a.City = "Elsewhere" },
+		func(a *commerce.OrderAddress) { a.Region = "CA" },
+		func(a *commerce.OrderAddress) { a.PostalCode = "90001" },
+		func(a *commerce.OrderAddress) { a.Country = "CA" },
+		func(a *commerce.OrderAddress) { a.Phone = "+1-555-000-1111" },
+	}
+	for i, mutate := range variants {
+		changed := checkoutTestAddress()
+		mutate(&changed)
+		if GuestAddressID(changed, guestTestEmail) == base {
+			t.Errorf("variant %d: GuestAddressID ignored an address field change", i)
+		}
+	}
 }

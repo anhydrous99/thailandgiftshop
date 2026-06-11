@@ -122,7 +122,7 @@ test.describe('without JavaScript', () => {
     await expect(page.getByText('slug-based links that work without JavaScript')).toBeVisible();
   });
 
-  test('no-js cart flow adds updates persists removes and hands off to sign-in gated checkout', async ({ page }) => {
+  test('no-js cart flow adds updates persists removes and hands off to guest checkout', async ({ page }) => {
     await page.goto('/checkout');
     await expect(page).toHaveURL(/\/cart$/);
     await expect(page.getByRole('heading', { name: 'Cart', level: 1 })).toBeVisible();
@@ -159,9 +159,13 @@ test.describe('without JavaScript', () => {
     await expectExcludedControlsAbsent(page);
     await expectCheckoutEntryPoint(page);
 
-    // Checkout is a real, sign-in gated flow now: anonymous shoppers are sent
-    // to sign-in with a return_to back to checkout.
+    // Checkout renders the guest layout for anonymous shoppers; the sign-in
+    // link still reaches the account flow with a return_to back to checkout.
     await page.getByRole('link', { name: 'Check out', exact: true }).click();
+    await expect(page).toHaveURL(/\/checkout$/);
+    await expect(page.getByTestId('guest-checkout-form')).toBeVisible();
+    await expect(page.getByTestId('guest-email-input')).toBeVisible();
+    await page.getByTestId('checkout-sign-in-link').click();
     await expect(page).toHaveURL(/\/account\/sign-in\?return_to=%2Fcheckout$/);
     await expect(page.getByRole('heading', { name: 'Sign in', level: 1 })).toBeVisible();
     await expect(page.getByTestId('signin-form')).toBeVisible();
