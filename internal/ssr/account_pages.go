@@ -35,6 +35,11 @@ var orderStatusLabels = map[commerce.OrderStatus]string{
 	commerce.OrderStatusPaymentFailed:  "Payment failed",
 	commerce.OrderStatusExpired:        "Expired",
 	commerce.OrderStatusCanceled:       "Canceled",
+	commerce.OrderStatusRefundPending:  "Refund pending",
+	commerce.OrderStatusRefunded:       "Refunded",
+	// Customer-honest label while the admin retries; the admin desk shows
+	// "Refund failed".
+	commerce.OrderStatusRefundFailed: "Refund delayed",
 }
 
 func orderStatusLabel(status commerce.OrderStatus) string {

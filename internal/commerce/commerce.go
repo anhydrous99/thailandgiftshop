@@ -109,19 +109,28 @@ const (
 	OrderStatusPaymentFailed  OrderStatus = "payment_failed"
 	OrderStatusExpired        OrderStatus = "expired"
 	OrderStatusCanceled       OrderStatus = "canceled"
+	OrderStatusRefundPending  OrderStatus = "refund_pending"
+	OrderStatusRefunded       OrderStatus = "refunded"
+	OrderStatusRefundFailed   OrderStatus = "refund_failed"
 )
 
 // OrderTransitions is the single source of truth for the order state machine:
 //
 //	pending_payment -> paid | payment_failed | expired | canceled
-//	paid            -> shipped | canceled
-//	shipped         -> delivered
-//	delivered, payment_failed, expired, canceled are terminal.
+//	paid            -> shipped | refund_pending
+//	shipped         -> delivered | refund_pending
+//	delivered       -> refund_pending
+//	refund_pending  -> refunded | refund_failed
+//	refund_failed   -> refund_pending            (admin retry)
+//	refunded, payment_failed, expired, canceled are terminal.
 var OrderTransitions = map[OrderStatus][]OrderStatus{
 	OrderStatusPendingPayment: {OrderStatusPaid, OrderStatusPaymentFailed, OrderStatusExpired, OrderStatusCanceled},
-	OrderStatusPaid:           {OrderStatusShipped, OrderStatusCanceled},
-	OrderStatusShipped:        {OrderStatusDelivered},
-	OrderStatusDelivered:      {},
+	OrderStatusPaid:           {OrderStatusShipped, OrderStatusRefundPending},
+	OrderStatusShipped:        {OrderStatusDelivered, OrderStatusRefundPending},
+	OrderStatusDelivered:      {OrderStatusRefundPending},
+	OrderStatusRefundPending:  {OrderStatusRefunded, OrderStatusRefundFailed},
+	OrderStatusRefundFailed:   {OrderStatusRefundPending},
+	OrderStatusRefunded:       {},
 	OrderStatusPaymentFailed:  {},
 	OrderStatusExpired:        {},
 	OrderStatusCanceled:       {},
@@ -201,13 +210,24 @@ type Order struct {
 	PaymentCardLast4        string
 	TrackingCarrier         string
 	TrackingNumber          string
-	CheckoutAttempt         int
-	StatusHistory           []StatusEvent
-	CreatedAt               time.Time
-	UpdatedAt               time.Time
-	PaidAt                  time.Time
-	ShippedAt               time.Time
-	DeliveredAt             time.Time
+	// StripeRefundID is the latest provider refund issued for this order.
+	StripeRefundID string
+	// RefundAttempt scopes the provider refund idempotency key (the
+	// CheckoutAttempt precedent): a retry after a failed refund mints a fresh
+	// key by incrementing it.
+	RefundAttempt int
+	// RefundFailureReason carries the provider failure_reason of the latest
+	// failed refund; cleared on every transition back to refund_pending.
+	RefundFailureReason string
+	CheckoutAttempt     int
+	StatusHistory       []StatusEvent
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	PaidAt              time.Time
+	ShippedAt           time.Time
+	DeliveredAt         time.Time
+	// RefundedAt is zero until the refund settles at the provider.
+	RefundedAt time.Time
 	// StockReleasedAt marks that the reserved stock for this order has been
 	// (or is being) released back to the catalog; the zero value means no
 	// release has been confirmed. The checkout release-claim protocol SETs it
@@ -227,10 +247,14 @@ type OrderPatch struct {
 	PaymentCardLast4        *string
 	TrackingCarrier         *string
 	TrackingNumber          *string
+	StripeRefundID          *string
+	RefundAttempt           *int
+	RefundFailureReason     *string
 	CheckoutAttempt         *int
 	PaidAt                  *time.Time
 	ShippedAt               *time.Time
 	DeliveredAt             *time.Time
+	RefundedAt              *time.Time
 	// StockReleasedAt follows the shared pointer convention: nil leaves the
 	// stored marker untouched, a pointer to the zero time clears (REMOVEs) it,
 	// and a pointer to any other time sets it.
@@ -312,6 +336,15 @@ func applyOrderPatchFields(order *Order, patch OrderPatch) {
 	if patch.TrackingNumber != nil {
 		order.TrackingNumber = *patch.TrackingNumber
 	}
+	if patch.StripeRefundID != nil {
+		order.StripeRefundID = *patch.StripeRefundID
+	}
+	if patch.RefundAttempt != nil {
+		order.RefundAttempt = *patch.RefundAttempt
+	}
+	if patch.RefundFailureReason != nil {
+		order.RefundFailureReason = *patch.RefundFailureReason
+	}
 	if patch.CheckoutAttempt != nil {
 		order.CheckoutAttempt = *patch.CheckoutAttempt
 	}
@@ -323,6 +356,9 @@ func applyOrderPatchFields(order *Order, patch OrderPatch) {
 	}
 	if patch.DeliveredAt != nil {
 		order.DeliveredAt = *patch.DeliveredAt
+	}
+	if patch.RefundedAt != nil {
+		order.RefundedAt = *patch.RefundedAt
 	}
 	if patch.StockReleasedAt != nil {
 		order.StockReleasedAt = *patch.StockReleasedAt

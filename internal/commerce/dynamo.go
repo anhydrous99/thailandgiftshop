@@ -1110,12 +1110,18 @@ func applyOrderPatchToBuilder(builder *updateExpressionBuilder, patch OrderPatch
 	setOrRemove("payment_card_last4", ":payment_card_last4", patch.PaymentCardLast4)
 	setOrRemove("tracking_carrier", ":tracking_carrier", patch.TrackingCarrier)
 	setOrRemove("tracking_number", ":tracking_number", patch.TrackingNumber)
+	setOrRemove("stripe_refund_id", ":stripe_refund_id", patch.StripeRefundID)
+	setOrRemove("refund_failure_reason", ":refund_failure_reason", patch.RefundFailureReason)
+	if patch.RefundAttempt != nil {
+		builder.set("refund_attempt", ":refund_attempt", numberValue(int64(*patch.RefundAttempt)))
+	}
 	if patch.CheckoutAttempt != nil {
 		builder.set("checkout_attempt", ":checkout_attempt", numberValue(int64(*patch.CheckoutAttempt)))
 	}
 	setOrRemoveTime("paid_at", ":paid_at", patch.PaidAt)
 	setOrRemoveTime("shipped_at", ":shipped_at", patch.ShippedAt)
 	setOrRemoveTime("delivered_at", ":delivered_at", patch.DeliveredAt)
+	setOrRemoveTime("refunded_at", ":refunded_at", patch.RefundedAt)
 	setOrRemoveTime("stock_released_at", ":stock_released_at", patch.StockReleasedAt)
 }
 
@@ -1247,6 +1253,9 @@ type orderDynamoItem struct {
 	PaymentCardLast4        string                 `dynamodbav:"payment_card_last4,omitempty"`
 	TrackingCarrier         string                 `dynamodbav:"tracking_carrier,omitempty"`
 	TrackingNumber          string                 `dynamodbav:"tracking_number,omitempty"`
+	StripeRefundID          string                 `dynamodbav:"stripe_refund_id,omitempty"`
+	RefundAttempt           *int                   `dynamodbav:"refund_attempt,omitempty"`
+	RefundFailureReason     string                 `dynamodbav:"refund_failure_reason,omitempty"`
 	CheckoutAttempt         *int                   `dynamodbav:"checkout_attempt,omitempty"`
 	StatusHistory           []statusEventItem      `dynamodbav:"status_history"`
 	CreatedAt               string                 `dynamodbav:"created_at,omitempty"`
@@ -1254,6 +1263,7 @@ type orderDynamoItem struct {
 	PaidAt                  string                 `dynamodbav:"paid_at,omitempty"`
 	ShippedAt               string                 `dynamodbav:"shipped_at,omitempty"`
 	DeliveredAt             string                 `dynamodbav:"delivered_at,omitempty"`
+	RefundedAt              string                 `dynamodbav:"refunded_at,omitempty"`
 	StockReleasedAt         string                 `dynamodbav:"stock_released_at,omitempty"`
 	GSI1PK                  string                 `dynamodbav:"gsi1pk"`
 	GSI1SK                  string                 `dynamodbav:"gsi1sk"`
@@ -1546,12 +1556,15 @@ func orderItem(order Order) (map[string]types.AttributeValue, error) {
 		PaymentCardLast4:        order.PaymentCardLast4,
 		TrackingCarrier:         order.TrackingCarrier,
 		TrackingNumber:          order.TrackingNumber,
+		StripeRefundID:          order.StripeRefundID,
+		RefundFailureReason:     order.RefundFailureReason,
 		StatusHistory:           history,
 		CreatedAt:               formatCommerceTime(order.CreatedAt),
 		UpdatedAt:               formatCommerceTime(order.UpdatedAt),
 		PaidAt:                  formatCommerceTime(order.PaidAt),
 		ShippedAt:               formatCommerceTime(order.ShippedAt),
 		DeliveredAt:             formatCommerceTime(order.DeliveredAt),
+		RefundedAt:              formatCommerceTime(order.RefundedAt),
 		StockReleasedAt:         formatCommerceTime(order.StockReleasedAt),
 		GSI1PK:                  customerOrdersIndexPK(order.CustomerID),
 		GSI1SK:                  customerOrdersIndexSK(order),
@@ -1560,6 +1573,9 @@ func orderItem(order Order) (map[string]types.AttributeValue, error) {
 	}
 	if order.CheckoutAttempt != 0 {
 		item.CheckoutAttempt = intPtr(order.CheckoutAttempt)
+	}
+	if order.RefundAttempt != 0 {
+		item.RefundAttempt = intPtr(order.RefundAttempt)
 	}
 
 	return attributevalue.MarshalMap(item)
@@ -1603,6 +1619,10 @@ func orderFromItem(item map[string]types.AttributeValue) (Order, error) {
 		return Order{}, err
 	}
 	deliveredAt, err := parseCommerceTime("delivered_at", record.DeliveredAt)
+	if err != nil {
+		return Order{}, err
+	}
+	refundedAt, err := parseCommerceTime("refunded_at", record.RefundedAt)
 	if err != nil {
 		return Order{}, err
 	}
@@ -1663,6 +1683,9 @@ func orderFromItem(item map[string]types.AttributeValue) (Order, error) {
 		PaymentCardLast4:        record.PaymentCardLast4,
 		TrackingCarrier:         record.TrackingCarrier,
 		TrackingNumber:          record.TrackingNumber,
+		StripeRefundID:          record.StripeRefundID,
+		RefundAttempt:           intValue(record.RefundAttempt),
+		RefundFailureReason:     record.RefundFailureReason,
 		CheckoutAttempt:         intValue(record.CheckoutAttempt),
 		StatusHistory:           history,
 		CreatedAt:               createdAt,
@@ -1670,6 +1693,7 @@ func orderFromItem(item map[string]types.AttributeValue) (Order, error) {
 		PaidAt:                  paidAt,
 		ShippedAt:               shippedAt,
 		DeliveredAt:             deliveredAt,
+		RefundedAt:              refundedAt,
 		StockReleasedAt:         stockReleasedAt,
 	}, nil
 }

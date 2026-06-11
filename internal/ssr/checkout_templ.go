@@ -585,8 +585,8 @@ func checkoutSummaryAside(vm checkoutPageViewModel, showPlaceOrder bool) templ.C
 
 // checkoutPaymentReceivedPage is shown when a payment landed for an order
 // already in a terminal status (canceled/expired before the payment settled):
-// the customer was charged, so the page acknowledges the payment and points
-// at support for the refund instead of erroring.
+// the customer was charged, so the page acknowledges the payment and explains
+// that a refund is being issued automatically instead of erroring.
 func checkoutPaymentReceivedPage(vm checkoutProcessingPageData) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -632,20 +632,20 @@ func checkoutPaymentReceivedPage(vm checkoutProcessingPageData) templ.Component 
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "<div class=\"p-8 text-center\"><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Checkout</p><h1 class=\"mt-3 font-display text-3xl font-bold tracking-tight text-flag-blue\">Payment received</h1><p class=\"mt-4 text-sm leading-6 text-muted\">Your payment went through, but this order had already been canceled before the payment settled, so it will not ship. A refund is pending — contact us at <a href=\"mailto:support@thailandgiftshop.com\" class=\"font-bold text-flag-red transition hover:text-flag-red-deep hover:underline hover:underline-offset-4\">support@thailandgiftshop.com</a> with order ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "<div class=\"p-8 text-center\"><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Checkout</p><h1 class=\"mt-3 font-display text-3xl font-bold tracking-tight text-flag-blue\">Payment received</h1><p class=\"mt-4 text-sm leading-6 text-muted\">Your payment went through, but this order had already been canceled before the payment settled, so it will not ship. A refund is being issued automatically to your original payment method. If it has not arrived within a few days, contact us at <a href=\"mailto:support@thailandgiftshop.com\" class=\"font-bold text-flag-red transition hover:text-flag-red-deep hover:underline hover:underline-offset-4\">support@thailandgiftshop.com</a> with order ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var26 string
 		templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(vm.OrderID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 179, Col: 418}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 179, Col: 507}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, " and we will sort it out right away.</p><p class=\"mt-4 text-sm leading-6 text-muted\">Your cart is unchanged, so you can <a href=\"/checkout\" class=\"font-bold text-flag-red transition hover:text-flag-red-deep hover:underline hover:underline-offset-4\">place the order again</a> whenever you are ready.</p></div></div></section></main>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, ".</p><p class=\"mt-4 text-sm leading-6 text-muted\">Your cart is unchanged, so you can <a href=\"/checkout\" class=\"font-bold text-flag-red transition hover:text-flag-red-deep hover:underline hover:underline-offset-4\">place the order again</a> whenever you are ready.</p></div></div></section></main>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

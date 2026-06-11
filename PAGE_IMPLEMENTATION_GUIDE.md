@@ -7,7 +7,7 @@ This guide is for AI agents implementing the pages implied by the home page. Kee
 - The SSR app routes the catalog pages plus customer accounts, server-backed carts, a real Stripe-hosted checkout, order history with tracking, and the Stripe webhook endpoint.
 - Customers sign up and sign in under `/account`; sessions are server-side rows in the commerce table with HMAC-signed cookies. Signed-in carts are stored server-side, and the `tgs_cart` cookie becomes a write-through mirror so the header cart label stays cookie-only and catalog pages stay edge-cacheable.
 - Checkout requires sign-in. Card entry happens exclusively on Stripe's hosted checkout page (SAQ-A); the site never sees or stores card numbers and persists only Stripe opaque IDs plus brand/last4 for display. Local demo runs without Stripe credentials use the in-memory fake provider, which keeps the payment step on-site at `/checkout/fake-pay`.
-- The admin Lambda adds an order desk under `/admin/orders` for adding tracking, advancing paid orders through shipped/delivered, and canceling with automatic stock release.
+- The admin Lambda adds an order desk under `/admin/orders` for adding tracking, advancing paid orders through shipped/delivered, canceling pending orders with automatic stock release, and issuing automatic Stripe refunds for paid/shipped/delivered orders (full amount; unshipped refunds also return their reserved stock).
 - `internal/ssr/home.templ` renders the full home page.
 - `internal/ssr/handler.go` owns page routing and should keep unknown paths returning `404`.
 - Catalog data already exposes the required page data through `catalog.Store`:
@@ -48,7 +48,7 @@ Implement these routes as server-rendered pages using templ. Preserve existing a
 
 All account, checkout, and order pages send `Cache-Control: private, no-store` plus `X-Robots-Tag: noindex, follow`, stay out of the sitemap, and get trailing-slash `308` redirects. Form POSTs follow POST-redirect-GET.
 
-Admin order desk routes (admin Lambda): `/admin/orders`, `/admin/orders/{id}`, `POST /admin/orders/{id}/advance`, `POST /admin/orders/{id}/tracking`, `POST /admin/orders/{id}/cancel`.
+Admin order desk routes (admin Lambda): `/admin/orders`, `/admin/orders/{id}`, `POST /admin/orders/{id}/advance`, `POST /admin/orders/{id}/tracking`, `POST /admin/orders/{id}/cancel`, `POST /admin/orders/{id}/refund`.
 
 Optional aliases may redirect, not duplicate:
 
@@ -81,7 +81,8 @@ Keep these features out of the current release unless a later guide explicitly a
 - Search, filter, and sort controls for catalog browsing.
 - Guest checkout (sign-in is required to place an order).
 - Email verification and self-service password reset (both need SES or equivalent email infrastructure).
-- Refunds and a `refunded` order status (refunds for canceled paid orders are manual in the Stripe dashboard).
+- Partial refunds (the admin Refund action always refunds the full amount).
+- Syncing dashboard-issued refunds (refunds created directly in the Stripe dashboard carry no order metadata and never update order status).
 - Asynchronous payment methods beyond cards.
 
 ## Implementation Notes

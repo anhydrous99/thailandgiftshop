@@ -60,7 +60,24 @@ var (
 	// claim was returned best-effort, so a retry (Stripe redelivery, another
 	// admin cancel) re-attempts the release.
 	ErrStockReleaseFailed = errors.New("checkout: stock release failed")
+	// ErrOrderNotRefundable reports a refund request for an order whose
+	// status is not paid, shipped, delivered, or refund_failed.
+	ErrOrderNotRefundable = errors.New("checkout: order status cannot be refunded")
+	// ErrRefundNotIssuable reports a refundable order with no payment intent
+	// on file; the Stripe dashboard is the only path for it.
+	ErrRefundNotIssuable = errors.New("checkout: order has no payment intent to refund")
+	// ErrRefundProviderUnavailable reports a nil payments provider; unlike
+	// cancel's degraded session-expiry skip, refunds move money and must
+	// refuse to proceed without one.
+	ErrRefundProviderUnavailable = errors.New("checkout: payments provider unavailable for refund")
 )
+
+// errRefundMismatch is the unexported control-flow sentinel applyRefundEvent
+// returns when a refund event's payment intent does not match the order; the
+// ApplyWebhookEvent caller ACKs it without marking the event processed (the
+// amount_mismatch precedent — the event can never reconcile, so do not let
+// Stripe retry it).
+var errRefundMismatch = errors.New("checkout: refund event payment intent does not match the order")
 
 const (
 	successURLTemplate = "/checkout/confirm?session_id={CHECKOUT_SESSION_ID}"
@@ -82,6 +99,9 @@ const (
 	eventCheckoutSessionAsyncPaymentSucceeded = "checkout.session.async_payment_succeeded"
 	eventCheckoutSessionAsyncPaymentFailed    = "checkout.session.async_payment_failed"
 	eventCheckoutSessionExpired               = "checkout.session.expired"
+	eventRefundCreated                        = "refund.created"
+	eventRefundUpdated                        = "refund.updated"
+	eventRefundFailed                         = "refund.failed"
 )
 
 // CheckoutPayment metric outcomes.
@@ -92,12 +112,23 @@ const (
 	outcomePaymentError      = "error"
 )
 
+// CheckoutRefund metric outcomes.
+const (
+	outcomeRefundIssued        = "issued"         // admin-initiated provider refund created, order -> refund_pending
+	outcomeRefundIssuedAuto    = "issued_auto"    // system-initiated paid_after_terminal auto-refund created
+	outcomeRefundSettled       = "settled"        // refund_pending -> refunded
+	outcomeRefundFailed        = "failed"         // provider reported the refund failed (alarmed) — admin AND auto-refunds
+	outcomeRefundProviderError = "provider_error" // CreateRefund/GetRefund failed (alarmed)
+	outcomeRefundError         = "error"          // store/transition failures (alarmed)
+)
+
 // StripeWebhook metric outcomes recorded here; invalid_signature is recorded
 // by the ssr webhook handler before ApplyWebhookEvent is reached.
 const (
 	outcomeWebhookProcessed         = "processed"
 	outcomeWebhookIgnored           = "ignored"
 	outcomeWebhookAmountMismatch    = "amount_mismatch"
+	outcomeWebhookRefundMismatch    = "refund_mismatch"
 	outcomeWebhookPaidAfterTerminal = "paid_after_terminal"
 	outcomeWebhookError             = "error"
 )
@@ -372,15 +403,18 @@ func (s *Service) FinalizePayment(ctx context.Context, orderID string, paymentSe
 		return commerce.Order{}, fmt.Errorf("checkout: order %q not found", orderID)
 	}
 
-	switch order.Status {
-	case commerce.OrderStatusPaid, commerce.OrderStatusShipped, commerce.OrderStatusDelivered:
-		// Replay: never downgrade, but re-attempt the cart cleanup in case an
+	switch {
+	case orderIsPaidOrLater(order.Status):
+		// Replay: never downgrade (paid, shipped, delivered, or any
+		// refund-family status — payment was captured in all of them, so a
+		// late checkout.session.completed must never be misclassified as
+		// paid_after_terminal), but re-attempt the cart cleanup in case an
 		// earlier finalize crashed between the transition and the cart write.
 		if err := s.clearCartAfterPayment(ctx, order); err != nil {
 			return order, err
 		}
 		return order, nil
-	case commerce.OrderStatusPendingPayment:
+	case order.Status == commerce.OrderStatusPendingPayment:
 	default:
 		return order, fmt.Errorf("%w: order %q is %s", ErrOrderNotFinalizable, orderID, order.Status)
 	}
@@ -441,7 +475,10 @@ func (s *Service) ApplyWebhookEvent(ctx context.Context, event payments.Event) e
 	case eventCheckoutSessionCompleted,
 		eventCheckoutSessionAsyncPaymentSucceeded,
 		eventCheckoutSessionAsyncPaymentFailed,
-		eventCheckoutSessionExpired:
+		eventCheckoutSessionExpired,
+		eventRefundCreated,
+		eventRefundUpdated,
+		eventRefundFailed:
 	default:
 		s.recordStripeWebhook(outcomeWebhookIgnored)
 		return nil
@@ -510,18 +547,32 @@ func (s *Service) ApplyWebhookEvent(ctx context.Context, event payments.Event) e
 		}
 		if _, err := s.FinalizePayment(ctx, order.ID, event.Session); err != nil {
 			if errors.Is(err, ErrOrderNotFinalizable) {
-				// Money moved for an order already in a terminal status: a
-				// retry can never reconcile it (§7.2/§7.3), so log the ids
-				// the manual-refund runbook needs, record the alarmed
-				// outcome, and acknowledge to stop the retries.
-				checkoutLogger.Error("stripe webhook delivered a paid session for a terminal order; refund manually",
-					slog.String("event_id", event.ID),
-					slog.String("event_type", event.Type),
-					slog.String("order_id", order.ID),
-					slog.String("order_status", string(order.Status)),
-					slog.String("payment_intent_id", event.Session.PaymentIntentID),
-				)
+				// Money moved for an order already in a terminal status: the
+				// order can never reconcile, so keep the alarmed outcome (its
+				// semantics are now "a refund was already issued unattended —
+				// verify its legitimacy and settlement in Stripe") and issue
+				// the refund automatically. The event is deliberately not
+				// marked processed so a redelivery re-verifies the marker.
 				s.recordStripeWebhook(outcomeWebhookPaidAfterTerminal)
+				if refundErr := s.autoRefundTerminalPayment(ctx, order, event); refundErr != nil {
+					// Transient: let Stripe redeliver checkout.session.completed
+					// so the auto-refund is retried (FinalizePayment will land
+					// here again).
+					s.recordStripeWebhook(outcomeWebhookError)
+					return refundErr
+				}
+				return nil
+			}
+			s.recordStripeWebhook(outcomeWebhookError)
+			return err
+		}
+	case eventRefundCreated, eventRefundUpdated, eventRefundFailed:
+		if err := s.applyRefundEvent(ctx, order, event); err != nil {
+			if errors.Is(err, errRefundMismatch) {
+				// Cross-check failed: the refund_mismatch metric was already
+				// recorded inside applyRefundEvent. ACK without marking the
+				// event processed — it can never reconcile (the
+				// amount_mismatch precedent).
 				return nil
 			}
 			s.recordStripeWebhook(outcomeWebhookError)
@@ -693,6 +744,513 @@ func (s *Service) finalizeInsteadOfCancel(ctx context.Context, order commerce.Or
 	return fmt.Errorf("%w: order %q", ErrOrderPaidNotCanceled, order.ID)
 }
 
+// RefundOrderAs issues a full provider refund for a paid, shipped, or
+// delivered order (or retries one from refund_failed), recording the given
+// status-history actor on the refund_pending transition. The provider refund
+// is created before any order write, so a provider failure leaves the order
+// untouched; the refund.* webhooks heal a crash between the two steps. A
+// synchronously settled refund advances straight on to refunded (or
+// refund_failed), with actor "stripe" on the settlement step. Reserved stock
+// is released through the claim protocol only for orders that never shipped.
+// Replays (double-click, repeated POST) converge without a second provider
+// refund. Returns the freshest order alongside any error.
+func (s *Service) RefundOrderAs(ctx context.Context, order commerce.Order, actor string) (commerce.Order, error) {
+	if s.Payments == nil {
+		s.recordCheckoutRefund(outcomeRefundProviderError)
+		return order, ErrRefundProviderUnavailable
+	}
+
+	switch order.Status {
+	case commerce.OrderStatusRefundPending, commerce.OrderStatusRefunded:
+		// Replay: the refund is already issued (defensive only — the admin
+		// handler 409s these statuses before the service is reached; the live
+		// re-drivers for a dangling stock release are webhook redelivery and
+		// the order-detail reconcile). Re-attempt an unreleased claim for
+		// unshipped orders, then report success.
+		if order.ShippedAt.IsZero() {
+			if err := s.ClaimAndReleaseOrderStock(ctx, order.ID); err != nil {
+				return order, err
+			}
+		}
+		return order, nil
+	case commerce.OrderStatusPaid, commerce.OrderStatusShipped, commerce.OrderStatusDelivered, commerce.OrderStatusRefundFailed:
+	default:
+		return order, fmt.Errorf("%w: order %q is %s", ErrOrderNotRefundable, order.ID, order.Status)
+	}
+	if order.StripePaymentIntentID == "" {
+		return order, fmt.Errorf("%w: order %q", ErrRefundNotIssuable, order.ID)
+	}
+
+	// Provider refund first (idempotency-keyed per order+attempt), order
+	// write second: a provider failure leaves the order exactly as it was,
+	// and a crash between the two steps is healed by the refund.* webhooks.
+	attempt := order.RefundAttempt + 1
+	refund, err := s.Payments.CreateRefund(ctx, payments.RefundInput{
+		OrderID:         order.ID,
+		PaymentIntentID: order.StripePaymentIntentID,
+		Attempt:         attempt,
+	})
+	if err != nil {
+		s.recordCheckoutRefund(outcomeRefundProviderError)
+		checkoutLogger.Error("checkout could not create the provider refund",
+			slog.String("order_id", order.ID),
+			slog.String("order_status", string(order.Status)),
+			slog.Int("refund_attempt", attempt),
+			slog.String("error", err.Error()),
+		)
+		return order, err
+	}
+
+	// RefundFailureReason pointer-to-empty clears the stale reason on a
+	// refund_failed -> refund_pending retry; on first issuance it is a
+	// harmless REMOVE of an absent attribute.
+	clearReason := ""
+	patch := commerce.OrderPatch{Actor: actor, StripeRefundID: &refund.ID, RefundAttempt: &attempt, RefundFailureReason: &clearReason}
+	updated, err := s.Commerce.TransitionOrder(ctx, order.ID, order.Status, commerce.OrderStatusRefundPending, patch)
+	switch {
+	case err == nil:
+		s.recordCheckoutRefund(outcomeRefundIssued)
+	case errors.Is(err, commerce.ErrOrderTransitionConflict):
+		// Adopt a concurrent winner already in the refund family (it wrote
+		// the same refund ID via the shared idempotency key); anything else
+		// (for example a concurrent advance to shipped) is reported — the
+		// orphan refund converges on the next click or via its webhooks.
+		current, found, getErr := s.Commerce.GetOrder(ctx, order.ID)
+		if getErr != nil || !found || !orderIsRefundFamily(current.Status) {
+			s.recordCheckoutRefund(outcomeRefundError)
+			return order, err
+		}
+		updated = current
+	default:
+		s.recordCheckoutRefund(outcomeRefundError)
+		return order, err
+	}
+
+	updated = s.applyRefundOutcome(ctx, updated, refund)
+
+	if updated.ShippedAt.IsZero() {
+		if err := s.ClaimAndReleaseOrderStock(ctx, order.ID); err != nil {
+			// The refund itself is committed; ErrStockReleaseFailed propagates
+			// so the caller can surface the stock banner and a retry re-drives
+			// the release.
+			return updated, err
+		}
+	}
+
+	return updated, nil
+}
+
+// applyRefundOutcome moves a refund_pending order forward when the provider
+// reports a terminal refund status. Settlements are recorded with actor
+// "stripe" regardless of who initiated the refund. Idempotent; returns the
+// freshest order it knows. Store failures are logged and recorded
+// (outcome=error) but never unwind the issued refund.
+func (s *Service) applyRefundOutcome(ctx context.Context, order commerce.Order, refund payments.Refund) commerce.Order {
+	if order.StripeRefundID != "" && refund.ID != order.StripeRefundID {
+		// By the time this runs, applyRefundEvent has already adopted any
+		// legitimately newer attempt, so everything dropped here really is an
+		// older or foreign refund.
+		checkoutLogger.Warn("stale refund outcome ignored",
+			slog.String("order_id", order.ID),
+			slog.String("order_refund_id", order.StripeRefundID),
+			slog.String("refund_id", refund.ID),
+		)
+		return order
+	}
+
+	switch refund.Status {
+	case payments.RefundStatusSucceeded:
+		if order.Status != commerce.OrderStatusRefundPending {
+			return order
+		}
+		if refund.AmountCents > 0 && refund.AmountCents != order.TotalCents {
+			// Warn, never block: a dashboard partial refund followed by our
+			// full refund stays visible without stopping settlement.
+			checkoutLogger.Warn("refund amount differs from order total",
+				slog.String("order_id", order.ID),
+				slog.String("refund_id", refund.ID),
+				slog.Int("refund_amount_cents", refund.AmountCents),
+				slog.Int("order_total_cents", order.TotalCents),
+			)
+		}
+		refundedAt := s.now()
+		updated, err := s.Commerce.TransitionOrder(ctx, order.ID, commerce.OrderStatusRefundPending, commerce.OrderStatusRefunded, commerce.OrderPatch{Actor: commerce.OrderActorStripe, RefundedAt: &refundedAt})
+		if err != nil {
+			return s.refundOutcomeTransitionFailed(ctx, order, refund, err)
+		}
+		s.recordCheckoutRefund(outcomeRefundSettled)
+		return updated
+	case payments.RefundStatusFailed:
+		if order.Status != commerce.OrderStatusRefundPending {
+			return order
+		}
+		reason := refund.FailureReason
+		updated, err := s.Commerce.TransitionOrder(ctx, order.ID, commerce.OrderStatusRefundPending, commerce.OrderStatusRefundFailed, commerce.OrderPatch{Actor: commerce.OrderActorStripe, RefundFailureReason: &reason})
+		if err != nil {
+			return s.refundOutcomeTransitionFailed(ctx, order, refund, err)
+		}
+		s.recordCheckoutRefund(outcomeRefundFailed)
+		checkoutLogger.Error("stripe reported the refund as failed",
+			slog.String("order_id", order.ID),
+			slog.String("refund_id", refund.ID),
+			slog.String("failure_reason", refund.FailureReason),
+		)
+		return updated
+	case payments.RefundStatusCanceled:
+		// Customer-balance-only state; cannot occur for our card refunds.
+		checkoutLogger.Warn("refund outcome canceled ignored",
+			slog.String("order_id", order.ID),
+			slog.String("refund_id", refund.ID),
+		)
+		return order
+	}
+
+	// pending / requires_action: still settling.
+	return order
+}
+
+// refundOutcomeTransitionFailed classifies a failed settlement transition:
+// losing the race to another settler is success (return the freshest order);
+// anything else is logged and recorded — the refund.* webhooks re-drive it.
+func (s *Service) refundOutcomeTransitionFailed(ctx context.Context, order commerce.Order, refund payments.Refund, err error) commerce.Order {
+	if errors.Is(err, commerce.ErrOrderTransitionConflict) {
+		current, found, getErr := s.Commerce.GetOrder(ctx, order.ID)
+		if getErr == nil && found {
+			if orderIsRefundFamily(current.Status) && current.Status != commerce.OrderStatusRefundPending {
+				return current
+			}
+			order = current
+		}
+	}
+	checkoutLogger.Error("checkout could not record the refund outcome",
+		slog.String("order_id", order.ID),
+		slog.String("refund_id", refund.ID),
+		slog.String("refund_status", refund.Status),
+		slog.String("error", err.Error()),
+	)
+	s.recordCheckoutRefund(outcomeRefundError)
+	return order
+}
+
+// refundMatchesOrder authenticates a refund event against the order it claims
+// (via metadata.order_id) to belong to: metadata routes, the payment intent
+// authenticates (metadata is freely editable in the Stripe dashboard).
+// Skipped when either side is empty: dashboard refunds retrieved without
+// expansion never reach here (no order_id), and a paid order can legitimately
+// lack a PI after an expandSessionCard failure.
+func refundMatchesOrder(order commerce.Order, refund payments.Refund) bool {
+	if order.StripePaymentIntentID == "" || refund.PaymentIntentID == "" {
+		return true
+	}
+	return refund.PaymentIntentID == order.StripePaymentIntentID
+}
+
+// applyRefundEvent reconciles a provider refund event with the order. Forward-
+// only and replay-safe: refund events for terminal never-paid orders settle or
+// alarm the paid_after_terminal auto-refund without touching the status;
+// paid/shipped/delivered orders are healed into refund_pending (the crash
+// window between CreateRefund and the admin transition); refund_failed orders
+// adopt a higher-attempt refund (the retry crash window) and drop
+// lower-or-equal stale attempts; refund_pending orders take the refund
+// outcome. Events whose payment intent does not match the order are rejected
+// with errRefundMismatch (alarmed refund_mismatch outcome).
+func (s *Service) applyRefundEvent(ctx context.Context, order commerce.Order, event payments.Event) error {
+	refund := event.Refund
+	if !refundMatchesOrder(order, refund) {
+		checkoutLogger.Warn("refund webhook payment intent does not match the order",
+			slog.String("event_id", event.ID),
+			slog.String("event_type", event.Type),
+			slog.String("order_id", order.ID),
+			slog.String("order_payment_intent_id", order.StripePaymentIntentID),
+			slog.String("refund_id", refund.ID),
+			slog.String("refund_payment_intent_id", refund.PaymentIntentID),
+		)
+		s.recordStripeWebhook(outcomeWebhookRefundMismatch)
+		return errRefundMismatch
+	}
+
+	switch order.Status {
+	case commerce.OrderStatusCanceled, commerce.OrderStatusExpired, commerce.OrderStatusPaymentFailed:
+		return s.applyTerminalOrderRefundEvent(ctx, order, event)
+	case commerce.OrderStatusPendingPayment:
+		checkoutLogger.Warn("refund webhook for a pending order ignored",
+			slog.String("event_id", event.ID),
+			slog.String("event_type", event.Type),
+			slog.String("order_id", order.ID),
+			slog.String("refund_id", refund.ID),
+		)
+		return nil
+	case commerce.OrderStatusRefundFailed:
+		switch {
+		case refund.ID == order.StripeRefundID:
+			// The current attempt's own event (e.g. a replayed refund.failed):
+			// fall through to applyRefundOutcome, which no-ops on
+			// refund_failed.
+		case refund.Attempt > order.RefundAttempt:
+			// Retry crash window: the admin's retry minted this newer refund
+			// but crashed before TransitionOrder. Adopt it.
+			clearReason := ""
+			attempt := refund.Attempt
+			patch := commerce.OrderPatch{Actor: commerce.OrderActorStripe, StripeRefundID: &refund.ID, RefundAttempt: &attempt, RefundFailureReason: &clearReason}
+			updated, err := s.transitionAdoptingRefund(ctx, order, commerce.OrderStatusRefundFailed, patch)
+			if err != nil {
+				return err // transient: Stripe retries
+			}
+			s.recordCheckoutRefund(outcomeRefundIssued)
+			order = updated
+		default:
+			// Older or unattributable (Attempt 0) refund: stale, drop.
+			checkoutLogger.Warn("stale refund webhook for a superseded attempt ignored",
+				slog.String("event_id", event.ID),
+				slog.String("event_type", event.Type),
+				slog.String("order_id", order.ID),
+				slog.String("order_refund_id", order.StripeRefundID),
+				slog.String("refund_id", refund.ID),
+				slog.Int("order_refund_attempt", order.RefundAttempt),
+				slog.Int("refund_attempt", refund.Attempt),
+			)
+			return nil
+		}
+	case commerce.OrderStatusPaid, commerce.OrderStatusShipped, commerce.OrderStatusDelivered:
+		// Heal the issue-then-crash window: adopt the refund and enter
+		// refund_pending with actor stripe.
+		attempt := refund.Attempt // from metadata; our refunds always carry it
+		if attempt == 0 {
+			attempt = order.RefundAttempt + 1
+		}
+		patch := commerce.OrderPatch{Actor: commerce.OrderActorStripe, StripeRefundID: &refund.ID, RefundAttempt: &attempt}
+		updated, err := s.transitionAdoptingRefund(ctx, order, order.Status, patch)
+		if err != nil {
+			return err // transient: Stripe retries
+		}
+		s.recordCheckoutRefund(outcomeRefundIssued)
+		order = updated
+	}
+
+	// order is now refund-family.
+	order = s.applyRefundOutcome(ctx, order, refund)
+	if order.ShippedAt.IsZero() {
+		// ErrStockReleaseFailed -> 500 -> Stripe redelivery re-drives it.
+		return s.ClaimAndReleaseOrderStock(ctx, order.ID)
+	}
+	return nil
+}
+
+// applyTerminalOrderRefundEvent handles refund events for orders in a
+// terminal never-paid status (the paid_after_terminal auto-refund): the order
+// keeps its terminal status, but a failed auto-refund must not be silent —
+// it is alarmed exactly like an admin refund failure and the reason is
+// persisted for the admin order page (resolution path: Stripe dashboard;
+// terminal orders get no in-app retry).
+func (s *Service) applyTerminalOrderRefundEvent(ctx context.Context, order commerce.Order, event payments.Event) error {
+	refund := event.Refund
+	if order.StripeRefundID == "" || refund.ID != order.StripeRefundID {
+		// Not our auto-refund: either the audit-marker patch never landed (a
+		// checkout.session.completed redelivery re-runs it) or this is a
+		// foreign refund. Never alarmed-failed here.
+		checkoutLogger.Warn("refund webhook for a terminal order does not match its refund marker",
+			slog.String("event_id", event.ID),
+			slog.String("event_type", event.Type),
+			slog.String("order_id", order.ID),
+			slog.String("order_status", string(order.Status)),
+			slog.String("order_refund_id", order.StripeRefundID),
+			slog.String("refund_id", refund.ID),
+		)
+		return nil
+	}
+	if refund.Status == payments.RefundStatusFailed {
+		if order.RefundFailureReason == refund.FailureReason && refund.FailureReason != "" {
+			// Replay: the failure was already recorded and alarmed.
+			return nil
+		}
+		checkoutLogger.Error("automatic refund for a terminal order failed; resolve in the Stripe dashboard",
+			slog.String("order_id", order.ID),
+			slog.String("order_status", string(order.Status)),
+			slog.String("refund_id", refund.ID),
+			slog.String("failure_reason", refund.FailureReason),
+		)
+		s.recordCheckoutRefund(outcomeRefundFailed)
+		s.patchTerminalRefundFailureReason(ctx, order, refund.FailureReason)
+		return nil
+	}
+	checkoutLogger.Info("refund webhook for a terminal order acknowledged",
+		slog.String("event_id", event.ID),
+		slog.String("event_type", event.Type),
+		slog.String("order_id", order.ID),
+		slog.String("order_status", string(order.Status)),
+		slog.String("refund_id", refund.ID),
+		slog.String("refund_status", refund.Status),
+	)
+	return nil
+}
+
+// patchTerminalRefundFailureReason best-effort persists the failure reason on
+// a terminal order without changing its status: on a version conflict it
+// re-reads and retries once, otherwise it warn-logs and gives up (the
+// alarmed metric already fired; a webhook replay re-runs the patch).
+func (s *Service) patchTerminalRefundFailureReason(ctx context.Context, order commerce.Order, reason string) {
+	patch := commerce.OrderPatch{RefundFailureReason: &reason}
+	_, err := s.Commerce.PatchOrder(ctx, order.ID, order.Status, order.Version, patch)
+	if err == nil {
+		return
+	}
+	if errors.Is(err, commerce.ErrVersionConflict) {
+		current, found, getErr := s.Commerce.GetOrder(ctx, order.ID)
+		if getErr == nil && found {
+			if current.RefundFailureReason == reason {
+				return
+			}
+			if _, retryErr := s.Commerce.PatchOrder(ctx, current.ID, current.Status, current.Version, patch); retryErr == nil {
+				return
+			}
+		}
+	}
+	checkoutLogger.Warn("checkout could not persist the terminal-order refund failure reason",
+		slog.String("order_id", order.ID),
+		slog.String("error", err.Error()),
+	)
+}
+
+// transitionAdoptingRefund wraps TransitionOrder(from -> refund_pending) with
+// the shared conflict recovery: on ErrOrderTransitionConflict re-read and
+// adopt a current refund-family status, otherwise propagate the error.
+func (s *Service) transitionAdoptingRefund(ctx context.Context, order commerce.Order, from commerce.OrderStatus, patch commerce.OrderPatch) (commerce.Order, error) {
+	updated, err := s.Commerce.TransitionOrder(ctx, order.ID, from, commerce.OrderStatusRefundPending, patch)
+	if err != nil {
+		if errors.Is(err, commerce.ErrOrderTransitionConflict) {
+			current, found, getErr := s.Commerce.GetOrder(ctx, order.ID)
+			if getErr == nil && found && orderIsRefundFamily(current.Status) {
+				return current, nil
+			}
+		}
+		return order, err
+	}
+	return updated, nil
+}
+
+// autoRefundTerminalPayment returns a payment captured for an order already
+// in a terminal never-paid status (canceled/expired/payment_failed). The
+// order's status is NOT changed — it was never fulfilled — but StripeRefundID
+// is patched on as the audit marker and replay dedupe. Idempotent: a set
+// marker short-circuits, and the provider idempotency key dedupes the rest.
+// Returning an error means a transient failure Stripe should retry.
+func (s *Service) autoRefundTerminalPayment(ctx context.Context, order commerce.Order, event payments.Event) error {
+	if order.StripeRefundID != "" {
+		checkoutLogger.Info("automatic refund already issued for the terminal order",
+			slog.String("event_id", event.ID),
+			slog.String("order_id", order.ID),
+			slog.String("refund_id", order.StripeRefundID),
+		)
+		return nil
+	}
+
+	paymentIntentID := event.Session.PaymentIntentID
+	if paymentIntentID == "" && s.Payments != nil {
+		paymentIntentID = s.expandSessionCard(ctx, event.Session).PaymentIntentID
+	}
+	if paymentIntentID == "" || s.Payments == nil {
+		// Retries cannot conjure a payment intent (and the webhook handler
+		// 404s when payments is nil, so the nil guard is defensive): fall
+		// back to the manual-refund log line and acknowledge.
+		checkoutLogger.Error("stripe webhook delivered a paid session for a terminal order; refund manually",
+			slog.String("event_id", event.ID),
+			slog.String("event_type", event.Type),
+			slog.String("order_id", order.ID),
+			slog.String("order_status", string(order.Status)),
+			slog.String("payment_intent_id", event.Session.PaymentIntentID),
+		)
+		s.recordCheckoutRefund(outcomeRefundProviderError)
+		return nil
+	}
+
+	attempt := order.RefundAttempt + 1
+	refund, err := s.Payments.CreateRefund(ctx, payments.RefundInput{
+		OrderID:         order.ID,
+		PaymentIntentID: paymentIntentID,
+		Attempt:         attempt,
+	})
+	if err != nil {
+		s.recordCheckoutRefund(outcomeRefundProviderError)
+		checkoutLogger.Error("checkout could not create the automatic refund for a terminal order",
+			slog.String("event_id", event.ID),
+			slog.String("order_id", order.ID),
+			slog.String("order_status", string(order.Status)),
+			slog.String("payment_intent_id", paymentIntentID),
+			slog.String("error", err.Error()),
+		)
+		return err
+	}
+
+	// Audit marker (status unchanged). On a version conflict, a set marker
+	// means another delivery won; otherwise warn and continue — the refund
+	// exists at Stripe and a redelivery re-runs this patch.
+	if _, err := s.Commerce.PatchOrder(ctx, order.ID, order.Status, order.Version, commerce.OrderPatch{StripeRefundID: &refund.ID, RefundAttempt: &attempt}); err != nil {
+		markerSet := false
+		if errors.Is(err, commerce.ErrVersionConflict) {
+			current, found, getErr := s.Commerce.GetOrder(ctx, order.ID)
+			markerSet = getErr == nil && found && current.StripeRefundID != ""
+		}
+		if !markerSet {
+			checkoutLogger.Warn("checkout could not record the automatic refund marker",
+				slog.String("order_id", order.ID),
+				slog.String("refund_id", refund.ID),
+				slog.String("error", err.Error()),
+			)
+		}
+	}
+
+	s.recordCheckoutRefund(outcomeRefundIssuedAuto)
+	// The runbook anchor: when the paid_after_terminal alarm fires, ops
+	// verifies the refund's legitimacy and settlement in Stripe.
+	checkoutLogger.Error("payment captured for a terminal order; automatic refund issued",
+		slog.String("event_id", event.ID),
+		slog.String("event_type", event.Type),
+		slog.String("order_id", order.ID),
+		slog.String("order_status", string(order.Status)),
+		slog.String("payment_intent_id", paymentIntentID),
+		slog.String("refund_id", refund.ID),
+	)
+	return nil
+}
+
+// ReconcileRefund re-checks a refund-family order against the provider and
+// re-drives anything left dangling — the order-detail render backstop for
+// missed or unregistered refund webhooks AND for a stock release that failed
+// after the refund's webhook events were already acknowledged. Best-effort
+// and idempotent: every failure degrades to returning the order unchanged.
+func (s *Service) ReconcileRefund(ctx context.Context, order commerce.Order) commerce.Order {
+	if !orderIsRefundFamily(order.Status) {
+		return order
+	}
+
+	if order.Status == commerce.OrderStatusRefundPending && order.StripeRefundID != "" && s.Payments != nil {
+		refund, err := s.Payments.GetRefund(ctx, order.StripeRefundID)
+		if err != nil {
+			checkoutLogger.Warn("checkout could not reconcile the pending refund",
+				slog.String("order_id", order.ID),
+				slog.String("refund_id", order.StripeRefundID),
+				slog.String("error", err.Error()),
+			)
+		} else {
+			order = s.applyRefundOutcome(ctx, order, refund)
+		}
+	}
+
+	// Stock re-drive: the StockReleasedAt pre-check on the already-loaded
+	// order makes the common case free; ClaimAndReleaseOrderStock itself
+	// early-returns on a set marker, so replays cost one read.
+	if order.ShippedAt.IsZero() && order.StockReleasedAt.IsZero() {
+		if err := s.ClaimAndReleaseOrderStock(ctx, order.ID); err != nil {
+			checkoutLogger.Error("checkout could not re-drive the refund stock release",
+				slog.String("order_id", order.ID),
+				slog.String("error", err.Error()),
+			)
+		}
+	}
+
+	return order
+}
+
 // ClaimAndReleaseOrderStock releases an order's reserved stock exactly once
 // across concurrent and replayed terminal transitions, using the persisted
 // StockReleasedAt marker as the claim. Every release site (webhook failures,
@@ -719,7 +1277,7 @@ func (s *Service) ClaimAndReleaseOrderStock(ctx context.Context, orderID string)
 			// Already claimed (and released, modulo the crash window above).
 			return nil
 		}
-		if !orderStockReleased(order.Status) {
+		if !orderStockReleasable(order) {
 			return fmt.Errorf("checkout: order %q is %s; its reservation is not releasable", orderID, order.Status)
 		}
 
@@ -932,6 +1490,17 @@ func (s *Service) recordCheckoutPayment(outcome string) {
 	))
 }
 
+func (s *Service) recordCheckoutRefund(outcome string) {
+	if s.Metrics == nil {
+		return
+	}
+	s.Metrics.Record(observability.Count(
+		observability.MetricCheckoutRefund,
+		observability.Dim("Service", "checkout"),
+		observability.Dim("Outcome", outcome),
+	))
+}
+
 func (s *Service) recordStripeWebhook(outcome string) {
 	if s.Metrics == nil {
 		return
@@ -948,9 +1517,22 @@ func (s *Service) recordStripeWebhook(outcome string) {
 	))
 }
 
+// orderIsPaidOrLater reports whether the order's payment was captured: the
+// fulfillment chain and the refund family (a refunded order was paid first).
 func orderIsPaidOrLater(status commerce.OrderStatus) bool {
 	switch status {
-	case commerce.OrderStatusPaid, commerce.OrderStatusShipped, commerce.OrderStatusDelivered:
+	case commerce.OrderStatusPaid, commerce.OrderStatusShipped, commerce.OrderStatusDelivered,
+		commerce.OrderStatusRefundPending, commerce.OrderStatusRefunded, commerce.OrderStatusRefundFailed:
+		return true
+	}
+	return false
+}
+
+// orderIsRefundFamily reports whether the order is in a refund lifecycle
+// status (refund_pending, refunded, or refund_failed).
+func orderIsRefundFamily(status commerce.OrderStatus) bool {
+	switch status {
+	case commerce.OrderStatusRefundPending, commerce.OrderStatusRefunded, commerce.OrderStatusRefundFailed:
 		return true
 	}
 	return false
@@ -962,6 +1544,19 @@ func orderStockReleased(status commerce.OrderStatus) bool {
 	switch status {
 	case commerce.OrderStatusCanceled, commerce.OrderStatusExpired, commerce.OrderStatusPaymentFailed:
 		return true
+	}
+	return false
+}
+
+// orderStockReleasable reports whether the order's reservation may be
+// returned to the catalog: any stock-releasing terminal status, or a
+// refund-family status on an order that never shipped (goods still here).
+func orderStockReleasable(order commerce.Order) bool {
+	if orderStockReleased(order.Status) {
+		return true
+	}
+	if orderIsRefundFamily(order.Status) {
+		return order.ShippedAt.IsZero()
 	}
 	return false
 }

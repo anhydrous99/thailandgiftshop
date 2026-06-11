@@ -61,22 +61,52 @@ func (s *fakeSession) asSession() Session {
 	}
 }
 
+type fakeRefund struct {
+	id              string
+	orderID         string
+	attempt         int
+	paymentIntentID string
+	status          string
+	amountCents     int
+	failureReason   string
+}
+
+func (r *fakeRefund) asRefund() Refund {
+	return Refund{
+		ID:              r.id,
+		PaymentIntentID: r.paymentIntentID,
+		OrderID:         r.orderID,
+		Attempt:         r.attempt,
+		Status:          r.status,
+		AmountCents:     r.amountCents,
+		FailureReason:   r.failureReason,
+	}
+}
+
 // FakeProvider is the deterministic in-memory provider used for local demo
 // runs, CI, and Playwright: zero network, zero keys. The fake-pay page POST
 // drives MarkSessionPaid/MarkSetupComplete, after which the real
-// /checkout/confirm reconcile path takes over.
+// /checkout/confirm reconcile path takes over. Refunds settle synchronously
+// as succeeded by default; SetNextRefundOutcome and SettleRefund drive the
+// pending and failed paths.
 type FakeProvider struct {
-	mu             sync.Mutex
-	sessions       map[string]*fakeSession
-	paymentMethods map[string][]PaymentMethod
+	mu                sync.Mutex
+	sessions          map[string]*fakeSession
+	paymentMethods    map[string][]PaymentMethod
+	refunds           map[string]*fakeRefund // by refund ID
+	refundsByIntent   map[string]string      // payment intent ID -> latest refund ID
+	nextRefundStatus  string                 // "" => RefundStatusSucceeded
+	nextRefundFailure string
 }
 
 var _ Provider = (*FakeProvider)(nil)
 
 func NewFakeProvider() *FakeProvider {
 	return &FakeProvider{
-		sessions:       map[string]*fakeSession{},
-		paymentMethods: map[string][]PaymentMethod{},
+		sessions:        map[string]*fakeSession{},
+		paymentMethods:  map[string][]PaymentMethod{},
+		refunds:         map[string]*fakeRefund{},
+		refundsByIntent: map[string]string{},
 	}
 }
 
@@ -227,6 +257,100 @@ func (p *FakeProvider) SessionRedirectURLs(sessionID string) (string, string, bo
 	}
 
 	return resolveSessionURL(session.successURL, session.id), resolveSessionURL(session.cancelURL, session.id), true
+}
+
+// SetNextRefundOutcome overrides the status (and failure reason) of the next
+// CreateRefund so tests can drive the pending and failed paths; the default
+// outcome is an immediately-succeeded refund.
+func (p *FakeProvider) SetNextRefundOutcome(status string, failureReason string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.nextRefundStatus = status
+	p.nextRefundFailure = failureReason
+}
+
+// CreateRefund is deterministic and idempotent: a non-failed refund already
+// recorded for the payment intent is returned as-is (Stripe's "a charge can't
+// be refunded twice" contract); otherwise a refund with ID
+// "re_fake_<orderID>_<attempt>" is created with the configured outcome.
+func (p *FakeProvider) CreateRefund(ctx context.Context, input RefundInput) (Refund, error) {
+	_ = ctx
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if input.PaymentIntentID == "" {
+		return Refund{}, fmt.Errorf("payments: fake refund requires a payment intent")
+	}
+	if existingID, ok := p.refundsByIntent[input.PaymentIntentID]; ok {
+		if existing, found := p.refunds[existingID]; found && existing.status != RefundStatusFailed {
+			return existing.asRefund(), nil
+		}
+	}
+
+	status := p.nextRefundStatus
+	if status == "" {
+		status = RefundStatusSucceeded
+	}
+	failureReason := ""
+	if status == RefundStatusFailed {
+		failureReason = p.nextRefundFailure
+	}
+	p.nextRefundStatus = ""
+	p.nextRefundFailure = ""
+
+	amountCents := 0
+	for _, session := range p.sessions {
+		if session.paymentIntentID == input.PaymentIntentID {
+			amountCents = session.totalCents
+			break
+		}
+	}
+
+	refund := &fakeRefund{
+		id:              fmt.Sprintf("re_fake_%s_%d", input.OrderID, input.Attempt),
+		orderID:         input.OrderID,
+		attempt:         input.Attempt,
+		paymentIntentID: input.PaymentIntentID,
+		status:          status,
+		amountCents:     amountCents,
+		failureReason:   failureReason,
+	}
+	p.refunds[refund.id] = refund
+	p.refundsByIntent[input.PaymentIntentID] = refund.id
+
+	return refund.asRefund(), nil
+}
+
+func (p *FakeProvider) GetRefund(ctx context.Context, refundID string) (Refund, error) {
+	_ = ctx
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	refund, ok := p.refunds[refundID]
+	if !ok {
+		return Refund{}, ErrRefundNotFound
+	}
+
+	return refund.asRefund(), nil
+}
+
+// SettleRefund transitions an existing fake refund to the given status
+// (RefundStatusSucceeded/Failed/...), setting failureReason for failed ones —
+// the refund-side analogue of MarkSessionPaid. It is how Go tests drive async
+// settlement: SetNextRefundOutcome("pending", "") at create time, then
+// SettleRefund to flip it before exercising ReconcileRefund or a hand-signed
+// refund.updated webhook. Unknown IDs map to ErrRefundNotFound.
+func (p *FakeProvider) SettleRefund(refundID string, status string, failureReason string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	refund, ok := p.refunds[refundID]
+	if !ok {
+		return ErrRefundNotFound
+	}
+	refund.status = status
+	refund.failureReason = failureReason
+
+	return nil
 }
 
 func (p *FakeProvider) ListPaymentMethods(ctx context.Context, stripeCustomerID string) ([]PaymentMethod, error) {

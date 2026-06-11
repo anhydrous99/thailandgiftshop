@@ -31,12 +31,13 @@ func TestValidOrderStatus(t *testing.T) {
 	for _, status := range []OrderStatus{
 		OrderStatusPendingPayment, OrderStatusPaid, OrderStatusShipped,
 		OrderStatusDelivered, OrderStatusPaymentFailed, OrderStatusExpired, OrderStatusCanceled,
+		OrderStatusRefundPending, OrderStatusRefunded, OrderStatusRefundFailed,
 	} {
 		if !ValidOrderStatus(status) {
 			t.Fatalf("ValidOrderStatus(%s) = false, want true", status)
 		}
 	}
-	for _, status := range []OrderStatus{"", "refunded", "PAID", "pending"} {
+	for _, status := range []OrderStatus{"", "PAID", "pending"} {
 		if ValidOrderStatus(status) {
 			t.Fatalf("ValidOrderStatus(%q) = true, want false", status)
 		}
@@ -44,14 +45,50 @@ func TestValidOrderStatus(t *testing.T) {
 }
 
 func TestAllowedOrderTransitionRejectsUnknownStatuses(t *testing.T) {
-	if AllowedOrderTransition("refunded", OrderStatusPaid) {
+	if AllowedOrderTransition("returned", OrderStatusPaid) {
 		t.Fatalf("unknown from-status allowed")
 	}
-	if AllowedOrderTransition(OrderStatusPaid, "refunded") {
+	if AllowedOrderTransition(OrderStatusPaid, "returned") {
 		t.Fatalf("unknown to-status allowed")
 	}
 	if AllowedOrderTransition(OrderStatusPaid, OrderStatusPaid) {
 		t.Fatalf("self transition allowed")
+	}
+}
+
+func TestOrderTransitionsRefundFamily(t *testing.T) {
+	allowed := []struct{ from, to OrderStatus }{
+		{OrderStatusPaid, OrderStatusRefundPending},
+		{OrderStatusShipped, OrderStatusRefundPending},
+		{OrderStatusDelivered, OrderStatusRefundPending},
+		{OrderStatusRefundPending, OrderStatusRefunded},
+		{OrderStatusRefundPending, OrderStatusRefundFailed},
+		{OrderStatusRefundFailed, OrderStatusRefundPending},
+	}
+	for _, transition := range allowed {
+		if !AllowedOrderTransition(transition.from, transition.to) {
+			t.Fatalf("AllowedOrderTransition(%s, %s) = false, want true", transition.from, transition.to)
+		}
+	}
+
+	// paid -> canceled is deliberately removed: a paid order can only leave
+	// the paid family through a refund.
+	if AllowedOrderTransition(OrderStatusPaid, OrderStatusCanceled) {
+		t.Fatalf("AllowedOrderTransition(paid, canceled) = true, want false")
+	}
+	// refunded must always pass through refund_pending.
+	if AllowedOrderTransition(OrderStatusPaid, OrderStatusRefunded) {
+		t.Fatalf("AllowedOrderTransition(paid, refunded) = true, want false")
+	}
+	// refunded is terminal.
+	for _, to := range []OrderStatus{
+		OrderStatusPendingPayment, OrderStatusPaid, OrderStatusShipped, OrderStatusDelivered,
+		OrderStatusPaymentFailed, OrderStatusExpired, OrderStatusCanceled,
+		OrderStatusRefundPending, OrderStatusRefundFailed,
+	} {
+		if AllowedOrderTransition(OrderStatusRefunded, to) {
+			t.Fatalf("AllowedOrderTransition(refunded, %s) = true, want false", to)
+		}
 	}
 }
 

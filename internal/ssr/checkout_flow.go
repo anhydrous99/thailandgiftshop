@@ -367,7 +367,8 @@ func (h *Handler) handleCheckoutConfirm(ctx context.Context, request events.APIG
 			// The payment landed after the order reached a terminal status
 			// (the paid_after_terminal webhook condition): the customer was
 			// charged, so never show them an error page — acknowledge the
-			// payment and point them at support while the refund is handled.
+			// payment; the refund is issued automatically by the webhook
+			// handler and the page says so.
 			logAccountError("checkout confirm: payment received for terminal order", err)
 			return h.renderCheckoutPaymentReceivedPage(ctx, request, order.ID)
 		}
@@ -413,7 +414,8 @@ func (h *Handler) renderCheckoutProcessingPage(ctx context.Context, request even
 
 // renderCheckoutPaymentReceivedPage tells a charged customer whose order hit a
 // terminal status (canceled/expired before the payment settled) that their
-// payment was received and support will refund or reinstate it — never a 500.
+// payment was received and a refund is being issued automatically — never a
+// 500.
 func (h *Handler) renderCheckoutPaymentReceivedPage(ctx context.Context, request events.APIGatewayV2HTTPRequest, orderID string) events.APIGatewayV2HTTPResponse {
 	var body bytes.Buffer
 	if err := checkoutPaymentReceivedPage(checkoutProcessingPageData{
@@ -755,9 +757,13 @@ func (h *Handler) reconcilePendingOrder(ctx context.Context, order commerce.Orde
 	return finalized
 }
 
+// orderStatusPaidOrLater reports whether the order's payment was captured:
+// the fulfillment chain and the refund family (a refunded order was paid
+// first, so replays and pointer checks must treat it as paid).
 func orderStatusPaidOrLater(status commerce.OrderStatus) bool {
 	switch status {
-	case commerce.OrderStatusPaid, commerce.OrderStatusShipped, commerce.OrderStatusDelivered:
+	case commerce.OrderStatusPaid, commerce.OrderStatusShipped, commerce.OrderStatusDelivered,
+		commerce.OrderStatusRefundPending, commerce.OrderStatusRefunded, commerce.OrderStatusRefundFailed:
 		return true
 	}
 	return false

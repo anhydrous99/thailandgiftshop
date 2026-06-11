@@ -23,6 +23,8 @@ const webhookSignatureTolerance = 5 * time.Minute
 
 const checkoutSessionEventPrefix = "checkout.session."
 
+const refundEventPrefix = "refund."
+
 var ErrStripeCredentialsNotConfigured = errors.New("stripe credentials not configured")
 
 type StripeCredentials struct {
@@ -238,6 +240,83 @@ func (p *StripeProvider) ExpireSession(ctx context.Context, sessionID string) er
 	return nil
 }
 
+// CreateRefund issues a full refund of the payment intent's remaining charge.
+// The idempotency key dedupes double-clicks per (order, attempt) within
+// Stripe's retention window (~24h); beyond it, a retried create against an
+// already-fully-refunded charge maps to ErrChargeAlreadyRefunded.
+func (p *StripeProvider) CreateRefund(ctx context.Context, input RefundInput) (Refund, error) {
+	refund, err := p.client.V1Refunds.Create(ctx, refundCreateParams(input))
+	if err != nil {
+		// Post-idempotency-window retry against an already-refunded charge
+		// (Stripe purges idempotency keys after ~24h): surface the dedicated
+		// sentinel so callers stop telling the admin to retry.
+		if isStripeChargeAlreadyRefunded(err) {
+			return Refund{}, fmt.Errorf("%w: payment intent %s", ErrChargeAlreadyRefunded, input.PaymentIntentID)
+		}
+		return Refund{}, fmt.Errorf("create stripe refund: %w", err)
+	}
+
+	return refundFromStripeRefund(refund), nil
+}
+
+// GetRefund retrieves a refund for reconciliation; unknown IDs map to
+// ErrRefundNotFound.
+func (p *StripeProvider) GetRefund(ctx context.Context, refundID string) (Refund, error) {
+	refund, err := p.client.V1Refunds.Retrieve(ctx, refundID, &stripe.RefundRetrieveParams{})
+	if err != nil {
+		if isStripeNotFound(err) {
+			return Refund{}, ErrRefundNotFound
+		}
+		return Refund{}, fmt.Errorf("retrieve stripe refund: %w", err)
+	}
+
+	return refundFromStripeRefund(refund), nil
+}
+
+// refundCreateParams builds the refund parameters: metadata.order_id routes
+// the refund.* webhooks back to the order, metadata.attempt lets the webhook
+// heal distinguish a newer retry from a stale one, and Amount stays nil so
+// Stripe refunds the full remaining charge.
+func refundCreateParams(input RefundInput) *stripe.RefundCreateParams {
+	params := &stripe.RefundCreateParams{
+		PaymentIntent: stripe.String(input.PaymentIntentID),
+		Reason:        stripe.String(string(stripe.RefundReasonRequestedByCustomer)),
+		Metadata: map[string]string{
+			"order_id": input.OrderID,
+			"attempt":  strconv.Itoa(input.Attempt),
+		},
+	}
+	params.SetIdempotencyKey(refundIdempotencyKey(input.OrderID, input.Attempt))
+
+	return params
+}
+
+func refundIdempotencyKey(orderID string, attempt int) string {
+	return fmt.Sprintf("order-refund-%s-%d", orderID, attempt)
+}
+
+func refundFromStripeRefund(refund *stripe.Refund) Refund {
+	out := Refund{
+		ID:            refund.ID,
+		OrderID:       refund.Metadata["order_id"],
+		Status:        string(refund.Status),
+		AmountCents:   int(refund.Amount),
+		FailureReason: string(refund.FailureReason),
+	}
+	// Absent/garbage metadata (dashboard-issued refunds) parses to 0.
+	if attempt, err := strconv.Atoi(refund.Metadata["attempt"]); err == nil && attempt > 0 {
+		out.Attempt = attempt
+	}
+	// Unexpanded webhook payloads carry payment_intent as a bare ID;
+	// stripe.Refund's custom UnmarshalJSON still populates PaymentIntent.ID,
+	// so this works for both expanded API responses and raw event payloads.
+	if refund.PaymentIntent != nil {
+		out.PaymentIntentID = refund.PaymentIntent.ID
+	}
+
+	return out
+}
+
 func (p *StripeProvider) ListPaymentMethods(ctx context.Context, stripeCustomerID string) ([]PaymentMethod, error) {
 	listParams := &stripe.PaymentMethodListParams{
 		Customer: stripe.String(stripeCustomerID),
@@ -343,6 +422,18 @@ func webhookSignatureTimestamp(signatureHeader string) (time.Time, error) {
 
 func eventFromStripeEvent(stripeEvent stripe.Event) (Event, error) {
 	event := Event{ID: stripeEvent.ID, Type: string(stripeEvent.Type)}
+	if strings.HasPrefix(event.Type, refundEventPrefix) {
+		if stripeEvent.Data == nil || len(stripeEvent.Data.Raw) == 0 {
+			return Event{}, fmt.Errorf("stripe event %s has no refund payload", stripeEvent.ID)
+		}
+		var stripeRefund stripe.Refund
+		if err := json.Unmarshal(stripeEvent.Data.Raw, &stripeRefund); err != nil {
+			return Event{}, fmt.Errorf("decode stripe event %s refund payload: %w", stripeEvent.ID, err)
+		}
+		event.Refund = refundFromStripeRefund(&stripeRefund)
+		event.OrderID = event.Refund.OrderID
+		return event, nil
+	}
 	if !strings.HasPrefix(event.Type, checkoutSessionEventPrefix) {
 		return event, nil
 	}
@@ -389,6 +480,11 @@ func sessionFromCheckoutSession(checkoutSession *stripe.CheckoutSession) Session
 func isStripeNotFound(err error) bool {
 	var stripeError *stripe.Error
 	return errors.As(err, &stripeError) && stripeError.HTTPStatusCode == http.StatusNotFound
+}
+
+func isStripeChargeAlreadyRefunded(err error) bool {
+	var stripeError *stripe.Error
+	return errors.As(err, &stripeError) && stripeError.Code == stripe.ErrorCodeChargeAlreadyRefunded
 }
 
 func randomHexNonce() (string, error) {

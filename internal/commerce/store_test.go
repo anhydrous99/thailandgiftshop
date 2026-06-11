@@ -894,11 +894,15 @@ func TestOrderTransitionMatrix(t *testing.T) {
 	allStatuses := []OrderStatus{
 		OrderStatusPendingPayment, OrderStatusPaid, OrderStatusShipped,
 		OrderStatusDelivered, OrderStatusPaymentFailed, OrderStatusExpired, OrderStatusCanceled,
+		OrderStatusRefundPending, OrderStatusRefunded, OrderStatusRefundFailed,
 	}
 	legal := map[OrderStatus]map[OrderStatus]bool{
 		OrderStatusPendingPayment: {OrderStatusPaid: true, OrderStatusPaymentFailed: true, OrderStatusExpired: true, OrderStatusCanceled: true},
-		OrderStatusPaid:           {OrderStatusShipped: true, OrderStatusCanceled: true},
-		OrderStatusShipped:        {OrderStatusDelivered: true},
+		OrderStatusPaid:           {OrderStatusShipped: true, OrderStatusRefundPending: true},
+		OrderStatusShipped:        {OrderStatusDelivered: true, OrderStatusRefundPending: true},
+		OrderStatusDelivered:      {OrderStatusRefundPending: true},
+		OrderStatusRefundPending:  {OrderStatusRefunded: true, OrderStatusRefundFailed: true},
+		OrderStatusRefundFailed:   {OrderStatusRefundPending: true},
 	}
 
 	for _, from := range allStatuses {
@@ -1023,6 +1027,93 @@ func TestPatchOrderSameStatusVersionedUpdate(t *testing.T) {
 			cleared, err := fixture.store.PatchOrder(ctx, order.ID, OrderStatusPendingPayment, patched.Version, OrderPatch{StripeCheckoutSessionID: ptr("")})
 			if err != nil || cleared.StripeCheckoutSessionID != "" {
 				t.Fatalf("clearing PatchOrder = %#v %v, want empty session id", cleared, err)
+			}
+		})
+	}
+}
+
+func TestOrderRefundFieldsRoundTrip(t *testing.T) {
+	for _, fixture := range storeFixtures(t) {
+		t.Run(fixture.name, func(t *testing.T) {
+			ctx := context.Background()
+			customer := createTestCustomer(t, fixture.store, "shopper@example.test")
+			seed := testOrder(customer.ID, 1850)
+			seed.Status = OrderStatusPaid
+			order, err := fixture.store.CreateOrder(ctx, seed)
+			if err != nil {
+				t.Fatalf("CreateOrder returned error: %v", err)
+			}
+			if order.StripeRefundID != "" || order.RefundAttempt != 0 || order.RefundFailureReason != "" || !order.RefundedAt.IsZero() {
+				t.Fatalf("new order refund fields = %#v, want zero values", order)
+			}
+
+			// Issue: refund_pending with refund ID + attempt, clearing a (still
+			// absent) failure reason via pointer-to-empty.
+			fixture.clock.Advance(5 * time.Minute)
+			pending, err := fixture.store.TransitionOrder(ctx, order.ID, OrderStatusPaid, OrderStatusRefundPending, OrderPatch{
+				Actor:               OrderActorAdmin,
+				StripeRefundID:      ptr("re_test_1"),
+				RefundAttempt:       ptr(1),
+				RefundFailureReason: ptr(""),
+			})
+			if err != nil {
+				t.Fatalf("TransitionOrder to refund_pending returned error: %v", err)
+			}
+			if pending.StripeRefundID != "re_test_1" || pending.RefundAttempt != 1 || pending.RefundFailureReason != "" {
+				t.Fatalf("refund_pending order = %#v", pending)
+			}
+
+			// Failure: persist the provider reason.
+			failed, err := fixture.store.TransitionOrder(ctx, order.ID, OrderStatusRefundPending, OrderStatusRefundFailed, OrderPatch{
+				Actor:               OrderActorStripe,
+				RefundFailureReason: ptr("expired_or_canceled_card"),
+			})
+			if err != nil || failed.RefundFailureReason != "expired_or_canceled_card" {
+				t.Fatalf("refund_failed order = %#v %v, want persisted reason", failed, err)
+			}
+			stored, _, err := fixture.store.GetOrder(ctx, order.ID)
+			if err != nil || stored.RefundFailureReason != "expired_or_canceled_card" || stored.StripeRefundID != "re_test_1" || stored.RefundAttempt != 1 {
+				t.Fatalf("stored refund_failed order = %#v %v", stored, err)
+			}
+
+			// Retry: new refund ID, attempt 2, stale reason cleared (REMOVE).
+			retried, err := fixture.store.TransitionOrder(ctx, order.ID, OrderStatusRefundFailed, OrderStatusRefundPending, OrderPatch{
+				Actor:               OrderActorAdmin,
+				StripeRefundID:      ptr("re_test_2"),
+				RefundAttempt:       ptr(2),
+				RefundFailureReason: ptr(""),
+			})
+			if err != nil || retried.StripeRefundID != "re_test_2" || retried.RefundAttempt != 2 || retried.RefundFailureReason != "" {
+				t.Fatalf("retried order = %#v %v, want cleared reason + attempt 2", retried, err)
+			}
+			stored, _, err = fixture.store.GetOrder(ctx, order.ID)
+			if err != nil || stored.RefundFailureReason != "" {
+				t.Fatalf("stored retried order reason = %q %v, want cleared", stored.RefundFailureReason, err)
+			}
+
+			// Settle: RefundedAt set with the transition.
+			fixture.clock.Advance(time.Hour)
+			refundedAt := fixture.clock.Now()
+			settled, err := fixture.store.TransitionOrder(ctx, order.ID, OrderStatusRefundPending, OrderStatusRefunded, OrderPatch{
+				Actor:      OrderActorStripe,
+				RefundedAt: &refundedAt,
+			})
+			if err != nil || !settled.RefundedAt.Equal(refundedAt) {
+				t.Fatalf("settled order RefundedAt = %s %v, want %s", settled.RefundedAt, err, refundedAt)
+			}
+			stored, _, err = fixture.store.GetOrder(ctx, order.ID)
+			if err != nil || !stored.RefundedAt.Equal(refundedAt) || stored.Status != OrderStatusRefunded {
+				t.Fatalf("stored settled order = %#v %v", stored, err)
+			}
+
+			// Pointer-to-zero clears RefundedAt (REMOVE); nil leaves the other
+			// fields untouched.
+			cleared, err := fixture.store.PatchOrder(ctx, order.ID, OrderStatusRefunded, settled.Version, OrderPatch{RefundedAt: &time.Time{}})
+			if err != nil || !cleared.RefundedAt.IsZero() {
+				t.Fatalf("cleared RefundedAt = %s %v, want zero", cleared.RefundedAt, err)
+			}
+			if cleared.StripeRefundID != "re_test_2" || cleared.RefundAttempt != 2 {
+				t.Fatalf("cleared order mutated untouched fields: %#v", cleared)
 			}
 		})
 	}

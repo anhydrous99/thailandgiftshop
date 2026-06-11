@@ -1059,9 +1059,13 @@ func addObservability(stack awscdk.Stack, resources observabilityResources) {
 	checkoutPaymentProviderError := appMetric(appobservability.MetricCheckoutPayment, "Checkout provider errors", period5m, map[string]*string{"Service": jsii.String(metricServiceCheckout), "Outcome": jsii.String("provider_error")})
 	checkoutPaymentError := appMetric(appobservability.MetricCheckoutPayment, "Checkout errors", period5m, map[string]*string{"Service": jsii.String(metricServiceCheckout), "Outcome": jsii.String("error")})
 	checkoutPaymentErrors := appOutcomeSumMetric(appobservability.MetricCheckoutPayment, "Checkout payment errors", period5m, metricServiceCheckout, "cp", []string{"provider_error", "error"})
+	checkoutRefundIssued := appMetric(appobservability.MetricCheckoutRefund, "Refunds issued", period5m, map[string]*string{"Service": jsii.String(metricServiceCheckout), "Outcome": jsii.String("issued")})
+	checkoutRefundIssuedAuto := appMetric(appobservability.MetricCheckoutRefund, "Refunds auto-issued", period5m, map[string]*string{"Service": jsii.String(metricServiceCheckout), "Outcome": jsii.String("issued_auto")})
+	checkoutRefundSettled := appMetric(appobservability.MetricCheckoutRefund, "Refunds settled", period5m, map[string]*string{"Service": jsii.String(metricServiceCheckout), "Outcome": jsii.String("settled")})
+	checkoutRefundErrors := appOutcomeSumMetric(appobservability.MetricCheckoutRefund, "Checkout refund errors", period5m, metricServiceCheckout, "crf", []string{"failed", "provider_error", "error"})
 	stripeWebhookProcessed := appMetric(appobservability.MetricStripeWebhook, "Stripe webhook processed", period5m, map[string]*string{"Service": jsii.String(metricServiceSsr), "Outcome": jsii.String("processed")})
 	stripeWebhookIgnored := appMetric(appobservability.MetricStripeWebhook, "Stripe webhook ignored", period5m, map[string]*string{"Service": jsii.String(metricServiceSsr), "Outcome": jsii.String("ignored")})
-	stripeWebhookErrors := appOutcomeSumMetric(appobservability.MetricStripeWebhook, "Stripe webhook errors", period5m, metricServiceSsr, "sw", []string{"invalid_signature", "amount_mismatch", "paid_after_terminal", "error"})
+	stripeWebhookErrors := appOutcomeSumMetric(appobservability.MetricStripeWebhook, "Stripe webhook errors", period5m, metricServiceSsr, "sw", []string{"invalid_signature", "amount_mismatch", "refund_mismatch", "paid_after_terminal", "error"})
 	// StockAdjust is emitted by internal/catalog's AdjustStock (Service=catalog)
 	// regardless of which Lambda triggered the adjustment.
 	stockAdjustReserve := appMetric(appobservability.MetricStockAdjust, "Stock reservations", period5m, map[string]*string{"Service": jsii.String(metricServiceCatalog), "Outcome": jsii.String("reserve")})
@@ -1098,8 +1102,9 @@ func addObservability(stack awscdk.Stack, resources observabilityResources) {
 		addCriticalAlarm(stack, operationsAlarmTopic, "CatalogWriteErrorsAlarm", "ThailandGiftshop-CatalogWrite-Errors", catalogWriteErrors, 0, 1, "Admin catalog write errors occurred."),
 		addCriticalAlarm(stack, operationsAlarmTopic, "ImageUploadErrorsAlarm", "ThailandGiftshop-ProductImageUpload-Errors", imageUploadErrors, 0, 1, "Product image upload errors occurred."),
 		addAlarm(stack, "AdminLoginThrottleTableThrottlesAlarm", "ThailandGiftshop-AdminLoginThrottleTable-Throttles", adminLoginThrottleTableThrottles, 0, 1, "Admin login throttle DynamoDB table is throttling."),
-		addCriticalAlarm(stack, operationsAlarmTopic, "StripeWebhookErrorsAlarm", "ThailandGiftshop-StripeWebhook-Errors", stripeWebhookErrors, 0, 1, "Stripe webhook signature failures, amount mismatches, payments captured for terminal orders (manual-refund runbook), or processing errors occurred."),
+		addCriticalAlarm(stack, operationsAlarmTopic, "StripeWebhookErrorsAlarm", "ThailandGiftshop-StripeWebhook-Errors", stripeWebhookErrors, 0, 1, "Stripe webhook signature failures, amount or refund mismatches, payments captured for terminal orders (auto-refund already issued — verify its legitimacy and settlement in Stripe), or processing errors occurred."),
 		addCriticalAlarm(stack, operationsAlarmTopic, "CheckoutPaymentErrorsAlarm", "ThailandGiftshop-CheckoutPayment-Errors", checkoutPaymentErrors, 0, 1, "Checkout payment provider or processing errors occurred."),
+		addCriticalAlarm(stack, operationsAlarmTopic, "CheckoutRefundErrorsAlarm", "ThailandGiftshop-CheckoutRefund-Errors", checkoutRefundErrors, 0, 1, "A Stripe refund failed, could not be issued, or hit a processing error; the affected order page in /admin/orders names the refund and failure reason."),
 		addCriticalAlarm(stack, operationsAlarmTopic, "StockAdjustRollbackErrorsAlarm", "ThailandGiftshop-StockAdjust-RollbackErrors", stockAdjustRollbackErrors, 0, 1, "A stock reservation rollback failed; product stock may need manual correction."),
 	}
 
@@ -1158,7 +1163,7 @@ func addObservability(stack awscdk.Stack, resources observabilityResources) {
 			Title: jsii.String("Customer accounts and checkout"),
 			Width: jsii.Number(12),
 			Left:  cwMetrics(customerAuthSuccess, customerAuthInvalid, customerAuthThrottled, customerAuthError),
-			Right: cwMetrics(checkoutPaymentSuccess, checkoutPaymentInsufficientStock, checkoutPaymentProviderError, checkoutPaymentError),
+			Right: cwMetrics(checkoutPaymentSuccess, checkoutPaymentInsufficientStock, checkoutPaymentProviderError, checkoutPaymentError, checkoutRefundIssued, checkoutRefundIssuedAuto, checkoutRefundSettled, checkoutRefundErrors),
 		}),
 		awscloudwatch.NewGraphWidget(&awscloudwatch.GraphWidgetProps{
 			Title: jsii.String("Stripe webhooks and stock adjustments"),

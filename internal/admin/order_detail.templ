@@ -1,6 +1,10 @@
 package admin
 
-import "strconv"
+import (
+	"strconv"
+
+	"github.com/anhydrous99/thailandgiftshop/internal/commerce"
+)
 
 templ adminOrderDetailPage(vm adminOrderDetailViewModel) {
 	<!DOCTYPE html>
@@ -14,8 +18,18 @@ templ adminOrderDetailPage(vm adminOrderDetailViewModel) {
 					if vm.Flash != "" {
 						<p data-testid="admin-flash" role="alert" class="mt-6 border-l-4 border-flag-red bg-flag-white px-5 py-4 text-sm font-semibold text-flag-blue">{ vm.Flash }</p>
 					}
-					if vm.RefundNotice {
-						<p data-testid="admin-order-refund-notice" role="alert" class="mt-4 border-l-4 border-gold bg-flag-white px-5 py-4 text-sm font-semibold text-flag-blue">This order was already paid. Refund the payment manually in the Stripe dashboard; the payment intent ID on this page locates it.</p>
+					if vm.Order.Status == commerce.OrderStatusRefundFailed || vm.Order.RefundFailureReason != "" {
+						<p data-testid="admin-order-refund-failed" role="alert" class="mt-4 border-l-4 border-flag-red bg-flag-red/10 px-5 py-4 text-sm font-semibold text-flag-red">
+							Stripe could not return the funds
+							if vm.Order.RefundFailureReason != "" {
+								({ vm.Order.RefundFailureReason })
+							}.
+							if vm.RefundRetry {
+								Retry the refund below, or resolve it in the Stripe dashboard.
+							} else {
+								Resolve it in the Stripe dashboard.
+							}
+						</p>
 					}
 					if vm.StockWarning {
 						<p data-testid="admin-order-stock-warning" role="alert" class="mt-4 border-l-4 border-flag-red bg-flag-red/10 px-5 py-4 text-sm font-semibold text-flag-red">Stock release failed for this cancellation. Adjust the affected product stock manually.</p>
@@ -51,6 +65,9 @@ templ adminOrderDetailPage(vm adminOrderDetailViewModel) {
 									<div class="flex justify-between gap-4 border-t border-white/20 pt-2"><dt class="text-white/70">Total</dt><dd class="font-display text-lg font-bold text-white">{ formatAdminPrice(vm.Order.TotalCents) }</dd></div>
 									if vm.Order.StripePaymentIntentID != "" {
 										<div class="flex justify-between gap-4"><dt class="text-white/70">Payment intent</dt><dd data-testid="admin-order-payment-intent" class="break-all font-semibold">{ vm.Order.StripePaymentIntentID }</dd></div>
+									}
+									if vm.Order.StripeRefundID != "" {
+										<div class="flex justify-between gap-4"><dt class="text-white/70">Refund</dt><dd data-testid="admin-order-refund-id" class="break-all font-semibold">{ vm.Order.StripeRefundID }</dd></div>
 									}
 									if vm.Order.StripeCheckoutSessionID != "" {
 										<div class="flex justify-between gap-4"><dt class="text-white/70">Checkout session</dt><dd class="break-all font-semibold">{ vm.Order.StripeCheckoutSessionID }</dd></div>
@@ -112,7 +129,7 @@ templ adminOrderDetailPage(vm adminOrderDetailViewModel) {
 									}
 								</ol>
 							</section>
-							if len(vm.AdvanceTargets) > 0 || vm.ShowTrackingForm || vm.ShowCancelForm {
+							if len(vm.AdvanceTargets) > 0 || vm.ShowTrackingForm || vm.ShowCancelForm || vm.ShowRefundForm {
 								<section class="border border-flag-blue/15 bg-paper p-5 sm:p-6">
 									<p class="text-xs font-semibold uppercase tracking-eyebrow text-flag-red">Actions</p>
 									<div class="mt-4 grid gap-4">
@@ -138,14 +155,31 @@ templ adminOrderDetailPage(vm adminOrderDetailViewModel) {
 												<button data-testid="admin-order-tracking-button" type="submit" class="inline-flex h-11 items-center justify-center bg-flag-red px-5 text-sm font-bold text-white transition hover:bg-flag-red-deep">Save tracking and mark shipped</button>
 											</form>
 										}
+										if vm.ShowRefundForm {
+											<form data-testid="admin-order-refund" method="post" action={ "/admin/orders/" + vm.Order.ID + "/refund" } class="grid gap-3 border border-flag-blue/25 bg-flag-white p-4">
+												<input type="hidden" name="csrf_token" value={ vm.CSRFValue }/>
+												if vm.RefundRetry {
+													<p class="text-sm leading-6 text-muted">The previous refund failed. Retrying issues a fresh Stripe refund for the full amount.</p>
+												} else if vm.RefundFromPaid {
+													<p class="text-sm leading-6 text-muted">Refunding returns the full payment to the shopper through Stripe and returns the reserved stock to the shop.</p>
+												} else {
+													<p class="text-sm leading-6 text-muted">Refunding returns the full payment to the shopper through Stripe. Shipped stock is not restocked.</p>
+												}
+												<button data-testid="admin-order-refund-button" type="submit" class="inline-flex h-11 items-center justify-center bg-flag-blue px-5 text-sm font-bold text-white transition hover:bg-ink sm:justify-self-start">
+													if vm.RefundRetry {
+														Retry refund
+													} else if vm.RefundFromPaid {
+														Cancel and refund
+													} else {
+														Refund order
+													}
+												</button>
+											</form>
+										}
 										if vm.ShowCancelForm {
 											<form data-testid="admin-order-cancel" method="post" action={ "/admin/orders/" + vm.Order.ID + "/cancel" } class="grid gap-3 border border-flag-red/25 bg-flag-white p-4">
 												<input type="hidden" name="csrf_token" value={ vm.CSRFValue }/>
-												if vm.CancelFromPaid {
-													<p class="text-sm leading-6 text-muted">Canceling returns the reserved stock to the shop. This order is already paid, so refund the payment manually in the Stripe dashboard.</p>
-												} else {
-													<p class="text-sm leading-6 text-muted">Canceling returns the reserved stock to the shop. No payment has been captured for this order.</p>
-												}
+												<p class="text-sm leading-6 text-muted">Canceling returns the reserved stock to the shop. No payment has been captured for this order.</p>
 												<button data-testid="admin-order-cancel-button" type="submit" class="inline-flex h-11 items-center justify-center border border-flag-red/40 bg-paper px-5 text-sm font-bold text-flag-red transition hover:bg-flag-red/10 sm:justify-self-start">Cancel order</button>
 											</form>
 										}

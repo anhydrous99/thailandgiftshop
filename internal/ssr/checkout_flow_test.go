@@ -734,7 +734,7 @@ func TestConfirmRendersPaymentReceivedPageForTerminalOrder(t *testing.T) {
 	assertBodyContains(t, response.Body, []string{
 		`data-testid="checkout-payment-received"`,
 		`Payment received`,
-		`A refund is pending`,
+		`A refund is being issued automatically`,
 		orderID,
 	})
 
@@ -867,6 +867,12 @@ func (stubStripeKindProvider) GetSession(ctx context.Context, sessionID string) 
 }
 func (stubStripeKindProvider) ExpireSession(ctx context.Context, sessionID string) error {
 	return payments.ErrSessionNotFound
+}
+func (stubStripeKindProvider) CreateRefund(ctx context.Context, input payments.RefundInput) (payments.Refund, error) {
+	return payments.Refund{}, fmt.Errorf("not implemented")
+}
+func (stubStripeKindProvider) GetRefund(ctx context.Context, refundID string) (payments.Refund, error) {
+	return payments.Refund{}, payments.ErrRefundNotFound
 }
 func (stubStripeKindProvider) ListPaymentMethods(ctx context.Context, stripeCustomerID string) ([]payments.PaymentMethod, error) {
 	return nil, nil
@@ -1406,5 +1412,133 @@ func TestWebhook404sWhenPaymentsUnconfigured(t *testing.T) {
 	}
 	if response.StatusCode != http.StatusNotFound {
 		t.Fatalf("status code = %d, want 404", response.StatusCode)
+	}
+}
+
+// refundEventPayload builds a refund.* event payload the way Stripe delivers
+// it: the refund carries metadata.order_id/attempt and a bare payment_intent.
+func refundEventPayload(eventID string, eventType string, refundID string, orderID string, attempt int, paymentIntentID string, status string, failureReason string, amountCents int) []byte {
+	return fmt.Appendf(nil,
+		`{"id":%q,"object":"event","type":%q,"data":{"object":{"id":%q,"object":"refund","status":%q,"failure_reason":%q,"amount":%s,"payment_intent":%q,"metadata":{"order_id":%q,"attempt":%q}}}}`,
+		eventID, eventType, refundID, status, failureReason, strconv.Itoa(amountCents), paymentIntentID, orderID, strconv.Itoa(attempt))
+}
+
+// refundPendingWebhookOrder finalizes a placed order via the signed webhook
+// (persisting payment intent pi_test_webhook) and moves it to refund_pending
+// with a recorded refund ID, mirroring an admin refund awaiting settlement.
+func refundPendingWebhookOrder(t *testing.T, env accountTestEnv, orderID string, sessionID string) {
+	t.Helper()
+	payload := checkoutSessionEventPayload("evt_completed_"+orderID, "checkout.session.completed", sessionID, orderID, "paid", 5798)
+	response, err := env.handler.Handle(context.Background(), fakeSignedWebhookRequest(payload, time.Now()))
+	if err != nil || response.StatusCode != http.StatusOK {
+		t.Fatalf("finalize webhook = %d %v, want 200", response.StatusCode, err)
+	}
+	paid, _, err := env.commerce.GetOrder(context.Background(), orderID)
+	if err != nil || paid.Status != commerce.OrderStatusPaid {
+		t.Fatalf("order = %s %v, want paid", paid.Status, err)
+	}
+	refundID := "re_test_" + orderID
+	attempt := 1
+	if _, err := env.commerce.TransitionOrder(context.Background(), orderID, commerce.OrderStatusPaid, commerce.OrderStatusRefundPending, commerce.OrderPatch{
+		Actor:          commerce.OrderActorAdmin,
+		StripeRefundID: &refundID,
+		RefundAttempt:  &attempt,
+	}); err != nil {
+		t.Fatalf("TransitionOrder to refund_pending returned error: %v", err)
+	}
+}
+
+func TestWebhookRefundUpdatedSettlesRefundPendingOrder(t *testing.T) {
+	env := newAccountTestEnv(t)
+	jar, addressID := checkoutTestSetup(t, env, 2)
+	orderID, sessionID := placeTestOrder(t, env, jar, addressID)
+	refundPendingWebhookOrder(t, env, orderID, sessionID)
+	if got := mangoStock(t, env); got != 3 {
+		t.Fatalf("mango stock = %d, want the reservation still held before settlement", got)
+	}
+
+	payload := refundEventPayload("evt_refund_settle_1", "refund.updated", "re_test_"+orderID, orderID, 1, "pi_test_webhook", "succeeded", "", 5798)
+	response, err := env.handler.Handle(context.Background(), fakeSignedWebhookRequest(payload, time.Now()))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status code = %d body %q, want 200", response.StatusCode, response.Body)
+	}
+	order, _, err := env.commerce.GetOrder(context.Background(), orderID)
+	if err != nil {
+		t.Fatalf("GetOrder returned error: %v", err)
+	}
+	if order.Status != commerce.OrderStatusRefunded || order.RefundedAt.IsZero() {
+		t.Fatalf("order = %s refundedAt %v, want refunded", order.Status, order.RefundedAt)
+	}
+	if got := mangoStock(t, env); got != 5 {
+		t.Fatalf("mango stock = %d, want released back to 5 for the unshipped refund", got)
+	}
+
+	// The shopper's order page renders the refund status straight from the
+	// label map: list row and detail chip.
+	detail, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, "/orders/"+orderID, jar))
+	if err != nil {
+		t.Fatalf("Handle order detail returned error: %v", err)
+	}
+	assertBodyContains(t, detail.Body, []string{`data-testid="order-status"`, "Refunded"})
+	list, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, "/orders", jar))
+	if err != nil {
+		t.Fatalf("Handle orders list returned error: %v", err)
+	}
+	assertBodyContains(t, list.Body, []string{`data-testid="order-row"`, "Refunded"})
+}
+
+func TestWebhookRefundUpdatedForeignPaymentIntentIsRejected(t *testing.T) {
+	env := newAccountTestEnv(t)
+	jar, addressID := checkoutTestSetup(t, env, 2)
+	orderID, sessionID := placeTestOrder(t, env, jar, addressID)
+	refundPendingWebhookOrder(t, env, orderID, sessionID)
+	recorder := &testMetricRecorder{}
+	env.handler.metrics = recorder
+	// The checkout service captured the recorder at handler construction;
+	// point it at the test recorder so webhook outcomes are observable.
+	env.handler.checkout.Metrics = recorder
+
+	// metadata.order_id routes the event here, but the payment intent does
+	// not match the order: ACK without touching it (alarmed refund_mismatch).
+	payload := refundEventPayload("evt_refund_foreign_1", "refund.updated", "re_test_"+orderID, orderID, 1, "pi_someone_else", "succeeded", "", 5798)
+	response, err := env.handler.Handle(context.Background(), fakeSignedWebhookRequest(payload, time.Now()))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status code = %d body %q, want 200 ACK", response.StatusCode, response.Body)
+	}
+	order, _, err := env.commerce.GetOrder(context.Background(), orderID)
+	if err != nil {
+		t.Fatalf("GetOrder returned error: %v", err)
+	}
+	if order.Status != commerce.OrderStatusRefundPending {
+		t.Fatalf("order status = %q, want still refund_pending", order.Status)
+	}
+	if got := mangoStock(t, env); got != 3 {
+		t.Fatalf("mango stock = %d, want the reservation untouched", got)
+	}
+	assertRecordedMetric(t, recorder, observability.MetricStripeWebhook, observability.UnitCount, map[string]string{
+		"Service": "ssr",
+		"Outcome": "refund_mismatch",
+	})
+}
+
+func TestOrderStatusLabelsCoverRefundFamily(t *testing.T) {
+	tests := []struct {
+		status commerce.OrderStatus
+		want   string
+	}{
+		{commerce.OrderStatusRefundPending, "Refund pending"},
+		{commerce.OrderStatusRefunded, "Refunded"},
+		{commerce.OrderStatusRefundFailed, "Refund delayed"},
+	}
+	for _, test := range tests {
+		if got := orderStatusLabel(test.status); got != test.want {
+			t.Errorf("orderStatusLabel(%s) = %q, want %q", test.status, got, test.want)
+		}
 	}
 }

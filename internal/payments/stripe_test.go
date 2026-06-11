@@ -5,11 +5,13 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
 	"time"
 
+	stripe "github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/webhook"
 )
 
@@ -407,6 +409,202 @@ func TestParseWebhookIgnoresNonCheckoutEventBodies(t *testing.T) {
 	}
 	if event.SessionID != "" || event.OrderID != "" || event.Session != (Session{}) {
 		t.Fatalf("event = %#v, want empty session fields for non-checkout events", event)
+	}
+}
+
+func TestRefundIdempotencyKey(t *testing.T) {
+	if got, want := refundIdempotencyKey("ord0000000000000000000000a", 2), "order-refund-ord0000000000000000000000a-2"; got != want {
+		t.Fatalf("refundIdempotencyKey = %q, want %q", got, want)
+	}
+}
+
+func TestRefundCreateParams(t *testing.T) {
+	params := refundCreateParams(RefundInput{
+		OrderID:         "ord0000000000000000000000a",
+		PaymentIntentID: "pi_test_123",
+		Attempt:         3,
+	})
+
+	if got := stringValue(params.PaymentIntent); got != "pi_test_123" {
+		t.Fatalf("PaymentIntent = %q, want %q", got, "pi_test_123")
+	}
+	if params.Amount != nil {
+		t.Fatalf("Amount = %d, want nil (full refund)", *params.Amount)
+	}
+	if got := stringValue(params.Reason); got != "requested_by_customer" {
+		t.Fatalf("Reason = %q, want %q", got, "requested_by_customer")
+	}
+	if params.Metadata["order_id"] != "ord0000000000000000000000a" || params.Metadata["attempt"] != "3" {
+		t.Fatalf("Metadata = %#v, want order_id and attempt", params.Metadata)
+	}
+	if got := stringValue(params.IdempotencyKey); got != "order-refund-ord0000000000000000000000a-3" {
+		t.Fatalf("IdempotencyKey = %q, want %q", got, "order-refund-ord0000000000000000000000a-3")
+	}
+}
+
+func TestRefundFromStripeRefund(t *testing.T) {
+	tests := []struct {
+		name       string
+		refundJSON string
+		want       Refund
+	}{
+		{
+			name: "full metadata with bare payment intent",
+			refundJSON: `{
+				"id": "re_test_1",
+				"object": "refund",
+				"status": "succeeded",
+				"amount": 4200,
+				"payment_intent": "pi_test_123",
+				"metadata": {"order_id": "ord0000000000000000000000a", "attempt": "2"}
+			}`,
+			want: Refund{ID: "re_test_1", PaymentIntentID: "pi_test_123", OrderID: "ord0000000000000000000000a", Attempt: 2, Status: "succeeded", AmountCents: 4200},
+		},
+		{
+			name: "failed refund carries the failure reason",
+			refundJSON: `{
+				"id": "re_test_2",
+				"object": "refund",
+				"status": "failed",
+				"failure_reason": "expired_or_canceled_card",
+				"amount": 4200,
+				"payment_intent": "pi_test_123",
+				"metadata": {"order_id": "ord0000000000000000000000a", "attempt": "1"}
+			}`,
+			want: Refund{ID: "re_test_2", PaymentIntentID: "pi_test_123", OrderID: "ord0000000000000000000000a", Attempt: 1, Status: "failed", AmountCents: 4200, FailureReason: "expired_or_canceled_card"},
+		},
+		{
+			name: "absent metadata parses to empty order id and attempt 0",
+			refundJSON: `{
+				"id": "re_test_3",
+				"object": "refund",
+				"status": "pending",
+				"amount": 100
+			}`,
+			want: Refund{ID: "re_test_3", Status: "pending", AmountCents: 100},
+		},
+		{
+			name: "garbage attempt metadata parses to 0",
+			refundJSON: `{
+				"id": "re_test_4",
+				"object": "refund",
+				"status": "pending",
+				"amount": 100,
+				"metadata": {"order_id": "ord0000000000000000000000a", "attempt": "soon"}
+			}`,
+			want: Refund{ID: "re_test_4", OrderID: "ord0000000000000000000000a", Status: "pending", AmountCents: 100},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var stripeRefund stripe.Refund
+			if err := json.Unmarshal([]byte(test.refundJSON), &stripeRefund); err != nil {
+				t.Fatalf("unmarshal refund fixture: %v", err)
+			}
+			if got := refundFromStripeRefund(&stripeRefund); got != test.want {
+				t.Fatalf("refundFromStripeRefund = %#v, want %#v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestParseWebhookRefundEvents(t *testing.T) {
+	provider := NewStripeProvider(StripeCredentials{SecretKey: "sk_test_placeholder", WebhookSigningSecret: testWebhookSigningSecret})
+
+	t.Run("refund.created with metadata and bare payment intent", func(t *testing.T) {
+		payload := []byte(`{"id":"evt_refund_1","object":"event","type":"refund.created","data":{"object":{
+			"id": "re_test_1",
+			"object": "refund",
+			"status": "pending",
+			"amount": 4200,
+			"payment_intent": "pi_test_123",
+			"metadata": {"order_id": "ord0000000000000000000000a", "attempt": "2"}
+		}}}`)
+		header := stripeSignatureHeader(payload, testWebhookSigningSecret, testWebhookNow)
+
+		event, err := provider.ParseWebhook(payload, header, testWebhookNow)
+		if err != nil {
+			t.Fatalf("ParseWebhook returned error: %v", err)
+		}
+		if event.ID != "evt_refund_1" || event.Type != "refund.created" {
+			t.Fatalf("event = %#v, want refund.created envelope", event)
+		}
+		if event.OrderID != "ord0000000000000000000000a" {
+			t.Fatalf("event.OrderID = %q, want order id from metadata", event.OrderID)
+		}
+		want := Refund{ID: "re_test_1", PaymentIntentID: "pi_test_123", OrderID: "ord0000000000000000000000a", Attempt: 2, Status: "pending", AmountCents: 4200}
+		if event.Refund != want {
+			t.Fatalf("event.Refund = %#v, want %#v", event.Refund, want)
+		}
+		if event.SessionID != "" || event.Session != (Session{}) {
+			t.Fatalf("event = %#v, want empty session fields for refund events", event)
+		}
+	})
+
+	t.Run("refund.failed carries failure reason", func(t *testing.T) {
+		payload := []byte(`{"id":"evt_refund_2","object":"event","type":"refund.failed","data":{"object":{
+			"id": "re_test_2",
+			"object": "refund",
+			"status": "failed",
+			"failure_reason": "expired_or_canceled_card",
+			"amount": 4200,
+			"payment_intent": "pi_test_123",
+			"metadata": {"order_id": "ord0000000000000000000000a", "attempt": "1"}
+		}}}`)
+		header := stripeSignatureHeader(payload, testWebhookSigningSecret, testWebhookNow)
+
+		event, err := provider.ParseWebhook(payload, header, testWebhookNow)
+		if err != nil {
+			t.Fatalf("ParseWebhook returned error: %v", err)
+		}
+		if event.Refund.Status != RefundStatusFailed || event.Refund.FailureReason != "expired_or_canceled_card" || event.Refund.Attempt != 1 {
+			t.Fatalf("event.Refund = %#v, want failed with reason and attempt", event.Refund)
+		}
+	})
+
+	t.Run("dashboard refund without metadata has empty order id", func(t *testing.T) {
+		payload := []byte(`{"id":"evt_refund_3","object":"event","type":"refund.updated","data":{"object":{
+			"id": "re_test_3",
+			"object": "refund",
+			"status": "succeeded",
+			"amount": 100,
+			"payment_intent": "pi_test_999"
+		}}}`)
+		header := stripeSignatureHeader(payload, testWebhookSigningSecret, testWebhookNow)
+
+		event, err := provider.ParseWebhook(payload, header, testWebhookNow)
+		if err != nil {
+			t.Fatalf("ParseWebhook returned error: %v", err)
+		}
+		if event.OrderID != "" || event.Refund.OrderID != "" || event.Refund.Attempt != 0 {
+			t.Fatalf("event = %#v, want empty order id and attempt for dashboard refunds", event)
+		}
+		if event.Refund.ID != "re_test_3" || event.Refund.PaymentIntentID != "pi_test_999" {
+			t.Fatalf("event.Refund = %#v, want id and payment intent mapped", event.Refund)
+		}
+	})
+
+	t.Run("refund event without payload errors", func(t *testing.T) {
+		payload := []byte(`{"id":"evt_refund_4","object":"event","type":"refund.created"}`)
+		header := stripeSignatureHeader(payload, testWebhookSigningSecret, testWebhookNow)
+
+		if _, err := provider.ParseWebhook(payload, header, testWebhookNow); err == nil {
+			t.Fatal("ParseWebhook returned nil error, want missing-payload error")
+		}
+	})
+}
+
+func TestIsStripeChargeAlreadyRefunded(t *testing.T) {
+	already := &stripe.Error{Code: stripe.ErrorCodeChargeAlreadyRefunded}
+	if !isStripeChargeAlreadyRefunded(fmt.Errorf("create stripe refund: %w", already)) {
+		t.Fatal("isStripeChargeAlreadyRefunded(charge_already_refunded) = false, want true")
+	}
+	if isStripeChargeAlreadyRefunded(&stripe.Error{Code: stripe.ErrorCodeCardDeclined}) {
+		t.Fatal("isStripeChargeAlreadyRefunded(card_declined) = true, want false")
+	}
+	if isStripeChargeAlreadyRefunded(errors.New("network down")) {
+		t.Fatal("isStripeChargeAlreadyRefunded(plain error) = true, want false")
 	}
 }
 
