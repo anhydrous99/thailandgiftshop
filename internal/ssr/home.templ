@@ -9,6 +9,19 @@ templ home(vm homePageViewModel) {
 		<body class="min-h-screen bg-paper text-ink antialiased">
 			@siteHeader("home", vm.HeaderCartLabel)
 			<main>
+				<section data-testid="home-building-banner" aria-label="Home page status" class="border-b-2 border-ink bg-flag-white">
+					@flagBand("h-3")
+					<div class="mx-auto w-full max-w-7xl px-5 py-5 sm:px-8">
+						<div class="grid gap-4 border-2 border-ink bg-paper p-5 shadow-lift sm:grid-cols-[auto_1fr] sm:items-center sm:p-6">
+							<span aria-hidden="true" class="flex h-14 w-14 items-center justify-center bg-flag-blue font-display text-3xl font-bold text-white">!</span>
+							<div>
+								<p class="text-xs font-semibold uppercase tracking-eyebrow text-flag-red">Shop status</p>
+								<p class="mt-2 font-display text-3xl font-bold leading-tight text-flag-blue sm:text-4xl">This page is being built.</p>
+								<p class="mt-2 text-base font-medium leading-7 text-muted">We are still preparing the shop experience.</p>
+							</div>
+						</div>
+					</div>
+				</section>
 				<section class="bg-flag-blue text-white">
 					<div class="mx-auto grid w-full max-w-7xl lg:grid-cols-[1.05fr_0.95fr]">
 						<div class="px-5 py-14 sm:px-8 lg:py-24">
