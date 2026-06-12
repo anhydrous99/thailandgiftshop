@@ -103,10 +103,10 @@ function eventKeyPattern(orderID: string, suffix: string): RegExp {
   return new RegExp(`^order:${orderID}:${suffix}:v\\d+$`);
 }
 
-function assertGuestEmailUsesConfirmLink(message: CapturedEmailMessage, orderID: string) {
+function assertGuestEmailUsesAccessLink(message: CapturedEmailMessage, orderID: string) {
   const content = `${message.text}\n${message.html}`;
-  expect(content.includes('/checkout/confirm?session_id=')).toBe(true);
-  expect(content.includes(`/orders/${orderID}`)).toBe(false);
+  expect(content.includes(`/orders/${orderID}?access=`)).toBe(true);
+  expect(content.includes('/checkout/confirm?session_id=')).toBe(false);
 }
 
 test.describe('order transactional emails', () => {
@@ -132,7 +132,7 @@ test.describe('order transactional emails', () => {
     expect(placedMessage.eventKey).toMatch(eventKeyPattern(trackingOrderID, 'placed'));
     expect(placedMessage.text.includes(trackingOrderID) || placedMessage.html.includes(trackingOrderID)).toBe(true);
     expect(placedMessage.text.includes('Status: paid') || placedMessage.html.includes('Status: paid')).toBe(true);
-    assertGuestEmailUsesConfirmLink(placedMessage, trackingOrderID);
+    assertGuestEmailUsesAccessLink(placedMessage, trackingOrderID);
 
     await adminLogin(page);
     await openAdminOrder(page, trackingOrderID);
@@ -148,7 +148,7 @@ test.describe('order transactional emails', () => {
     expect(trackingMessage.subject).toBe(`Tracking update for order ${trackingOrderID}`);
     expect(trackingMessage.eventKey).toMatch(eventKeyPattern(trackingOrderID, 'tracking'));
     expect(trackingMessage.text.includes(trackingNumber) || trackingMessage.html.includes(trackingNumber)).toBe(true);
-    assertGuestEmailUsesConfirmLink(trackingMessage, trackingOrderID);
+    assertGuestEmailUsesAccessLink(trackingMessage, trackingOrderID);
 
     const trackingEventKey = trackingMessage.eventKey;
     await page.getByTestId('admin-order-carrier-input').fill(trackingCarrier);
@@ -169,11 +169,11 @@ test.describe('order transactional emails', () => {
       eventKey: eventKeyPattern(trackingOrderID, 'status:shipped:delivered'),
     }, 1);
     expect(deliveredMessage.subject).toBe(`Order ${trackingOrderID} status: delivered`);
-    assertGuestEmailUsesConfirmLink(deliveredMessage, trackingOrderID);
+    assertGuestEmailUsesAccessLink(deliveredMessage, trackingOrderID);
 
     const directStatusOrderID = await placePaidGuestScarfOrder(page, directStatusEmail, 'Guest Order Email Direct Status');
     const [directPlacedMessage] = await waitForMessageCount(request, { to: directStatusEmail, kind: 'order_placed' }, 1);
-    assertGuestEmailUsesConfirmLink(directPlacedMessage, directStatusOrderID);
+    assertGuestEmailUsesAccessLink(directPlacedMessage, directStatusOrderID);
     await openAdminOrder(page, directStatusOrderID);
     await expect(page.getByTestId('admin-order-status')).toHaveText('Paid');
     await page.getByTestId('admin-order-advance-status').selectOption('shipped');
@@ -186,7 +186,7 @@ test.describe('order transactional emails', () => {
       eventKey: eventKeyPattern(directStatusOrderID, 'status:paid:shipped'),
     }, 1);
     expect(shippedMessage.subject).toBe(`Order ${directStatusOrderID} status: shipped`);
-    assertGuestEmailUsesConfirmLink(shippedMessage, directStatusOrderID);
+    assertGuestEmailUsesAccessLink(shippedMessage, directStatusOrderID);
 
     await waitForMessageCount(request, { to: trackingEmail }, 3);
     await waitForMessageCount(request, { to: directStatusEmail }, 2);

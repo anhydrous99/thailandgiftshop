@@ -30,11 +30,14 @@ func BuildPasswordReset(to string, resetLink string) Message {
 
 func BuildOrderPlaced(order commerce.Order, orderURL string) Message {
 	status := string(order.Status)
-	text := strings.Join([]string{
+	textLines := []string{
 		fmt.Sprintf("Order %s was placed.", order.ID),
 		fmt.Sprintf("Status: %s", status),
-		fmt.Sprintf("View order: %s", orderURL),
-	}, "\n")
+	}
+	if strings.TrimSpace(orderURL) != "" {
+		textLines = append(textLines, fmt.Sprintf("View order: %s", orderURL))
+	}
+	text := strings.Join(textLines, "\n")
 	htmlBody := strings.Join([]string{
 		fmt.Sprintf("<p>Order %s was placed.</p>", html.EscapeString(order.ID)),
 		fmt.Sprintf("<p>Status: %s</p>", html.EscapeString(status)),
@@ -47,12 +50,15 @@ func BuildOrderPlaced(order commerce.Order, orderURL string) Message {
 func BuildOrderStatusChange(order commerce.Order, from commerce.OrderStatus, to commerce.OrderStatus, orderURL string) Message {
 	fromStatus := string(from)
 	toStatus := string(to)
-	text := strings.Join([]string{
+	textLines := []string{
 		fmt.Sprintf("Order %s status changed from %s to %s.", order.ID, fromStatus, toStatus),
 		fmt.Sprintf("Current status: %s", string(order.Status)),
 		trackingLine(order),
-		fmt.Sprintf("View order: %s", orderURL),
-	}, "\n")
+	}
+	if strings.TrimSpace(orderURL) != "" {
+		textLines = append(textLines, fmt.Sprintf("View order: %s", orderURL))
+	}
+	text := strings.Join(textLines, "\n")
 	htmlBody := strings.Join([]string{
 		fmt.Sprintf("<p>Order %s status changed from %s to %s.</p>", html.EscapeString(order.ID), html.EscapeString(fromStatus), html.EscapeString(toStatus)),
 		fmt.Sprintf("<p>Current status: %s</p>", html.EscapeString(string(order.Status))),
@@ -65,12 +71,15 @@ func BuildOrderStatusChange(order commerce.Order, from commerce.OrderStatus, to 
 
 func BuildTrackingUpdate(order commerce.Order, orderURL string) Message {
 	line := trackingLine(order)
-	text := strings.Join([]string{
+	textLines := []string{
 		fmt.Sprintf("Tracking update for order %s.", order.ID),
 		fmt.Sprintf("Status: %s", string(order.Status)),
 		line,
-		fmt.Sprintf("View order: %s", orderURL),
-	}, "\n")
+	}
+	if strings.TrimSpace(orderURL) != "" {
+		textLines = append(textLines, fmt.Sprintf("View order: %s", orderURL))
+	}
+	text := strings.Join(textLines, "\n")
 	htmlBody := strings.Join([]string{
 		fmt.Sprintf("<p>Tracking update for order %s.</p>", html.EscapeString(order.ID)),
 		fmt.Sprintf("<p>Status: %s</p>", html.EscapeString(string(order.Status))),
@@ -112,5 +121,8 @@ func trackingLineHTML(order commerce.Order) string {
 }
 
 func orderLinkHTML(orderURL string) string {
+	if strings.TrimSpace(orderURL) == "" {
+		return ""
+	}
 	return fmt.Sprintf("<p><a href=%q>View your order</a></p>", html.EscapeString(orderURL))
 }

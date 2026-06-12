@@ -2,9 +2,9 @@ import { expect, test, type Page, type TestInfo } from '@playwright/test';
 
 // Stock budget (INTEGRATION §8): this spec is the only claimant of
 // coconut-curry-pantry-box (stock 25, no variants). Worst case per attempt:
-// 4 paid units plus 2 stranded pending reservations (demo mode has no
-// session-expiry webhook, so canceled/abandoned guest orders never release);
-// a full retry doubles that to 12, still comfortably under 25. Never draw
+// 4 paid units plus at most 1 stranded abandoned reservation (signed cancel
+// returns release their own reservation even in demo mode); a full retry
+// doubles that to 10, still comfortably under 25. Never draw
 // from ceramic-tuk-tuk-magnet-set, thai-tea-sampler, or elephant-pouch-set
 // (orders-paging.spec.ts stock budget), jasmine-rice-candle
 // (checkout.spec.ts), or handwoven-indigo-scarf size S (last-unit test).
@@ -131,7 +131,7 @@ test.describe('without JavaScript', () => {
     await placeGuestOrder(page, email);
 
     await page.getByTestId('fake-pay-cancel').click();
-    await expect(page).toHaveURL(/\/checkout\?canceled=1$/);
+    await expect(page).toHaveURL(/\/checkout\?canceled=1&cancel_token=[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)?$/);
     await expect(page.getByTestId('checkout-canceled-notice')).toContainText('Your cart is unchanged');
     await expect(page.getByTestId('guest-checkout-form')).toBeVisible();
 

@@ -13,6 +13,8 @@ import (
 
 var _ Store = (*MemoryStore)(nil)
 
+const emailEventReservationTTL = 15 * time.Minute
+
 // MemoryStore is the behavior-identical in-memory Store used by local dev,
 // demo mode, and tests.
 type MemoryStore struct {
@@ -494,11 +496,31 @@ func (s *MemoryStore) ReserveEmailEvent(ctx context.Context, event EmailEvent) (
 	defer s.mu.Unlock()
 
 	mapKey := memoryEmailEventKey(event.OrderID, event.Key)
-	if _, found := s.emailEvents[mapKey]; found {
-		return false, nil
+	if event.CreatedAt.IsZero() {
+		event.CreatedAt = s.clock()
+	}
+	if event.Attempts <= 0 {
+		event.Attempts = 1
+	}
+	if existing, found := s.emailEvents[mapKey]; found {
+		if !emailEventCanRetry(existing, event.CreatedAt) {
+			return false, nil
+		}
+		event.Attempts = existing.Attempts + 1
 	}
 	s.emailEvents[mapKey] = event
 	return true, nil
+}
+
+func emailEventCanRetry(existing EmailEvent, now time.Time) bool {
+	switch existing.Status {
+	case "failed":
+		return true
+	case "reserved":
+		return !existing.CreatedAt.IsZero() && !now.Before(existing.CreatedAt.Add(emailEventReservationTTL))
+	default:
+		return false
+	}
 }
 
 func (s *MemoryStore) MarkEmailEventSent(ctx context.Context, orderID string, key string, sentAt time.Time) error {

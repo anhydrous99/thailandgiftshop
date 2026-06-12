@@ -1335,6 +1335,7 @@ func TestCatalogPage404sDoNotSetCacheControl(t *testing.T) {
 
 func TestSSROriginSecretBlocksDirectRequestsWhenConfigured(t *testing.T) {
 	t.Setenv(envOriginHeaderSecret, "origin-secret")
+	t.Setenv(envPreviousOriginHeaderSecret, "previous-origin-secret")
 	handler := NewHandler(routeMatrixStore())
 
 	blocked, err := handler.Handle(context.Background(), pageRequest(http.MethodGet, "/"))
@@ -1356,6 +1357,16 @@ func TestSSROriginSecretBlocksDirectRequestsWhenConfigured(t *testing.T) {
 	}
 	if allowed.StatusCode != http.StatusOK {
 		t.Fatalf("allowed status = %d, want %d", allowed.StatusCode, http.StatusOK)
+	}
+
+	previousRequest := pageRequest(http.MethodGet, "/")
+	previousRequest.Headers = map[string]string{originSecretHeaderName: "previous-origin-secret"}
+	previous, err := handler.Handle(context.Background(), previousRequest)
+	if err != nil {
+		t.Fatalf("Handle previous returned error: %v", err)
+	}
+	if previous.StatusCode != http.StatusOK {
+		t.Fatalf("previous status = %d, want %d", previous.StatusCode, http.StatusOK)
 	}
 
 	mismatchedRequest := pageRequest(http.MethodGet, "/")
@@ -4064,6 +4075,15 @@ func rawSetCookie(t *testing.T, response events.APIGatewayV2HTTPResponse, name s
 	return ""
 }
 
+func optionalSetCookie(response events.APIGatewayV2HTTPResponse, name string) (string, bool) {
+	for _, setCookie := range response.Cookies {
+		if strings.HasPrefix(setCookie, name+"=") {
+			return setCookie, true
+		}
+	}
+	return "", false
+}
+
 func setCookieValue(t *testing.T, response events.APIGatewayV2HTTPResponse, name string) string {
 	t.Helper()
 	for _, setCookie := range response.Cookies {
@@ -4966,6 +4986,17 @@ func TestPasswordChangeRevokesOtherSessions(t *testing.T) {
 	signUpTestCustomer(t, env.handler, jar, "shopper@example.com", "orchid-market-99")
 	otherDeviceJar := testCookieJar{}
 	signInTestCustomer(t, env.handler, otherDeviceJar, "shopper@example.com", "orchid-market-99")
+	customerID := accountCustomerID(t, env, "shopper@example.com")
+	env.email.Clear()
+	submitPasswordResetRequest(t, env.handler, testCookieJar{}, "shopper@example.com")
+	resetPayload, ok := env.handler.decodePasswordResetToken(resetTokenFromLastMessage(t, env.email))
+	if !ok {
+		t.Fatal("password reset token did not decode")
+	}
+	resetHash := hashPasswordResetToken(resetPayload.Token)
+	if _, found, err := env.commerce.ValidatePasswordResetToken(context.Background(), customerID, resetHash, env.handler.currentTime()); err != nil || !found {
+		t.Fatalf("reset token before password change found=%t err=%v, want valid", found, err)
+	}
 
 	token := accountCSRFToken(t, env.handler, jar)
 	response, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/password", url.Values{
@@ -4998,6 +5029,9 @@ func TestPasswordChangeRevokesOtherSessions(t *testing.T) {
 	}
 	if otherDevice.StatusCode != http.StatusSeeOther {
 		t.Fatalf("other device status = %d, want %d (sessions revoked)", otherDevice.StatusCode, http.StatusSeeOther)
+	}
+	if _, found, err := env.commerce.ValidatePasswordResetToken(context.Background(), customerID, resetHash, env.handler.currentTime()); err != nil || found {
+		t.Fatalf("reset token after password change found=%t err=%v, want deleted", found, err)
 	}
 
 	oldPasswordJar := testCookieJar{}

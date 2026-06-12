@@ -453,6 +453,7 @@ func (s *DynamoStore) DeleteAllSessions(ctx context.Context, customerID string) 
 	}
 	items, err := s.queryItems(ctx, dynamodb.QueryInput{
 		TableName:              aws.String(s.tableName),
+		ConsistentRead:         aws.Bool(true),
 		KeyConditionExpression: aws.String("#pk = :pk AND begins_with(#sk, :sk_prefix)"),
 		ExpressionAttributeNames: map[string]string{
 			"#pk": "pk",
@@ -935,11 +936,49 @@ func (s *DynamoStore) MarkStripeEventProcessed(ctx context.Context, eventID stri
 }
 
 func (s *DynamoStore) ReserveEmailEvent(ctx context.Context, event EmailEvent) (bool, error) {
+	if event.CreatedAt.IsZero() {
+		event.CreatedAt = s.clock()
+	}
+	if event.Attempts <= 0 {
+		event.Attempts = 1
+	}
 	item, err := emailEventItem(event)
 	if err != nil {
 		return false, err
 	}
 	err = s.putItem(ctx, item, aws.String("attribute_not_exists(pk)"), nil, "ReserveEmailEvent")
+	if err != nil {
+		if isConditionalCheckFailed(err) {
+			return s.reserveExistingEmailEvent(ctx, event)
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *DynamoStore) reserveExistingEmailEvent(ctx context.Context, event EmailEvent) (bool, error) {
+	item, err := s.getItem(ctx, orderPK(event.OrderID), emailEventSK(event.Key), "ReserveEmailEvent")
+	if err != nil {
+		return false, err
+	}
+	if len(item) == 0 {
+		return false, nil
+	}
+	existing, err := emailEventFromItem(item)
+	if err != nil {
+		return false, err
+	}
+	if !emailEventCanRetry(existing, event.CreatedAt) {
+		return false, nil
+	}
+
+	event.Attempts = existing.Attempts + 1
+	replacement, err := emailEventItem(event)
+	if err != nil {
+		return false, err
+	}
+	condition, expressions := retryEmailEventCondition(existing)
+	err = s.putItem(ctx, replacement, aws.String(condition), expressions, "ReserveEmailEvent")
 	if isConditionalCheckFailed(err) {
 		return false, nil
 	}
@@ -947,6 +986,25 @@ func (s *DynamoStore) ReserveEmailEvent(ctx context.Context, event EmailEvent) (
 		return false, err
 	}
 	return true, nil
+}
+
+func retryEmailEventCondition(existing EmailEvent) (string, *putItemExpressions) {
+	expressions := &putItemExpressions{
+		names: map[string]string{
+			"#status": "status",
+		},
+		values: map[string]types.AttributeValue{
+			":retry_status": &types.AttributeValueMemberS{Value: existing.Status},
+		},
+	}
+	switch existing.Status {
+	case "failed":
+		expressions.values[":existing_attempts"] = numberValue(int64(existing.Attempts))
+		return "attribute_exists(pk) AND #status = :retry_status AND attempts = :existing_attempts", expressions
+	default:
+		expressions.values[":existing_created_at"] = &types.AttributeValueMemberS{Value: formatCommerceTime(existing.CreatedAt)}
+		return "attribute_exists(pk) AND #status = :retry_status AND created_at = :existing_created_at", expressions
+	}
 }
 
 func (s *DynamoStore) MarkEmailEventSent(ctx context.Context, orderID string, key string, sentAt time.Time) error {

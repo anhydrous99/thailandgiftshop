@@ -273,7 +273,7 @@ func TestMemoryStoreAdjustStockMultiProductCompensationReleasesEarlierReserves(t
 	}
 }
 
-func TestMemoryStoreAdjustStockCompensationDoesNotReReserveReleasedStock(t *testing.T) {
+func TestMemoryStoreAdjustStockCompensationReversesEarlierReleases(t *testing.T) {
 	store := NewMemoryStore([]Product{stockTestBaseProduct(), stockTestVariantProduct()}, nil)
 
 	err := store.AdjustStock(context.Background(), []StockAdjustment{
@@ -286,11 +286,11 @@ func TestMemoryStoreAdjustStockCompensationDoesNotReReserveReleasedStock(t *test
 	}
 
 	base := mustGetProduct(t, store, "prod_base")
-	if base.StockQuantity != 7 {
-		t.Fatalf("base stock = %d, want released 7 left in place (releases are never re-reserved)", base.StockQuantity)
+	if base.StockQuantity != 5 {
+		t.Fatalf("base stock after failed release = %d, want restored 5", base.StockQuantity)
 	}
-	if base.Version != 4 {
-		t.Fatalf("base version = %d, want single write to 4", base.Version)
+	if base.Version != 5 {
+		t.Fatalf("base version = %d, want release and compensating reserve to bump to 5", base.Version)
 	}
 }
 

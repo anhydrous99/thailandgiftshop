@@ -196,6 +196,7 @@ func TestDemoCatalogSeedItemsIncludesExpectedRows(t *testing.T) {
 
 	var categories int
 	var products int
+	var productSlugLocks int
 	var categoryProducts int
 	var marked int
 	for _, item := range items {
@@ -225,6 +226,20 @@ func TestDemoCatalogSeedItemsIncludesExpectedRows(t *testing.T) {
 			if _, ok := item["gsi4pk"]; ok {
 				t.Fatal("seed category-product row unexpectedly includes gsi4pk")
 			}
+		case entityProductSlugLock:
+			productSlugLocks++
+			if _, ok := item["gsi1pk"]; ok {
+				t.Fatal("seed slug lock unexpectedly includes gsi1pk")
+			}
+			if _, ok := item["gsi4pk"]; ok {
+				t.Fatal("seed slug lock unexpectedly includes gsi4pk")
+			}
+			if got := stringAttribute(t, item, "pk"); !strings.HasPrefix(got, "PRODUCT_SLUG#") {
+				t.Fatalf("seed slug lock pk = %q", got)
+			}
+			if got := stringAttribute(t, item, "product_id"); got == "" {
+				t.Fatal("seed slug lock product_id is empty")
+			}
 		default:
 			t.Fatalf("unexpected entity_type %q", got)
 		}
@@ -235,6 +250,9 @@ func TestDemoCatalogSeedItemsIncludesExpectedRows(t *testing.T) {
 	}
 	if products != counts.Products {
 		t.Fatalf("product rows = %d, want %d", products, counts.Products)
+	}
+	if productSlugLocks != counts.ProductSlugLockRows {
+		t.Fatalf("product slug-lock rows = %d, want %d", productSlugLocks, counts.ProductSlugLockRows)
 	}
 	if categoryProducts != counts.CategoryProductRows {
 		t.Fatalf("category-product rows = %d, want %d", categoryProducts, counts.CategoryProductRows)

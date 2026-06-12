@@ -677,12 +677,16 @@ func TestFakePayCancelKeepsCartIntact(t *testing.T) {
 	if cancelResponse.StatusCode != http.StatusSeeOther {
 		t.Fatalf("cancel status = %d, want 303", cancelResponse.StatusCode)
 	}
-	if got := cancelResponse.Headers["Location"]; got != "http://127.0.0.1:8080/checkout?canceled=1" {
-		t.Fatalf("cancel Location = %q, want checkout canceled URL", got)
+	cancelLocation, err := url.Parse(cancelResponse.Headers["Location"])
+	if err != nil {
+		t.Fatalf("cancel Location does not parse: %v", err)
+	}
+	if cancelLocation.Scheme != "http" || cancelLocation.Host != "127.0.0.1:8080" || cancelLocation.Path != "/checkout" || cancelLocation.Query().Get("canceled") != "1" || cancelLocation.Query().Get(checkoutCancelTokenParam) == "" {
+		t.Fatalf("cancel Location = %q, want signed checkout canceled URL", cancelResponse.Headers["Location"])
 	}
 
 	checkoutRequest := jarPageRequest(http.MethodGet, "/checkout", jar)
-	checkoutRequest.QueryStringParameters = map[string]string{"canceled": "1"}
+	checkoutRequest.QueryStringParameters = firstQueryValues(cancelLocation.Query())
 	checkoutResponse, err := env.handler.Handle(context.Background(), checkoutRequest)
 	if err != nil {
 		t.Fatalf("Handle checkout returned error: %v", err)
@@ -697,6 +701,72 @@ func TestFakePayCancelKeepsCartIntact(t *testing.T) {
 	})
 	if lines := serverCartLines(t, env, customerID); len(lines) != 1 || lines[0].Quantity != 2 {
 		t.Fatalf("cart after cancel = %#v, want intact mango 2", lines)
+	}
+}
+
+func TestCheckoutCanceledReturnReleasesOwnReservationBeforeNormalizingCart(t *testing.T) {
+	env := newAccountTestEnv(t)
+	jar, addressID := checkoutTestSetup(t, env, 5)
+	customerID := accountCustomerID(t, env, "shopper@example.com")
+	_, sessionID := placeTestOrder(t, env, jar, addressID)
+	if got := mangoStock(t, env); got != 0 {
+		t.Fatalf("mango stock = %d, want fully reserved", got)
+	}
+
+	bareRequest := jarPageRequest(http.MethodGet, "/checkout", jar)
+	bareRequest.QueryStringParameters = map[string]string{"canceled": "1"}
+	bareResponse, err := env.handler.Handle(context.Background(), bareRequest)
+	if err != nil {
+		t.Fatalf("Handle bare checkout returned error: %v", err)
+	}
+	if bareResponse.StatusCode != http.StatusOK {
+		t.Fatalf("bare checkout status = %d body %q, want 200", bareResponse.StatusCode, bareResponse.Body)
+	}
+	assertBodyContains(t, bareResponse.Body, []string{
+		`data-testid="checkout-canceled-notice"`,
+		`Payment canceled. Your cart is unchanged`,
+		`Mango Sticky Rice Treats`,
+		`Quantity 5`,
+	})
+	if lines := serverCartLines(t, env, customerID); len(lines) != 1 || lines[0].Quantity != 5 {
+		t.Fatalf("cart after bare canceled return = %#v, want intact mango 5", lines)
+	}
+	if got := mangoStock(t, env); got != 0 {
+		t.Fatalf("mango stock after bare canceled return = %d, want still reserved", got)
+	}
+
+	_, cancelURL, found := env.payments.SessionRedirectURLs(sessionID)
+	if !found {
+		t.Fatalf("fake provider missing session URLs for %s", sessionID)
+	}
+	cancelLocation, err := url.Parse(cancelURL)
+	if err != nil {
+		t.Fatalf("cancel URL does not parse: %v", err)
+	}
+	if cancelLocation.Query().Get(checkoutCancelTokenParam) == "" {
+		t.Fatalf("cancel URL = %q, want %s", cancelURL, checkoutCancelTokenParam)
+	}
+
+	signedRequest := jarPageRequest(http.MethodGet, "/checkout", jar)
+	signedRequest.QueryStringParameters = firstQueryValues(cancelLocation.Query())
+	signedResponse, err := env.handler.Handle(context.Background(), signedRequest)
+	if err != nil {
+		t.Fatalf("Handle signed checkout returned error: %v", err)
+	}
+	if signedResponse.StatusCode != http.StatusOK {
+		t.Fatalf("signed checkout status = %d body %q, want 200", signedResponse.StatusCode, signedResponse.Body)
+	}
+	assertBodyContains(t, signedResponse.Body, []string{
+		`data-testid="checkout-canceled-notice"`,
+		`Payment canceled. Your cart is unchanged`,
+		`Mango Sticky Rice Treats`,
+		`Quantity 5`,
+	})
+	if lines := serverCartLines(t, env, customerID); len(lines) != 1 || lines[0].Quantity != 5 {
+		t.Fatalf("cart after signed canceled return = %#v, want intact mango 5", lines)
+	}
+	if got := mangoStock(t, env); got != 5 {
+		t.Fatalf("mango stock = %d, want reservation released before normalization", got)
 	}
 }
 
@@ -2152,6 +2222,33 @@ func TestGuestPlaceOrderPaidPointerRedirectsToConfirm(t *testing.T) {
 	})
 }
 
+func TestGuestConfirmReplayDoesNotClearNewerCheckoutCart(t *testing.T) {
+	env := newAccountTestEnv(t)
+	jar := guestCartJar(t, env, 1)
+	firstOrderID, firstSessionID := placeGuestTestOrder(t, env, jar, guestCheckoutEmail)
+	finalizeGuestOrderOffSite(t, env, firstOrderID, firstSessionID)
+	secondOrderID, _ := placeGuestTestOrder(t, env, jar, "corrected@example.com")
+	if secondOrderID == firstOrderID {
+		t.Fatalf("second guest order reused first order %q", firstOrderID)
+	}
+
+	confirmRequest := jarPageRequest(http.MethodGet, "/checkout/confirm", jar)
+	confirmRequest.QueryStringParameters = map[string]string{"session_id": firstSessionID}
+	confirmResponse, err := env.handler.Handle(context.Background(), confirmRequest)
+	if err != nil {
+		t.Fatalf("Handle confirm returned error: %v", err)
+	}
+	if confirmResponse.StatusCode != http.StatusSeeOther || !strings.HasPrefix(confirmResponse.Headers["Location"], "/orders/"+firstOrderID+"?access=") {
+		t.Fatalf("confirm = %d %q, want old order tokenized redirect", confirmResponse.StatusCode, confirmResponse.Headers["Location"])
+	}
+	if raw, found := optionalSetCookie(confirmResponse, cart.CookieName); found && strings.Contains(raw, "Max-Age=0") {
+		t.Fatalf("cart cookie = %q, want newer checkout cart preserved", raw)
+	}
+	if raw, found := optionalSetCookie(confirmResponse, commerce.GuestOrderCookieName); found && strings.Contains(raw, "Max-Age=0") {
+		t.Fatalf("guest pointer cookie = %q, want newer checkout pointer preserved", raw)
+	}
+}
+
 func TestGuestFakePayThroughConfirmPlacesPaidOrder(t *testing.T) {
 	env := newAccountTestEnv(t)
 	jar := guestCartJar(t, env, 2)
@@ -2659,4 +2756,14 @@ func TestGuestOrderDetailAccessToken(t *testing.T) {
 		assertBodyContains(t, owner.Body, []string{`Back to orders`})
 		assertBodyOmits(t, owner.Body, []string{`data-testid="guest-order-link-notice"`})
 	})
+}
+
+func firstQueryValues(values url.Values) map[string]string {
+	result := make(map[string]string, len(values))
+	for key, value := range values {
+		if len(value) > 0 {
+			result[key] = value[0]
+		}
+	}
+	return result
 }

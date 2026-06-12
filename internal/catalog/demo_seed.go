@@ -17,6 +17,7 @@ func demoProductCreatedAt(daysBeforeUpdate int) time.Time {
 type DemoSeedCounts struct {
 	Categories          int
 	Products            int
+	ProductSlugLockRows int
 	CategoryProductRows int
 	Items               int
 }
@@ -281,6 +282,12 @@ func DemoCatalogSeedItems() ([]map[string]types.AttributeValue, error) {
 		}
 		items = append(items, demoSeedItem(item))
 
+		item, err = productSlugLockItem(product)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, demoSeedItem(item))
+
 		for _, categorySlug := range product.CategorySlugs {
 			item, err := categoryProductItem(categorySlug, product)
 			if err != nil {
@@ -304,8 +311,9 @@ func DemoCatalogSeedCounts() DemoSeedCounts {
 	return DemoSeedCounts{
 		Categories:          len(categories),
 		Products:            len(products),
+		ProductSlugLockRows: len(products),
 		CategoryProductRows: categoryProductRows,
-		Items:               len(categories) + len(products) + categoryProductRows,
+		Items:               len(categories) + len(products)*2 + categoryProductRows,
 	}
 }
 

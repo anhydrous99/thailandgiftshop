@@ -1,9 +1,12 @@
 package checkout
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -23,6 +26,66 @@ var checkoutTestNow = time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
 const checkoutTestPasswordHash = "$2a$04$checkout-test-fixture-hash"
 
 const checkoutTestBaseURL = "https://shop.example.test"
+
+func assertNoCheckoutCredentialLeak(t *testing.T, got string, sensitiveValues ...string) {
+	t.Helper()
+	for _, value := range sensitiveValues {
+		if value != "" && strings.Contains(got, value) {
+			t.Fatalf("output leaked sensitive value %q in %q", value, got)
+		}
+	}
+	for _, marker := range []string{"cs_fake_", "session_id", "cancel_token", "access="} {
+		if strings.Contains(got, marker) {
+			t.Fatalf("output leaked sensitive marker %q in %q", marker, got)
+		}
+	}
+}
+
+func captureCheckoutLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buffer bytes.Buffer
+	previous := checkoutLogger
+	checkoutLogger = slog.New(slog.NewJSONHandler(&buffer, nil))
+	t.Cleanup(func() {
+		checkoutLogger = previous
+	})
+	return &buffer
+}
+
+func checkoutTestGuestAccessURL(order commerce.Order, now time.Time) string {
+	_ = now
+	return checkoutTestBaseURL + "/orders/" + order.ID + "?access=test-access"
+}
+
+func TestGuestOrderAccessURLMintsValidToken(t *testing.T) {
+	order := commerce.Order{ID: "ord_guest_access_token", PaidAt: checkoutTestNow.Add(-time.Hour)}
+	secret := "customer-session-secret-with-enough-entropy"
+
+	accessURL, err := GuestOrderAccessURL(order, checkoutTestNow, checkoutTestBaseURL+"/", secret)
+	if err != nil {
+		t.Fatalf("GuestOrderAccessURL returned error: %v", err)
+	}
+	parsed, err := url.Parse(accessURL)
+	if err != nil {
+		t.Fatalf("access URL does not parse: %v", err)
+	}
+	if parsed.Scheme != "https" || parsed.Host != "shop.example.test" || parsed.Path != "/orders/"+order.ID {
+		t.Fatalf("access URL = %q, want shop order detail URL", accessURL)
+	}
+	token := parsed.Query().Get(GuestOrderAccessParam)
+	if token == "" {
+		t.Fatalf("access URL = %q, want %s query token", accessURL, GuestOrderAccessParam)
+	}
+	if !ValidGuestOrderAccessToken(token, order.ID, secret, checkoutTestNow) {
+		t.Fatal("ValidGuestOrderAccessToken matching token = false, want true")
+	}
+	if ValidGuestOrderAccessToken(token, "other-order", secret, checkoutTestNow) {
+		t.Fatal("ValidGuestOrderAccessToken wrong order = true, want false")
+	}
+	if ValidGuestOrderAccessToken(token, order.ID, secret, order.PaidAt.Add(GuestOrderAccessTTL+time.Second)) {
+		t.Fatal("ValidGuestOrderAccessToken expired token = true, want false")
+	}
+}
 
 func checkoutTestBaseProduct() catalog.Product {
 	return catalog.Product{
@@ -306,13 +369,14 @@ func newTestEnv(t *testing.T) *testEnv {
 
 	return &testEnv{
 		service: &Service{
-			Commerce:    hooks,
-			Payments:    provider,
-			Stock:       catalogStore,
-			Metrics:     metrics,
-			EmailSender: emailSender,
-			BaseURL:     checkoutTestBaseURL + "/",
-			Now:         func() time.Time { return checkoutTestNow },
+			Commerce:            hooks,
+			Payments:            provider,
+			Stock:               catalogStore,
+			Metrics:             metrics,
+			EmailSender:         emailSender,
+			BaseURL:             checkoutTestBaseURL + "/",
+			Now:                 func() time.Time { return checkoutTestNow },
+			GuestOrderAccessURL: checkoutTestGuestAccessURL,
 		},
 		commerceStore: commerceStore,
 		hooks:         hooks,
@@ -516,7 +580,7 @@ func TestCustomerLifecycleEmailsUseOrderDetailURL(t *testing.T) {
 	}
 }
 
-func TestGuestLifecycleEmailsUseConfirmURL(t *testing.T) {
+func TestGuestLifecycleEmailsUseOrderAccessURL(t *testing.T) {
 	env := newTestEnv(t)
 	_, order := env.mustGuestPlaceOrder(t, checkoutTestLines(), guestTestEmail)
 	session := env.paidSession(t, order.StripeCheckoutSessionID)
@@ -540,15 +604,72 @@ func TestGuestLifecycleEmailsUseConfirmURL(t *testing.T) {
 	if len(messages) != 3 {
 		t.Fatalf("guest lifecycle message count = %d, want 3", len(messages))
 	}
-	confirmPath := confirmURLPath + "?session_id="
-	tokenlessOrderPath := "/orders/" + paid.ID
+	accessURL := checkoutTestGuestAccessURL(paid, checkoutTestNow)
 	for _, message := range messages {
-		if !strings.Contains(message.Text, confirmPath) || !strings.Contains(message.HTML, confirmPath) {
-			t.Fatalf("guest %s email missing confirm URL", message.Kind)
+		if !strings.Contains(message.Text, accessURL) || !strings.Contains(message.HTML, accessURL) {
+			t.Fatalf("guest %s email missing tokenized order access URL", message.Kind)
 		}
-		if strings.Contains(message.Text, tokenlessOrderPath) || strings.Contains(message.HTML, tokenlessOrderPath) {
-			t.Fatalf("guest %s email contains tokenless order detail URL", message.Kind)
+		if strings.Contains(message.Text, confirmURLPath) || strings.Contains(message.HTML, confirmURLPath) {
+			t.Fatalf("guest %s email contains confirm URL", message.Kind)
 		}
+	}
+}
+
+func TestGuestLifecycleEmailsDoNotFallbackToConfirmURL(t *testing.T) {
+	tests := []struct {
+		name   string
+		config func(*Service)
+	}{
+		{name: "missing access URL builder", config: func(service *Service) { service.GuestOrderAccessURL = nil }},
+		{name: "empty access URL", config: func(service *Service) {
+			service.GuestOrderAccessURL = func(commerce.Order, time.Time) string { return "" }
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			env := newTestEnv(t)
+			test.config(env.service)
+			_, order := env.mustGuestPlaceOrder(t, checkoutTestLines(), guestTestEmail)
+			session := env.paidSession(t, order.StripeCheckoutSessionID)
+			if _, err := env.service.FinalizePayment(context.Background(), order.ID, session); err != nil {
+				t.Fatalf("FinalizePayment returned error: %v", err)
+			}
+
+			messages := env.emailSender.Messages()
+			if len(messages) != 1 {
+				t.Fatalf("guest lifecycle message count = %d, want 1", len(messages))
+			}
+			message := messages[0]
+			if strings.Contains(message.Text, confirmURLPath) || strings.Contains(message.HTML, confirmURLPath) {
+				t.Fatalf("guest placed email contains confirm URL")
+			}
+			if strings.Contains(message.Text, "/orders/"+order.ID) || strings.Contains(message.HTML, "/orders/"+order.ID) {
+				t.Fatalf("guest placed email contains tokenless order detail URL")
+			}
+		})
+	}
+}
+
+func TestGuestTerminalUnpaidEmailsUseOrderAccessURL(t *testing.T) {
+	env := newTestEnv(t)
+	_, order := env.mustGuestPlaceOrder(t, checkoutTestLines(), guestTestEmail)
+	event := payments.Event{ID: "evt_guest_failed_email", Type: "checkout.session.async_payment_failed", OrderID: order.ID}
+
+	if err := env.service.ApplyWebhookEvent(context.Background(), event); err != nil {
+		t.Fatalf("ApplyWebhookEvent returned error: %v", err)
+	}
+	failed := env.mustGetOrder(t, order.ID)
+	messages := env.emailSender.Messages()
+	if len(messages) != 1 {
+		t.Fatalf("guest terminal email count = %d, want 1", len(messages))
+	}
+	accessURL := checkoutTestGuestAccessURL(failed, checkoutTestNow)
+	message := messages[0]
+	if !strings.Contains(message.Text, accessURL) || !strings.Contains(message.HTML, accessURL) {
+		t.Fatalf("guest terminal email missing tokenized order access URL")
+	}
+	if strings.Contains(message.Text, confirmURLPath) || strings.Contains(message.HTML, confirmURLPath) {
+		t.Fatalf("guest terminal email contains confirm URL")
 	}
 }
 
@@ -623,8 +744,8 @@ func TestCheckoutLifecycleStatusEmails(t *testing.T) {
 	t.Run("cancel transition", func(t *testing.T) {
 		env := newTestEnv(t)
 		_, order := env.mustPlaceOrder(t, checkoutTestLines())
-		if err := env.service.CancelPendingOrder(context.Background(), env.mustGetOrder(t, order.ID)); err != nil {
-			t.Fatalf("CancelPendingOrder returned error: %v", err)
+		if err := env.service.CancelPendingOrderAs(context.Background(), env.mustGetOrder(t, order.ID), commerce.OrderActorAdmin); err != nil {
+			t.Fatalf("CancelPendingOrderAs returned error: %v", err)
 		}
 		_ = env.mustGetOrder(t, order.ID)
 		key := fmt.Sprintf("order:%s:status:%s:%s:v%d", order.ID, commerce.OrderStatusPendingPayment, commerce.OrderStatusCanceled, order.Version+1)
@@ -891,18 +1012,27 @@ func TestPlaceOrderReentryPointerToPaidOrderIsNotCanceled(t *testing.T) {
 		t.Fatalf("TransitionOrder returned error: %v", err)
 	}
 
-	_, second, err := env.service.PlaceOrder(context.Background(), env.placeOrderInput(t, checkoutTestLines()))
+	redirectURL, second, err := env.service.PlaceOrder(context.Background(), env.placeOrderInput(t, checkoutTestLines()))
 	if err != nil {
 		t.Fatalf("PlaceOrder returned error: %v", err)
 	}
-	if second.ID == first.ID {
-		t.Fatalf("expected a fresh order, got the paid one")
+	if second.ID != first.ID {
+		t.Fatalf("re-entry order id = %q, want the paid order %q", second.ID, first.ID)
+	}
+	if wantURL := checkoutTestBaseURL + "/orders/" + first.ID; redirectURL != wantURL {
+		t.Fatalf("re-entry URL = %q, want %q", redirectURL, wantURL)
+	}
+	if count := env.orderCount(t); count != 1 {
+		t.Fatalf("order count = %d, want 1 (no duplicate order)", count)
 	}
 	if got := env.mustGetOrder(t, first.ID).Status; got != commerce.OrderStatusPaid {
 		t.Errorf("paid order status = %q, want it untouched as %q", got, commerce.OrderStatusPaid)
 	}
-	// Paid order keeps its reservation; the new order reserves again.
-	env.assertStock(t, 1, 2)
+	record := env.currentCart(t)
+	if len(record.Lines) != 0 || record.PendingOrderID != "" || record.PendingFingerprint != "" {
+		t.Fatalf("cart after paid re-entry = %+v, want paid lines and pointer cleared", record)
+	}
+	env.assertStock(t, 3, 3)
 }
 
 func TestPlaceOrderReentryPaidSessionRoutesToConfirm(t *testing.T) {
@@ -1047,6 +1177,34 @@ func TestFinalizePaymentMarksOrderPaidAndClearsCart(t *testing.T) {
 	env.assertStock(t, 3, 3)
 	if got := env.metrics.count(observability.MetricCheckoutPayment, "success"); got != 1 {
 		t.Errorf("success metric count = %d, want 1", got)
+	}
+}
+
+func TestFinalizePaymentPreservesCartLinesAddedDuringPayment(t *testing.T) {
+	env := newTestEnv(t)
+	_, order := env.mustPlaceOrder(t, checkoutTestLines())
+	record := env.currentCart(t)
+	record.Lines = []cart.Line{
+		{Slug: "carved-coconut-bowl", Quantity: 3},
+		{Slug: "handwoven-indigo-scarf", VariantID: "var_m", Quantity: 1},
+		{Slug: "handwoven-indigo-scarf", VariantID: "var_s", Quantity: 1},
+	}
+	if _, err := env.commerceStore.PutCart(context.Background(), record); err != nil {
+		t.Fatalf("PutCart returned error: %v", err)
+	}
+
+	session := env.paidSession(t, order.StripeCheckoutSessionID)
+	if _, err := env.service.FinalizePayment(context.Background(), order.ID, session); err != nil {
+		t.Fatalf("FinalizePayment returned error: %v", err)
+	}
+
+	record = env.currentCart(t)
+	want := []cart.Line{
+		{Slug: "carved-coconut-bowl", Quantity: 1},
+		{Slug: "handwoven-indigo-scarf", VariantID: "var_s", Quantity: 1},
+	}
+	if fmt.Sprint(record.Lines) != fmt.Sprint(want) || record.PendingOrderID != "" || record.PendingFingerprint != "" {
+		t.Fatalf("cart after finalize = %+v, want remaining newly-added lines %#v and cleared pointer", record, want)
 	}
 }
 
@@ -1380,6 +1538,9 @@ func TestCancelPendingOrder(t *testing.T) {
 		if got := canceled.StatusHistory[len(canceled.StatusHistory)-1].Actor; got != commerce.OrderActorSystem {
 			t.Errorf("cancel actor = %q, want %q", got, commerce.OrderActorSystem)
 		}
+		if messages := env.emailSender.Messages(); len(messages) != 0 {
+			t.Fatalf("system cancel messages = %#v, want none", messages)
+		}
 		env.assertStock(t, 5, 4)
 
 		// Canceling again is a no-op and must not double-release.
@@ -1519,6 +1680,7 @@ func TestCancelPendingOrderPaymentInFlightRefusesCancel(t *testing.T) {
 	if !errors.Is(err, ErrPaymentSessionInFlight) {
 		t.Fatalf("CancelPendingOrder error = %v, want %v", err, ErrPaymentSessionInFlight)
 	}
+	assertNoCheckoutCredentialLeak(t, err.Error(), order.StripeCheckoutSessionID)
 	if got := env.mustGetOrder(t, order.ID).Status; got != commerce.OrderStatusPendingPayment {
 		t.Errorf("order status = %q, want it left %q for the webhook to resolve", got, commerce.OrderStatusPendingPayment)
 	}
@@ -1532,6 +1694,52 @@ func TestCancelPendingOrderPaymentInFlightRefusesCancel(t *testing.T) {
 	if session.Status != payments.SessionStatusOpen {
 		t.Errorf("session status = %q, want %q (expire must not have been attempted)", session.Status, payments.SessionStatusOpen)
 	}
+}
+
+func TestFinalizePaymentErrorsDoNotExposePaymentSessionCredentials(t *testing.T) {
+	env := newTestEnv(t)
+	_, order := env.mustPlaceOrder(t, checkoutTestLines())
+
+	_, mismatchErr := env.service.FinalizePayment(context.Background(), order.ID, payments.Session{
+		ID:            order.StripeCheckoutSessionID,
+		OrderID:       "ord_other",
+		PaymentStatus: paymentStatusPaid,
+	})
+	if mismatchErr == nil {
+		t.Fatal("FinalizePayment mismatch error = nil, want error")
+	}
+	assertNoCheckoutCredentialLeak(t, mismatchErr.Error(), order.StripeCheckoutSessionID)
+
+	_, unpaidErr := env.service.FinalizePayment(context.Background(), order.ID, payments.Session{
+		ID:            order.StripeCheckoutSessionID,
+		OrderID:       order.ID,
+		PaymentStatus: paymentStatusUnpaid,
+	})
+	if unpaidErr == nil {
+		t.Fatal("FinalizePayment unpaid error = nil, want error")
+	}
+	assertNoCheckoutCredentialLeak(t, unpaidErr.Error(), order.StripeCheckoutSessionID)
+}
+
+func TestFinalizePaymentCardExpansionLogRedactsPaymentSessionCredentials(t *testing.T) {
+	env := newTestEnv(t)
+	_, order := env.mustPlaceOrder(t, checkoutTestLines())
+	env.provider.getSessionErr = fmt.Errorf("stripe lookup failed for %s", order.StripeCheckoutSessionID)
+	logs := captureCheckoutLogs(t)
+
+	_, err := env.service.FinalizePayment(context.Background(), order.ID, payments.Session{
+		ID:            order.StripeCheckoutSessionID,
+		OrderID:       order.ID,
+		PaymentStatus: paymentStatusPaid,
+	})
+	if err != nil {
+		t.Fatalf("FinalizePayment returned error: %v", err)
+	}
+	output := logs.String()
+	if !strings.Contains(output, "checkout could not expand the payment session card details") {
+		t.Fatalf("checkout log output = %q, want card expansion warning", output)
+	}
+	assertNoCheckoutCredentialLeak(t, output, order.StripeCheckoutSessionID)
 }
 
 func TestApplyWebhookEventPaidAfterTerminalIssuesAutoRefund(t *testing.T) {

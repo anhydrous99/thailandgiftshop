@@ -11,6 +11,7 @@ import (
 
 	"github.com/anhydrous99/thailandgiftshop/internal/cart"
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
+	"github.com/anhydrous99/thailandgiftshop/internal/checkout"
 	"github.com/anhydrous99/thailandgiftshop/internal/commerce"
 	"github.com/anhydrous99/thailandgiftshop/internal/httpapi"
 	"github.com/aws/aws-lambda-go/events"
@@ -265,14 +266,6 @@ type requestCart struct {
 	sessionErr error
 }
 
-func (h *Handler) cartFromRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) (cart.Cart, []cartLineView, []string, error) {
-	currentCart, err := h.cartStateFromRequest(ctx, request)
-	if err != nil {
-		return cart.Empty(), nil, nil, err
-	}
-	return currentCart.cart, currentCart.lines, currentCart.cookies, nil
-}
-
 func (h *Handler) cartStateFromRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) (requestCart, error) {
 	// Signed-in carts live in the CART row; the tgs_cart cookie is only a
 	// write-through mirror for the header label and the edge cache key, so
@@ -290,6 +283,18 @@ func (h *Handler) cartStateFromRequest(ctx context.Context, request events.APIGa
 		decodedCart = decoded.Cart
 		needsClear = decoded.NeedsClear
 		fromMirror = decoded.Mirror
+	}
+	if checkoutCanceledReturn(request) {
+		if orderID, _, ok := h.guestOrderPointer(request); ok && !h.validCheckoutCancelReturn(request, orderID) {
+			lines, err := h.pendingCheckoutLines(ctx, decodedCart)
+			if err != nil {
+				return requestCart{}, err
+			}
+			return requestCart{cart: decodedCart, lines: lines, cookies: sessionClearing, sessionErr: sessionErr}, nil
+		}
+		if err := h.cancelGuestReturnedCheckout(ctx, request); err != nil {
+			return requestCart{}, err
+		}
 	}
 
 	normalizedCart, lines, changed, err := h.normalizeCart(ctx, decodedCart)
@@ -331,6 +336,34 @@ func (h *Handler) serverCartState(ctx context.Context, request events.APIGateway
 		return requestCart{}, err
 	}
 	record.CustomerID = customerID
+	if checkoutCanceledReturn(request) && record.PendingOrderID != "" {
+		if !h.validCheckoutCancelReturn(request, record.PendingOrderID) {
+			serverCart, cartErr := cart.New(record.Lines)
+			if cartErr != nil {
+				logAccountError("server cart: invalid stored lines", cartErr)
+				serverCart = cart.Empty()
+			}
+			lines, linesErr := h.pendingCheckoutLines(ctx, serverCart)
+			if linesErr != nil {
+				return requestCart{}, linesErr
+			}
+			return requestCart{
+				cart:     serverCart,
+				lines:    lines,
+				cookies:  []string{h.mirrorCartCookie(serverCart, request)},
+				signedIn: true,
+				record:   record,
+			}, nil
+		}
+		if err := h.cancelCustomerReturnedCheckout(ctx, request, customerID, record.PendingOrderID); err != nil {
+			return requestCart{}, err
+		}
+		record, _, err = h.commerce.GetCart(ctx, customerID)
+		if err != nil {
+			return requestCart{}, err
+		}
+		record.CustomerID = customerID
+	}
 
 	serverCart, err := cart.New(record.Lines)
 	if err != nil {
@@ -360,6 +393,50 @@ func (h *Handler) serverCartState(ctx context.Context, request events.APIGateway
 		signedIn: true,
 		record:   record,
 	}, nil
+}
+
+func checkoutCanceledReturn(request events.APIGatewayV2HTTPRequest) bool {
+	return request.QueryStringParameters["canceled"] == "1"
+}
+
+func (h *Handler) cancelCustomerReturnedCheckout(ctx context.Context, request events.APIGatewayV2HTTPRequest, customerID string, orderID string) error {
+	if orderID == "" {
+		return nil
+	}
+	if !h.validCheckoutCancelReturn(request, orderID) {
+		return nil
+	}
+	order, found, err := h.commerce.GetOrder(ctx, orderID)
+	if err != nil || !found || order.CustomerID != customerID {
+		return err
+	}
+	return h.cancelReturnedCheckout(ctx, order)
+}
+
+func (h *Handler) cancelGuestReturnedCheckout(ctx context.Context, request events.APIGatewayV2HTTPRequest) error {
+	orderID, _, ok := h.guestOrderPointer(request)
+	if !ok {
+		return nil
+	}
+	if !h.validCheckoutCancelReturn(request, orderID) {
+		return nil
+	}
+	order, found, err := h.commerce.GetOrder(ctx, orderID)
+	if err != nil || !found || order.CustomerID != "" {
+		return err
+	}
+	return h.cancelReturnedCheckout(ctx, order)
+}
+
+func (h *Handler) cancelReturnedCheckout(ctx context.Context, order commerce.Order) error {
+	if h.checkout == nil || order.Status != commerce.OrderStatusPendingPayment {
+		return nil
+	}
+	err := h.checkout.CancelPendingOrder(ctx, order)
+	if errors.Is(err, checkout.ErrOrderPaidNotCanceled) || errors.Is(err, checkout.ErrPaymentSessionInFlight) {
+		return nil
+	}
+	return err
 }
 
 const maxCartProductLookupConcurrency = 8
@@ -520,6 +597,42 @@ func (h *Handler) normalizeCart(ctx context.Context, currentCart cart.Cart) (car
 	}
 
 	return normalizedCart, lines, changed, nil
+}
+
+func (h *Handler) pendingCheckoutLines(ctx context.Context, currentCart cart.Cart) ([]cartLineView, error) {
+	cartLines := currentCart.Lines()
+	productsBySlug, err := h.cartProductsBySlug(ctx, cartLines)
+	if err != nil {
+		return nil, err
+	}
+
+	lines := make([]cartLineView, 0, currentCart.LineCount())
+	for _, line := range cartLines {
+		lookup := productsBySlug[line.Slug]
+		product := lookup.product
+		if !lookup.found || product.Status != catalog.StatusActive {
+			continue
+		}
+		lineView := cartLineView{
+			Product:    product,
+			VariantID:  line.VariantID,
+			Quantity:   line.Quantity,
+			Available:  true,
+			StockLimit: max(product.StockQuantity, line.Quantity),
+		}
+		if product.UsesVariants() {
+			variant, foundVariant := findProductVariant(product, line.VariantID)
+			if !foundVariant || variant.Status != catalog.StatusActive {
+				lineView.Available = false
+				lineView.UnavailableMessage = "Selected size is unavailable. Remove it to continue."
+			} else {
+				lineView.VariantLabel = variant.Label
+				lineView.StockLimit = max(variant.StockQuantity, line.Quantity)
+			}
+		}
+		lines = append(lines, lineView)
+	}
+	return lines, nil
 }
 
 // cartNavigation derives the header cart label from the signed cookie alone.

@@ -80,6 +80,29 @@ func TestValidOriginSecret(t *testing.T) {
 	}
 }
 
+func TestValidOriginSecretsAcceptsPreviousRotationSecret(t *testing.T) {
+	t.Setenv(EnvOriginHeaderSecret, "current-origin-secret")
+	t.Setenv(EnvPreviousOriginHeaderSecret, "previous-origin-secret")
+	digests, configured := OriginSecretDigestsFromEnvironment()
+	if !configured {
+		t.Fatal("OriginSecretDigestsFromEnvironment configured = false, want true")
+	}
+	if len(digests) != 2 {
+		t.Fatalf("digest count = %d, want 2", len(digests))
+	}
+
+	for _, secret := range []string{"current-origin-secret", "previous-origin-secret"} {
+		request := events.APIGatewayV2HTTPRequest{Headers: map[string]string{OriginSecretHeaderName: secret}}
+		if !ValidOriginSecrets(request, digests, configured) {
+			t.Fatalf("ValidOriginSecrets(%q) = false, want true", secret)
+		}
+	}
+	wrongSecret := events.APIGatewayV2HTTPRequest{Headers: map[string]string{OriginSecretHeaderName: "wrong"}}
+	if ValidOriginSecrets(wrongSecret, digests, configured) {
+		t.Fatal("ValidOriginSecrets wrong header = true, want false")
+	}
+}
+
 func TestValidOriginSecretUnconfiguredFollowsEnvironment(t *testing.T) {
 	t.Setenv("APP_ENV", "development")
 	if !ValidOriginSecret(events.APIGatewayV2HTTPRequest{}, [32]byte{}, false) {

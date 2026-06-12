@@ -484,7 +484,7 @@ func TestAdminOrderTrackingSendsEmailForChangedTrackingOnly(t *testing.T) {
 	})
 }
 
-func TestAdminGuestOrderEmailsUseConfirmURL(t *testing.T) {
+func TestAdminGuestOrderEmailsUseGuestAccessURL(t *testing.T) {
 	handler, commerceStore, _, currentTime := newOrdersTestHandler(t)
 	sender := email.NewFakeSenderWithClock(func() time.Time { return *currentTime })
 	handler.emailSender = sender
@@ -501,11 +501,12 @@ func TestAdminGuestOrderEmailsUseConfirmURL(t *testing.T) {
 	trackingKey := fmt.Sprintf("order:%s:tracking:v%d", order.ID, shipped.Version)
 	assertAdminEmailMessages(t, sender, []adminEmailWant{{kind: email.MessageKindTrackingUpdate, key: trackingKey, to: order.Email}})
 	message := sender.Messages()[0]
-	if !strings.Contains(message.Text, "/checkout/confirm?session_id=") || !strings.Contains(message.HTML, "/checkout/confirm?session_id=") {
-		t.Fatalf("guest tracking email missing confirm URL")
+	accessURLPrefix := payments.DefaultPublicBaseURL + "/orders/" + order.ID + "?access="
+	if !strings.Contains(message.Text, accessURLPrefix) || !strings.Contains(message.HTML, accessURLPrefix) {
+		t.Fatalf("guest tracking email missing access URL")
 	}
-	if strings.Contains(message.Text, "/orders/"+order.ID) || strings.Contains(message.HTML, "/orders/"+order.ID) {
-		t.Fatalf("guest tracking email contains tokenless order detail URL")
+	if strings.Contains(message.Text, "/checkout/confirm?session_id=") || strings.Contains(message.HTML, "/checkout/confirm?session_id=") {
+		t.Fatalf("guest tracking email contains confirm URL")
 	}
 }
 

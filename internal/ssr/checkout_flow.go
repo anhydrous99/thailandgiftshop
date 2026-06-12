@@ -27,10 +27,59 @@ const ordersPageSize = 20
 
 const checkoutPaymentStatusPaid = "paid"
 const checkoutSessionModeSetup = "setup"
+const checkoutCancelURLPath = "/checkout?canceled=1"
+const checkoutCancelTokenParam = "cancel_token"
+const checkoutCancelReturnTTL = time.Hour
 
 const chooseAddressError = "Choose a shipping address to continue."
 const checkoutStockChangedError = "Stock changed while you were checking out. Quantities were updated — review your order and try again."
 const checkoutPaymentInFlightError = "Your previous payment is still processing. Try again shortly — if it completes, the order appears in your order history."
+
+var checkoutCancelReturnPurpose = []byte("tgs-checkout-cancel-return")
+
+type checkoutCancelReturnPayload struct {
+	Version   int    `json:"version"`
+	OrderID   string `json:"order_id"`
+	ExpiresAt int64  `json:"expires_at"`
+}
+
+func (h *Handler) checkoutCancelReturnURL(baseURL string) func(commerce.Order, time.Time) string {
+	return func(order commerce.Order, now time.Time) string {
+		if strings.TrimSpace(h.customerSessionSecret) == "" {
+			return ""
+		}
+		token, err := signedtoken.Encode(checkoutCancelReturnPayload{
+			Version:   customerSignedValueVersion,
+			OrderID:   order.ID,
+			ExpiresAt: now.UTC().Add(checkoutCancelReturnTTL).Unix(),
+		}, h.customerSessionSecret, checkoutCancelReturnPurpose)
+		if err != nil {
+			logAccountError("checkout cancel URL: mint token", err)
+			return ""
+		}
+		location := strings.TrimRight(baseURL, "/") + checkoutCancelURLPath
+		separator := "?"
+		if strings.Contains(location, "?") {
+			separator = "&"
+		}
+		return location + separator + checkoutCancelTokenParam + "=" + url.QueryEscape(token)
+	}
+}
+
+func (h *Handler) validCheckoutCancelReturn(request events.APIGatewayV2HTTPRequest, orderID string) bool {
+	token := strings.TrimSpace(request.QueryStringParameters[checkoutCancelTokenParam])
+	if token == "" {
+		return false
+	}
+	var payload checkoutCancelReturnPayload
+	if !signedtoken.Decode(token, h.customerSessionSecret, checkoutCancelReturnPurpose, &payload) {
+		return false
+	}
+	if payload.Version != customerSignedValueVersion || payload.OrderID != orderID {
+		return false
+	}
+	return h.currentTime().UTC().Before(time.Unix(payload.ExpiresAt, 0))
+}
 
 // handleCheckoutFlowRoute dispatches the session-gated checkout and order
 // routes. The shared method gate and trailing-slash redirects already ran in
@@ -634,10 +683,11 @@ func (h *Handler) handleCheckoutConfirm(ctx context.Context, request events.APIG
 		}
 		// Past the window the redirect stays tokenless by design (the access
 		// link is dead; the shopper's record is the Stripe receipt / support).
-		cookies := append([]string{clearCartCookie(request)}, clearingCookies...)
+		cookies := append([]string(nil), clearingCookies...)
 		if ptrOrder, _, ok := h.guestOrderPointer(request); ok && ptrOrder == order.ID {
 			// Only clear a pointer that names THIS order: a second tab may
 			// have started a newer checkout whose pointer must survive.
+			cookies = append(cookies, clearCartCookie(request))
 			cookies = append(cookies, clearGuestOrderCookie().String())
 		}
 		response := httpapi.SeeOther(location, cookies, seoHeadersForRoute(pageCheckoutConfirm))
@@ -897,14 +947,6 @@ func (h *Handler) ownedFakePaySession(ctx context.Context, customer commerce.Cus
 	}
 
 	return paymentSession, true
-}
-
-func fakePayReturnTo(request events.APIGatewayV2HTTPRequest) string {
-	returnTo := "/checkout/fake-pay"
-	if sessionID := strings.TrimSpace(request.QueryStringParameters["session_id"]); sessionID != "" {
-		returnTo += "?session_id=" + url.QueryEscape(sessionID)
-	}
-	return returnTo
 }
 
 // ordersCursorPayload is the signed ?after token for /orders paging. It

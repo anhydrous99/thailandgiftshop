@@ -18,6 +18,7 @@ const EnvAdminSessionSecret = "ADMIN_SESSION_SECRET"
 const EnvAdminCredentialsSecretJSON = "ADMIN_CREDENTIALS_SECRET_JSON"
 const EnvAdminCredentialsSecretName = "ADMIN_CREDENTIALS_SECRET_NAME"
 const EnvAdminOriginHeaderSecret = httpapi.EnvOriginHeaderSecret
+const EnvAdminPreviousOriginHeaderSecret = httpapi.EnvPreviousOriginHeaderSecret
 
 type Credentials struct {
 	PasswordHash  string
