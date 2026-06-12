@@ -63,13 +63,14 @@ const (
 	commerceOrdersIndexSKName         = "gsi2sk"
 	commerceTTLAttributeName          = "expires_at"
 
-	staticAssetsKeyPrefix       = "static"
-	productImagesKeyPrefix      = "images"
-	adminCredentialsSecretName  = "thailandgiftshop/admin/credentials"
-	stripeCredentialsSecretName = "thailandgiftshop/stripe/credentials"
-	adminLambdaLogGroupName     = "/aws/lambda/thailandgiftshop-admin"
-	adminLoginAttemptsPKName    = "client_key"
-	adminLoginAttemptsTTLName   = "expires_at"
+	staticAssetsKeyPrefix                        = "static"
+	productImagesKeyPrefix                       = "images"
+	adminCredentialsSecretName                   = "thailandgiftshop/admin/credentials"
+	stripeCredentialsSecretName                  = "thailandgiftshop/stripe/credentials"
+	adminLambdaLogGroupName                      = "/aws/lambda/thailandgiftshop-admin"
+	adminLoginAttemptsPKName                     = "client_key"
+	adminLoginAttemptsTTLName                    = "expires_at"
+	adminPreviousOriginHeaderSecretParameterName = "AdminOriginHeaderPreviousSecret"
 
 	ssrOriginRequestPolicyName = "thailandgiftshop-ssr-origin"
 	ssrCachePolicyName         = "thailandgiftshop-ssr-cache"
@@ -141,9 +142,10 @@ func NewThailandGiftshopStack(scope constructs.Construct, id string, props *Thai
 	productImagesBucket := addProductImagesBucket(stack)
 	adminLoginAttemptsTable := addAdminLoginAttempts(stack)
 	adminOriginHeaderSecret := addAdminOriginHeaderSecret(stack)
+	adminPreviousOriginHeaderSecret := adminPreviousOriginHeaderSecretValue(stack)
 	hostedZone := siteHostedZone(stack)
 	emailIdentity := addEmailIdentity(stack, hostedZone)
-	ssr := addSSR(stack, catalogTable, commerceTable, productImagesBucket, adminLoginAttemptsTable, adminOriginHeaderSecret, emailIdentity)
+	ssr := addSSR(stack, catalogTable, commerceTable, productImagesBucket, adminLoginAttemptsTable, adminOriginHeaderSecret, adminPreviousOriginHeaderSecret, emailIdentity)
 	site := addSite(stack, ssr.httpAPI, productImagesBucket, adminOriginHeaderSecret, hostedZone)
 	addObservability(stack, observabilityResources{
 		catalogTable:            catalogTable,
@@ -350,7 +352,7 @@ func addAdminLoginAttempts(stack awscdk.Stack) awsdynamodb.Table {
 	})
 }
 
-func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable awsdynamodb.ITable, productImagesBucket awss3.IBucket, adminLoginAttemptsTable awsdynamodb.ITable, adminOriginHeaderSecret awssecretsmanager.ISecret, emailIdentity awsses.IEmailIdentity) ssrResources {
+func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable awsdynamodb.ITable, productImagesBucket awss3.IBucket, adminLoginAttemptsTable awsdynamodb.ITable, adminOriginHeaderSecret awssecretsmanager.ISecret, adminPreviousOriginHeaderSecret *string, emailIdentity awsses.IEmailIdentity) ssrResources {
 	lambdaLogGroup := awslogs.NewLogGroup(stack, jsii.String("SsrLambdaLogGroup"), &awslogs.LogGroupProps{
 		LogGroupName: jsii.String("/aws/lambda/thailandgiftshop-ssr"),
 		Retention:    awslogs.RetentionDays_THREE_MONTHS,
@@ -371,24 +373,25 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable a
 		}),
 		Description: jsii.String("Server-side HTML renderer for thailandgiftshop.com"),
 		Environment: &map[string]*string{
-			catalog.EnvTableName:                    catalogTable.TableName(),
-			catalog.EnvSlugIndexName:                jsii.String(catalog.DefaultSlugIndexName),
-			catalog.EnvPublicIndexName:              jsii.String(catalog.DefaultPublicIndexName),
-			catalog.EnvRecentIndexName:              jsii.String(catalog.DefaultRecentIndexName),
-			catalog.EnvEntityIndexName:              jsii.String(catalog.DefaultEntityIndexName),
-			catalog.EnvProductImagePlaceholderURL:   jsii.String(catalog.DefaultProductImagePlaceholderURL),
-			appenv.EnvAppEnvironment:                jsii.String(appenv.EnvironmentProduction),
-			cartsession.EnvCookieSecret:             cartCookieSecretReference(cartCookieSecret),
-			adminauth.EnvAdminOriginHeaderSecret:    adminOriginHeaderSecretReference(adminOriginHeaderSecret),
-			commerce.EnvTableName:                   commerceTable.TableName(),
-			commerce.EnvCustomerOrdersIndexName:     jsii.String(commerce.DefaultCustomerOrdersIndexName),
-			commerce.EnvOrdersIndexName:             jsii.String(commerce.DefaultOrdersIndexName),
-			commerce.EnvSessionSecret:               customerSessionSecretReference(customerSessionSecret),
-			payments.EnvStripeCredentialsSecretName: jsii.String(stripeCredentialsSecretName),
-			payments.EnvPublicBaseURL:               jsii.String(payments.DefaultPublicBaseURL),
-			email.EnvSenderMode:                     jsii.String(email.SenderKindSES),
-			email.EnvFromAddress:                    jsii.String(email.DefaultFromAddress),
-			email.EnvSESRegion:                      jsii.String(productionRegion),
+			catalog.EnvTableName:                         catalogTable.TableName(),
+			catalog.EnvSlugIndexName:                     jsii.String(catalog.DefaultSlugIndexName),
+			catalog.EnvPublicIndexName:                   jsii.String(catalog.DefaultPublicIndexName),
+			catalog.EnvRecentIndexName:                   jsii.String(catalog.DefaultRecentIndexName),
+			catalog.EnvEntityIndexName:                   jsii.String(catalog.DefaultEntityIndexName),
+			catalog.EnvProductImagePlaceholderURL:        jsii.String(catalog.DefaultProductImagePlaceholderURL),
+			appenv.EnvAppEnvironment:                     jsii.String(appenv.EnvironmentProduction),
+			cartsession.EnvCookieSecret:                  cartCookieSecretReference(cartCookieSecret),
+			adminauth.EnvAdminOriginHeaderSecret:         adminOriginHeaderSecretReference(adminOriginHeaderSecret),
+			adminauth.EnvAdminPreviousOriginHeaderSecret: adminPreviousOriginHeaderSecret,
+			commerce.EnvTableName:                        commerceTable.TableName(),
+			commerce.EnvCustomerOrdersIndexName:          jsii.String(commerce.DefaultCustomerOrdersIndexName),
+			commerce.EnvOrdersIndexName:                  jsii.String(commerce.DefaultOrdersIndexName),
+			commerce.EnvSessionSecret:                    customerSessionSecretReference(customerSessionSecret),
+			payments.EnvStripeCredentialsSecretName:      jsii.String(stripeCredentialsSecretName),
+			payments.EnvPublicBaseURL:                    jsii.String(payments.DefaultPublicBaseURL),
+			email.EnvSenderMode:                          jsii.String(email.SenderKindSES),
+			email.EnvFromAddress:                         jsii.String(email.DefaultFromAddress),
+			email.EnvSESRegion:                           jsii.String(productionRegion),
 		},
 		FunctionName: jsii.String("thailandgiftshop-ssr"),
 		Handler:      jsii.String("bootstrap"),
@@ -436,7 +439,7 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable a
 			Timeout:              awscdk.Duration_Seconds(jsii.Number(10)),
 		}),
 	})
-	admin := addAdmin(stack, catalogTable, commerceTable, productImagesBucket, adminLoginAttemptsTable, adminOriginHeaderSecret, stripeSecret, emailIdentity, httpAPI)
+	admin := addAdmin(stack, catalogTable, commerceTable, productImagesBucket, adminLoginAttemptsTable, adminOriginHeaderSecret, adminPreviousOriginHeaderSecret, customerSessionSecret, stripeSecret, emailIdentity, httpAPI)
 
 	accessLogGroup := awslogs.NewLogGroup(stack, jsii.String("SsrHttpApiAccessLogGroup"), &awslogs.LogGroupProps{
 		LogGroupName: jsii.String("/aws/apigateway/thailandgiftshop-ssr"),
@@ -469,7 +472,7 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable a
 	return ssrResources{httpAPI: httpAPI, function: ssrFunction, admin: admin}
 }
 
-func addAdmin(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable awsdynamodb.ITable, productImagesBucket awss3.IBucket, adminLoginAttemptsTable awsdynamodb.ITable, adminOriginHeaderSecret awssecretsmanager.ISecret, stripeSecret awssecretsmanager.ISecret, emailIdentity awsses.IEmailIdentity, httpAPI awsapigatewayv2.HttpApi) adminResources {
+func addAdmin(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable awsdynamodb.ITable, productImagesBucket awss3.IBucket, adminLoginAttemptsTable awsdynamodb.ITable, adminOriginHeaderSecret awssecretsmanager.ISecret, adminPreviousOriginHeaderSecret *string, customerSessionSecret awssecretsmanager.ISecret, stripeSecret awssecretsmanager.ISecret, emailIdentity awsses.IEmailIdentity, httpAPI awsapigatewayv2.HttpApi) adminResources {
 	lambdaLogGroup := awslogs.LogGroup_FromLogGroupName(stack, jsii.String("AdminLambdaLogGroup"), jsii.String(adminLambdaLogGroupName))
 	awslogs.NewLogRetention(stack, jsii.String("AdminLambdaLogRetention"), &awslogs.LogRetentionProps{
 		LogGroupName:  jsii.String(adminLambdaLogGroupName),
@@ -489,21 +492,23 @@ func addAdmin(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable
 		}),
 		Description: jsii.String("Admin HTML handler for thailandgiftshop.com"),
 		Environment: &map[string]*string{
-			catalog.EnvTableName:                     catalogTable.TableName(),
-			catalog.EnvSlugIndexName:                 jsii.String(catalog.DefaultSlugIndexName),
-			catalog.EnvPublicIndexName:               jsii.String(catalog.DefaultPublicIndexName),
-			catalog.EnvRecentIndexName:               jsii.String(catalog.DefaultRecentIndexName),
-			catalog.EnvEntityIndexName:               jsii.String(catalog.DefaultEntityIndexName),
-			adminauth.EnvProductImagesBucketName:     productImagesBucket.BucketName(),
-			adminauth.EnvProductImagesKeyPrefix:      jsii.String(productImagesKeyPrefix),
-			catalog.EnvProductImagePlaceholderURL:    jsii.String(catalog.DefaultProductImagePlaceholderURL),
-			appenv.EnvAppEnvironment:                 jsii.String(appenv.EnvironmentProduction),
-			adminauth.EnvAdminCredentialsSecretName:  jsii.String(adminCredentialsSecretName),
-			adminauth.EnvAdminLoginAttemptsTableName: adminLoginAttemptsTable.TableName(),
-			adminauth.EnvAdminOriginHeaderSecret:     adminOriginHeaderSecretReference(adminOriginHeaderSecret),
-			commerce.EnvTableName:                    commerceTable.TableName(),
-			commerce.EnvCustomerOrdersIndexName:      jsii.String(commerce.DefaultCustomerOrdersIndexName),
-			commerce.EnvOrdersIndexName:              jsii.String(commerce.DefaultOrdersIndexName),
+			catalog.EnvTableName:                         catalogTable.TableName(),
+			catalog.EnvSlugIndexName:                     jsii.String(catalog.DefaultSlugIndexName),
+			catalog.EnvPublicIndexName:                   jsii.String(catalog.DefaultPublicIndexName),
+			catalog.EnvRecentIndexName:                   jsii.String(catalog.DefaultRecentIndexName),
+			catalog.EnvEntityIndexName:                   jsii.String(catalog.DefaultEntityIndexName),
+			adminauth.EnvProductImagesBucketName:         productImagesBucket.BucketName(),
+			adminauth.EnvProductImagesKeyPrefix:          jsii.String(productImagesKeyPrefix),
+			catalog.EnvProductImagePlaceholderURL:        jsii.String(catalog.DefaultProductImagePlaceholderURL),
+			appenv.EnvAppEnvironment:                     jsii.String(appenv.EnvironmentProduction),
+			adminauth.EnvAdminCredentialsSecretName:      jsii.String(adminCredentialsSecretName),
+			adminauth.EnvAdminLoginAttemptsTableName:     adminLoginAttemptsTable.TableName(),
+			adminauth.EnvAdminOriginHeaderSecret:         adminOriginHeaderSecretReference(adminOriginHeaderSecret),
+			adminauth.EnvAdminPreviousOriginHeaderSecret: adminPreviousOriginHeaderSecret,
+			commerce.EnvTableName:                        commerceTable.TableName(),
+			commerce.EnvCustomerOrdersIndexName:          jsii.String(commerce.DefaultCustomerOrdersIndexName),
+			commerce.EnvOrdersIndexName:                  jsii.String(commerce.DefaultOrdersIndexName),
+			commerce.EnvSessionSecret:                    customerSessionSecretReference(customerSessionSecret),
 			// Admin cancels of pending orders verify (and expire) the order's
 			// Stripe checkout session before releasing stock; without the
 			// credentials the handler skips that session-expiry guard.
@@ -750,6 +755,16 @@ func addAdminOriginHeaderSecret(stack awscdk.Stack) awssecretsmanager.Secret {
 			PasswordLength:     jsii.Number(64),
 		},
 	})
+}
+
+func adminPreviousOriginHeaderSecretValue(stack awscdk.Stack) *string {
+	previousOriginSecret := awscdk.NewCfnParameter(stack, jsii.String(adminPreviousOriginHeaderSecretParameterName), &awscdk.CfnParameterProps{
+		Default:     jsii.String(""),
+		Description: jsii.String("Previous X-TGS-Origin-Secret value accepted during CloudFront origin header rotations"),
+		NoEcho:      jsii.Bool(true),
+		Type:        jsii.String("String"),
+	})
+	return previousOriginSecret.ValueAsString()
 }
 
 func ssrOriginRequestPolicy(stack awscdk.Stack) awscloudfront.OriginRequestPolicy {

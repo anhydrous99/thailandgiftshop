@@ -51,6 +51,7 @@ func TestProductCreateValidationRejectsExternalImageAndDuplicateVariantLabels(t 
 	values := validProductForm(t, handler)
 	values.Set("image_url", "https://example.com/shirt.webp")
 	values.Del("image_token")
+	values["variant_id"] = []string{"var_s_one", "var_s_two"}
 	values["variant_label"] = []string{"S", "s"}
 	values["variant_stock"] = []string{"1", "2"}
 

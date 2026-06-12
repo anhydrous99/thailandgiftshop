@@ -131,7 +131,7 @@ test.describe('without JavaScript', () => {
     await expect(page).toHaveURL(/\/checkout\/fake-pay\?session_id=cs_fake_[a-z0-9]{26}$/);
 
     await page.getByTestId('fake-pay-cancel').click();
-    await expect(page).toHaveURL(/\/checkout\?canceled=1$/);
+    await expect(page).toHaveURL(/\/checkout\?canceled=1&cancel_token=[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)?$/);
     await expect(page.getByTestId('checkout-canceled-notice')).toContainText('Your cart is unchanged');
     await expect(page.getByTestId('checkout-line-item').filter({ hasText: 'Ceramic Tuk Tuk Magnets' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Cart (1)', exact: true }).first()).toBeVisible();
@@ -157,39 +157,21 @@ test.describe('without JavaScript', () => {
     await expect(page).toHaveURL(/\/checkout\/fake-pay\?session_id=cs_fake_[a-z0-9]{26}$/);
     await expect(page.getByRole('heading', { name: 'Pay $45.99', level: 1 })).toBeVisible();
 
-    // Canceling keeps the reservation: checkout sees the now-unavailable size
-    // and falls back to the cart, where the line survives with a notice.
     await page.getByTestId('fake-pay-cancel').click();
-    await expect(page).toHaveURL(/\/cart$/);
-    await expect(page.getByTestId('cart-line-item').filter({ hasText: 'Handwoven Indigo Scarf' })).toBeVisible();
-    await expect(page.getByText('Selected size is unavailable. Remove it to continue.')).toBeVisible();
+    await expect(page).toHaveURL(/\/checkout\?canceled=1&cancel_token=[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)?$/);
+    await expect(page.getByTestId('checkout-canceled-notice')).toContainText('Your cart is unchanged');
+    await expect(page.getByTestId('checkout-line-item').filter({ hasText: 'Handwoven Indigo Scarf' })).toBeVisible();
 
-    // The product page confirms the last unit is still reserved.
-    await page.goto('/products/handwoven-indigo-scarf');
-    await expect(page.getByTestId('variant-select').locator('option[value="var_005_s"]')).toHaveText('S - out of stock');
-
-    // Replacing the cart and placing a new order triggers the stale-pointer
-    // cleanup: the old pending order is canceled and its stock released.
-    await page.goto('/cart');
-    await page.getByRole('button', { name: 'Remove' }).click();
-    await expect(page.getByText('Your cart is empty.')).toBeVisible();
-    await addProductToCart(page, 'thai-tea-sampler');
-    await page.getByRole('link', { name: 'Check out', exact: true }).click();
-    await expect(page).toHaveURL(/\/checkout$/);
-    await page.getByTestId('place-order-button').click();
-    await expect(page).toHaveURL(/\/checkout\/fake-pay\?session_id=cs_fake_[a-z0-9]{26}$/);
-    const fakePayURL = page.url();
-
-    // The scarf's last unit is back on the shelf.
     await page.goto('/products/handwoven-indigo-scarf');
     await expect(page.getByTestId('variant-select').locator('option[value="var_005_s"]')).toHaveText('S');
 
-    // Finish the replacement order cleanly.
-    await page.goto(fakePayURL);
+    await page.goto('/checkout');
+    await page.getByTestId('place-order-button').click();
+    await expect(page).toHaveURL(/\/checkout\/fake-pay\?session_id=cs_fake_[a-z0-9]{26}$/);
     await page.getByTestId('fake-pay-button').click();
     await expect(page).toHaveURL(/\/orders\/[a-z0-9]{26}\?placed=1$/);
     await expect(page.getByTestId('order-status')).toHaveText('Paid');
-    await expect(page.getByTestId('order-line-item').filter({ hasText: 'Thai Tea Selection' })).toBeVisible();
+    await expect(page.getByTestId('order-line-item').filter({ hasText: 'Handwoven Indigo Scarf' })).toBeVisible();
   });
 });
 

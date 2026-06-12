@@ -141,6 +141,21 @@ func TestProductVariantValidationRejectsDuplicateActiveIDsForDistinctLabels(t *t
 	}
 }
 
+func TestProductVariantValidationRejectsDuplicateInactiveAndActiveIDs(t *testing.T) {
+	product := Product{Variants: []ProductVariant{
+		{ID: "var_size-m", Label: "Size M", Status: StatusArchived},
+		{ID: "var_size-m", Label: "size m", Status: StatusActive},
+	}}
+
+	err := product.Validate()
+	if err == nil {
+		t.Fatal("Validate returned nil, want error for duplicate variant IDs across statuses")
+	}
+	if !strings.Contains(err.Error(), "duplicate variant ID") {
+		t.Fatalf("Validate error = %q, want duplicate variant ID context", err)
+	}
+}
+
 func TestValidRouteSlugRejectsUnsafeRouteCharacters(t *testing.T) {
 	for _, slug := range []string{"safe-slug-123", "a"} {
 		if !ValidRouteSlug(slug) {

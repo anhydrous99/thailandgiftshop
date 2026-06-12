@@ -282,17 +282,19 @@ func TestStackIncludesAdminLambdaRoutesAndScopedPermissions(t *testing.T) {
 		"Architectures": []any{"arm64"},
 		"Environment": map[string]any{
 			"Variables": map[string]any{
-				"CATALOG_TABLE_NAME":                     assertions.Match_AnyValue(),
-				"CATALOG_SLUG_INDEX_NAME":                catalog.DefaultSlugIndexName,
-				"CATALOG_PUBLIC_INDEX_NAME":              catalog.DefaultPublicIndexName,
-				"CATALOG_RECENT_INDEX_NAME":              catalog.DefaultRecentIndexName,
-				"CATALOG_ENTITY_INDEX_NAME":              catalog.DefaultEntityIndexName,
-				appenv.EnvAppEnvironment:                 appenv.EnvironmentProduction,
-				adminauth.EnvProductImagesBucketName:     assertions.Match_AnyValue(),
-				adminauth.EnvProductImagesKeyPrefix:      productImagesKeyPrefix,
-				adminauth.EnvAdminCredentialsSecretName:  assertions.Match_AnyValue(),
-				adminauth.EnvAdminLoginAttemptsTableName: assertions.Match_AnyValue(),
-				adminauth.EnvAdminOriginHeaderSecret:     assertions.Match_AnyValue(),
+				"CATALOG_TABLE_NAME":                         assertions.Match_AnyValue(),
+				"CATALOG_SLUG_INDEX_NAME":                    catalog.DefaultSlugIndexName,
+				"CATALOG_PUBLIC_INDEX_NAME":                  catalog.DefaultPublicIndexName,
+				"CATALOG_RECENT_INDEX_NAME":                  catalog.DefaultRecentIndexName,
+				"CATALOG_ENTITY_INDEX_NAME":                  catalog.DefaultEntityIndexName,
+				appenv.EnvAppEnvironment:                     appenv.EnvironmentProduction,
+				adminauth.EnvProductImagesBucketName:         assertions.Match_AnyValue(),
+				adminauth.EnvProductImagesKeyPrefix:          productImagesKeyPrefix,
+				adminauth.EnvAdminCredentialsSecretName:      assertions.Match_AnyValue(),
+				adminauth.EnvAdminLoginAttemptsTableName:     assertions.Match_AnyValue(),
+				adminauth.EnvAdminOriginHeaderSecret:         assertions.Match_AnyValue(),
+				adminauth.EnvAdminPreviousOriginHeaderSecret: assertions.Match_AnyValue(),
+				commerce.EnvSessionSecret:                    assertions.Match_AnyValue(),
 			},
 		},
 		"Handler": "bootstrap",
@@ -624,6 +626,12 @@ func TestStackWiresAdminOriginHeaderSecretThroughCloudFrontAndAdminLambda(t *tes
 			"PasswordLength":     64,
 		},
 	})
+	template.HasParameter(jsii.String(adminPreviousOriginHeaderSecretParameterName), map[string]any{
+		"Default":     "",
+		"Description": "Previous X-TGS-Origin-Secret value accepted during CloudFront origin header rotations",
+		"NoEcho":      true,
+		"Type":        "String",
+	})
 	template.HasResourceProperties(jsii.String("AWS::CloudFront::Distribution"), map[string]any{
 		"DistributionConfig": assertions.Match_ObjectLike(&map[string]any{
 			"Origins": assertions.Match_ArrayWith(&[]any{
@@ -651,6 +659,16 @@ func TestStackWiresAdminOriginHeaderSecretThroughCloudFrontAndAdminLambda(t *tes
 	if value := templateValueString(t, adminOriginSecret); !strings.Contains(value, "AdminOriginHeaderSecret") || !strings.Contains(value, "SecretString") {
 		t.Fatalf("admin origin secret reference = %s, want generated AdminOriginHeaderSecret SecretString", value)
 	}
+	adminPreviousOriginSecret, found := adminVariables[adminauth.EnvAdminPreviousOriginHeaderSecret]
+	if !found {
+		t.Fatalf("admin lambda missing %s env var: %#v", adminauth.EnvAdminPreviousOriginHeaderSecret, adminVariables)
+	}
+	if value := templateValueString(t, adminPreviousOriginSecret); !strings.Contains(value, adminPreviousOriginHeaderSecretParameterName) {
+		t.Fatalf("admin previous origin secret reference = %s, want %s parameter", value, adminPreviousOriginHeaderSecretParameterName)
+	}
+	if templateValueString(t, originHeaderValue) == templateValueString(t, adminPreviousOriginSecret) {
+		t.Fatalf("CloudFront origin header must use current secret, got previous parameter reference %s", templateValueString(t, originHeaderValue))
+	}
 
 	ssrVariables := lambdaEnvironmentVariables(t, templateJSON, "thailandgiftshop-ssr")
 	ssrOriginSecret, found := ssrVariables[adminauth.EnvAdminOriginHeaderSecret]
@@ -659,6 +677,13 @@ func TestStackWiresAdminOriginHeaderSecretThroughCloudFrontAndAdminLambda(t *tes
 	}
 	if templateValueString(t, originHeaderValue) != templateValueString(t, ssrOriginSecret) {
 		t.Fatalf("CloudFront origin header and ssr lambda env use different secrets:\norigin=%s\nenv=%s", templateValueString(t, originHeaderValue), templateValueString(t, ssrOriginSecret))
+	}
+	ssrPreviousOriginSecret, found := ssrVariables[adminauth.EnvAdminPreviousOriginHeaderSecret]
+	if !found {
+		t.Fatalf("ssr lambda missing %s env var: %#v", adminauth.EnvAdminPreviousOriginHeaderSecret, ssrVariables)
+	}
+	if value := templateValueString(t, ssrPreviousOriginSecret); !strings.Contains(value, adminPreviousOriginHeaderSecretParameterName) {
+		t.Fatalf("ssr previous origin secret reference = %s, want %s parameter", value, adminPreviousOriginHeaderSecretParameterName)
 	}
 }
 
@@ -1013,8 +1038,12 @@ func TestStackIncludesCustomerSessionSecret(t *testing.T) {
 	}
 
 	adminVariables := lambdaEnvironmentVariables(t, templateJSON, "thailandgiftshop-admin")
-	if _, found := adminVariables[commerce.EnvSessionSecret]; found {
-		t.Fatalf("admin lambda must not receive %s; got %#v", commerce.EnvSessionSecret, adminVariables)
+	adminSessionSecret, found := adminVariables[commerce.EnvSessionSecret]
+	if !found {
+		t.Fatalf("admin lambda missing %s env var: %#v", commerce.EnvSessionSecret, adminVariables)
+	}
+	if templateValueString(t, adminSessionSecret) != templateValueString(t, sessionSecret) {
+		t.Fatalf("admin and ssr lambdas use different customer session secrets:\nadmin=%s\nssr=%s", templateValueString(t, adminSessionSecret), templateValueString(t, sessionSecret))
 	}
 }
 

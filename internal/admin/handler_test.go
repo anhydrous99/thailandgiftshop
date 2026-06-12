@@ -18,6 +18,7 @@ import (
 )
 
 const testSessionSecret = "admin-session-test-secret-with-enough-entropy"
+const testCustomerSessionSecret = "customer-session-test-secret-with-enough-entropy"
 
 func TestLoginWrongPasswordUsesGenericErrorAndDoesNotSetSessionCookie(t *testing.T) {
 	handler, _ := newAuthTestHandler(t)
@@ -339,6 +340,7 @@ func TestProtectedAdminRootRequiresAuthenticatedSession(t *testing.T) {
 
 func TestAdminOriginSecretBlocksDirectAdminRequestsWhenConfigured(t *testing.T) {
 	t.Setenv(EnvAdminOriginHeaderSecret, "origin-secret")
+	t.Setenv(EnvAdminPreviousOriginHeaderSecret, "previous-origin-secret")
 	handler, _ := newAuthTestHandler(t)
 
 	blocked, err := handler.Handle(context.Background(), adminRequest(http.MethodGet, "/admin/login"))
@@ -358,6 +360,16 @@ func TestAdminOriginSecretBlocksDirectAdminRequestsWhenConfigured(t *testing.T) 
 	}
 	if allowed.StatusCode != http.StatusOK {
 		t.Fatalf("allowed status = %d, want %d", allowed.StatusCode, http.StatusOK)
+	}
+
+	previousRequest := adminRequest(http.MethodGet, "/admin/login")
+	previousRequest.Headers = map[string]string{adminOriginHeaderName: "previous-origin-secret"}
+	previous, err := handler.Handle(context.Background(), previousRequest)
+	if err != nil {
+		t.Fatalf("Handle previous returned error: %v", err)
+	}
+	if previous.StatusCode != http.StatusOK {
+		t.Fatalf("previous status = %d, want %d", previous.StatusCode, http.StatusOK)
 	}
 
 	blockedRedirect, err := handler.Handle(context.Background(), adminRequest(http.MethodGet, "/admin/"))
@@ -711,6 +723,7 @@ func newAuthTestHandler(t *testing.T) (*Handler, *time.Time) {
 		SessionSecret: testSessionSecret,
 	})
 	handler.now = func() time.Time { return currentTime }
+	handler.customerSessionSecret = testCustomerSessionSecret
 	return handler, &currentTime
 }
 

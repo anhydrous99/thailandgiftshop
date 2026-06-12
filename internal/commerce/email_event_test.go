@@ -47,6 +47,48 @@ func TestEmailEventReserveReturnsTrueThenFalseForDuplicate(t *testing.T) {
 	}
 }
 
+func TestEmailEventReserveRetriesFailedAndStaleReservedEvents(t *testing.T) {
+	for _, fixture := range storeFixtures(t) {
+		t.Run(fixture.name, func(t *testing.T) {
+			ctx := context.Background()
+			failed := testEmailEvent("order123", "order-placed-v2", fixture.clock.Now())
+			reserved, err := fixture.store.ReserveEmailEvent(ctx, failed)
+			if err != nil || !reserved {
+				t.Fatalf("initial failed-event ReserveEmailEvent = %v %v, want reserved", reserved, err)
+			}
+			if err := fixture.store.MarkEmailEventFailed(ctx, failed.OrderID, failed.Key, fixture.clock.Now(), "ses rejected recipient"); err != nil {
+				t.Fatalf("MarkEmailEventFailed returned error: %v", err)
+			}
+
+			fixture.clock.Advance(time.Minute)
+			failedRetry := failed
+			failedRetry.CreatedAt = fixture.clock.Now()
+			reserved, err = fixture.store.ReserveEmailEvent(ctx, failedRetry)
+			if err != nil || !reserved {
+				t.Fatalf("failed-event retry ReserveEmailEvent = %v %v, want reserved", reserved, err)
+			}
+
+			stale := testEmailEvent("order123", "stale-reserved-v1", fixture.clock.Now())
+			reserved, err = fixture.store.ReserveEmailEvent(ctx, stale)
+			if err != nil || !reserved {
+				t.Fatalf("stale initial ReserveEmailEvent = %v %v, want reserved", reserved, err)
+			}
+			reserved, err = fixture.store.ReserveEmailEvent(ctx, stale)
+			if err != nil || reserved {
+				t.Fatalf("fresh reserved duplicate = %v %v, want rejected", reserved, err)
+			}
+
+			fixture.clock.Advance(emailEventReservationTTL + time.Second)
+			staleRetry := stale
+			staleRetry.CreatedAt = fixture.clock.Now()
+			reserved, err = fixture.store.ReserveEmailEvent(ctx, staleRetry)
+			if err != nil || !reserved {
+				t.Fatalf("stale reserved retry = %v %v, want reserved", reserved, err)
+			}
+		})
+	}
+}
+
 func TestEmailEventSentAndFailedUpdateOnlyMatchingOrderEventRow(t *testing.T) {
 	ctx := context.Background()
 	client := newFakeCommerceClient()

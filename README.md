@@ -87,7 +87,7 @@ CATALOG_DEMO_STORE=1 CART_COOKIE_SECRET=<cart-cookie-secret> CUSTOMER_SESSION_SE
 
 When `CATALOG_DEMO_STORE=1` is set, the devserver skips DynamoDB and serves the checked-in demo catalog from memory, alongside one shared in-memory commerce store and the fake payment provider for both the storefront and admin handlers. The whole checkout journey then runs on-site with no Stripe keys and no network: placing an order redirects to the `/checkout/fake-pay` demo payment page, whose Pay action drives the real `/checkout/confirm` reconcile path, and orders placed on the storefront appear in the admin order desk at `/admin/orders`. The demo catalog includes an active variant product, `handwoven-indigo-scarf`, with sizes `S=1`, `M=2`, and `XL=0` for stable admin and public E2E coverage. The default devserver path still uses environment-backed catalog loading, so local Go tests and Playwright tests can run without a live AWS account.
 
-Guest checkout works end-to-end in demo mode too: an anonymous shopper with a cookie cart gets the guest layout on `/checkout` (contact email + shipping address on one form), pays on the same fake-pay page, and lands on a tokenized order page. Guests get no order history; their record is a signed `?access=` status link (valid for 30 days from payment, anchored to the payment time so confirm replays never extend it) plus Stripe's receipt email in live mode. Stranded guest pending orders release their stock via the guaranteed 30-minute `checkout.session.expired` webhook in production; demo mode has no expiry webhook, so canceled or abandoned demo guest orders keep their reservation.
+Guest checkout works end-to-end in demo mode too: an anonymous shopper with a cookie cart gets the guest layout on `/checkout` (contact email + shipping address on one form), pays on the same fake-pay page, and lands on a tokenized order page. Guests get no order history; their record is a signed `?access=` status link (valid for 30 days from payment, anchored to the payment time so confirm replays never extend it) plus Stripe's receipt email in live mode. Stranded guest pending orders release their stock via the guaranteed 30-minute `checkout.session.expired` webhook in production; signed checkout-cancel returns release their own reservation before the cart is normalized.
 
 For local admin work, set placeholder-only admin environment variables before starting the admin Lambda or any local wrapper that loads admin credentials from the environment:
 
@@ -98,11 +98,11 @@ export ADMIN_SESSION_SECRET=<session-secret>
 
 Create the bcrypt hash and session secret outside the repository, then keep the real values in your shell, local secret manager, or CI secret store. Do not commit a plaintext admin password, generated bcrypt hash, or generated session secret. Local and dev code reads `ADMIN_PASSWORD_HASH` and `ADMIN_SESSION_SECRET` as a fallback; production loads the `thailandgiftshop/admin/credentials` secret at runtime from the name in `ADMIN_CREDENTIALS_SECRET_NAME` (an inline `ADMIN_CREDENTIALS_SECRET_JSON` blob is still honored ahead of it for local overrides).
 
-Leave `ADMIN_ORIGIN_HEADER_SECRET` unset for local direct `/admin` work. In production, CDK generates this secret, configures CloudFront to send it as `X-TGS-Origin-Secret`, and configures the admin Lambda to reject `/admin` requests that do not include the matching header.
+Leave `ADMIN_ORIGIN_HEADER_SECRET` unset for local direct `/admin` work. In production, CDK generates this secret, configures CloudFront to send it as `X-TGS-Origin-Secret`, and configures the SSR and admin Lambdas to reject requests that do not include the matching header. During an origin-header rotation, pass the old header value as the no-echo `AdminOriginHeaderPreviousSecret` deploy parameter until CloudFront has propagated the new origin custom header everywhere; leave it blank otherwise.
 
 ## Seed Catalog
 
-Seed the deployed DynamoDB catalog with demo categories, products, and category-product rows:
+Seed missing deployed DynamoDB catalog rows with demo categories, products, product slug-lock rows, and category-product rows:
 
 ```sh
 AWS_REGION=us-east-1 go run ./cmd/seedcatalog
@@ -120,7 +120,7 @@ Preview the row count without writing:
 AWS_REGION=us-east-1 go run ./cmd/seedcatalog -dry-run
 ```
 
-After deploying catalog index changes, reseed or backfill existing DynamoDB product and category rows so they include the entity-index attributes used by admin lists. Category-product membership rows and product slug-lock rows should not receive those entity-index attributes.
+The seed command is insert-only: it writes rows that are absent and skips rows that already exist. After changing seeded image URLs, product creation dates, or catalog index projections, run a purpose-built backfill or migration for existing rows; do not rely on `cmd/seedcatalog` to overwrite production catalog data. Category-product membership rows and product slug-lock rows should not receive entity-index attributes.
 
 ## Local Setup
 
@@ -268,7 +268,7 @@ Do not run production with `EMAIL_SENDER_MODE=fake`. Startup and config validati
 
 Refunds are issued automatically from the admin order page: the Refund action returns the full payment to the shopper's original payment method through Stripe (paid orders also return their reserved stock; shipped/delivered orders do not), and the order settles to `refunded` via the `refund.*` webhooks or the admin page's reconcile-on-render. Payments captured for orders that already reached a terminal status (`paid_after_terminal`) are also refunded automatically and unattended; the existing `StripeWebhook` alarm's meaning for that outcome therefore changes from "go issue a refund" to "a refund was already issued unattended — verify in Stripe that it is legitimate (not a pay-then-expire abuse pattern, which burns non-returnable processing fees and can serve as card-testing cover; the WAF rate limit in front of checkout bounds it) and that it settles" — the dashboard's auto-issued refund series is the volume watch point. The Stripe dashboard remains the manual fallback only for orders without a payment-intent ID, refunds that fail again after a retry, failed terminal-order auto-refunds (those orders have no in-app retry), and the already-fully-refunded reconciliation case that appears when a refund is retried after Stripe's ~24h idempotency-key window. Refunds issued directly in the Stripe dashboard carry no order metadata and do not update order status.
 
-CloudFront has an AWS WAF web ACL with rate limits for `POST /admin/login`, `/admin*`, customer-auth `POST /account/sign-in` and `POST /account/sign-up`, and `POST /checkout/place-order` requests (guest checkout removes the account gate from place-order, so the edge throttle takes its place; the rule bounds request count, not units reserved). Direct API Gateway access through the `SsrHttpApiUrl` output remains useful for public SSR checks, but production admin access must use `https://thailandgiftshop.com/admin` so CloudFront can apply WAF rules and inject the admin origin header.
+CloudFront has an AWS WAF web ACL with rate limits for `POST /admin/login`, `/admin*`, customer-auth `POST /account/sign-in` and `POST /account/sign-up`, and `POST /checkout/place-order` requests (guest checkout removes the account gate from place-order, so the edge throttle takes its place; the rule bounds request count, not units reserved). Production traffic, including public SSR checks, must use `https://thailandgiftshop.com/` so CloudFront can apply WAF rules and inject the origin header accepted by the Lambdas.
 
 ## Deploy
 
@@ -295,11 +295,11 @@ cd infra
 AWS_REGION=us-east-1 npx cdk deploy ThailandGiftshopStack --parameters HostedZoneId=ROUTE53_HOSTED_ZONE_ID --parameters AlarmNotificationEmail=ops@example.com
 ```
 
-Replace `ROUTE53_HOSTED_ZONE_ID` with the public Route 53 hosted zone ID for `thailandgiftshop.com` and replace `ops@example.com` with the operations email address that should receive critical alarm notifications.
+Replace `ROUTE53_HOSTED_ZONE_ID` with the public Route 53 hosted zone ID for `thailandgiftshop.com` and replace `ops@example.com` with the operations email address that should receive critical alarm notifications. For an origin-header rotation only, add `--parameters AdminOriginHeaderPreviousSecret=OLD_HEADER_VALUE`, deploy the new generated secret, wait for CloudFront propagation, then deploy again with the parameter omitted or blank.
 
-The stack outputs `SiteUrl` as `https://thailandgiftshop.com` and also outputs `SiteDistributionDomainName` for the underlying CloudFront distribution. The existing `SsrHttpApiUrl` output remains available for direct public API Gateway checks while CloudFront handles normal site traffic and all production admin traffic. Catalog infrastructure outputs include `CatalogTableName` and `CatalogTableArn`; product image infrastructure outputs include `ProductImagesBucketName` and `ProductImagesBaseUrl`.
+The stack outputs `SiteUrl` as `https://thailandgiftshop.com` and also outputs `SiteDistributionDomainName` for the underlying CloudFront distribution. The `SsrHttpApiUrl` output identifies the private API Gateway origin behind CloudFront; production requests to it are expected to fail without the CloudFront-injected origin header. Catalog infrastructure outputs include `CatalogTableName` and `CatalogTableArn`; product image infrastructure outputs include `ProductImagesBucketName` and `ProductImagesBaseUrl`.
 
-After changing seeded image URLs, product creation dates, or catalog indexes, reseed or backfill the catalog so DynamoDB points at `/images/products/...` and populates the latest-products and admin entity-index access patterns:
+After changing seeded image URLs, product creation dates, or catalog indexes, backfill existing catalog rows so DynamoDB points at `/images/products/...` and populates the latest-products and admin entity-index access patterns. Use `cmd/seedcatalog` only to insert rows that are currently missing:
 
 ```sh
 AWS_REGION=us-east-1 go run ./cmd/seedcatalog

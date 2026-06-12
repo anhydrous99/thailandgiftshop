@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type fakeSecretsManager struct {
@@ -130,6 +131,31 @@ func TestCredentialsForRequestRefreshesAfterTTL(t *testing.T) {
 	current = current.Add(2 * time.Second)
 	if got := h.credentialsForRequest(context.Background()); got.PasswordHash != "hash-2" {
 		t.Fatalf("after TTL PasswordHash = %q, want rotated hash-2", got.PasswordHash)
+	}
+}
+
+func TestValidPasswordDoesNotExtendCredentialCacheTTL(t *testing.T) {
+	current := time.Date(2026, 6, 10, 12, 0, 0, 0, time.UTC)
+	hash, err := bcrypt.GenerateFromPassword([]byte("rotating-password"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("GenerateFromPassword returned error: %v", err)
+	}
+	h := &Handler{now: func() time.Time { return current }}
+
+	t.Setenv(EnvAdminPasswordHash, "")
+	t.Setenv(EnvAdminSessionSecret, "")
+	t.Setenv(EnvAdminCredentialsSecretJSON, `{"password_hash":"`+string(hash)+`","session_secret":"sess-1"}`)
+	credentials := h.credentialsForRequest(context.Background())
+
+	current = current.Add(adminCredentialsTTL - time.Second)
+	if !h.validPasswordWithCredentials(credentials, "rotating-password") {
+		t.Fatal("validPasswordWithCredentials rejected the cached password")
+	}
+
+	t.Setenv(EnvAdminCredentialsSecretJSON, `{"password_hash":"rotated-hash","session_secret":"sess-2"}`)
+	current = current.Add(2 * time.Second)
+	if got := h.credentialsForRequest(context.Background()); got.SessionSecret != "sess-2" {
+		t.Fatalf("after original TTL SessionSecret = %q, want rotated sess-2", got.SessionSecret)
 	}
 }
 

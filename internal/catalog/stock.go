@@ -217,29 +217,21 @@ func variantIndexByID(variants []ProductVariant, variantID string) int {
 	return -1
 }
 
-// compensateStockAdjustments best-effort releases the stock that earlier
-// products in the same call already reserved before a later product failed.
-// Only negative deltas are inverted: re-reserving an already released line
-// could itself fail on insufficient stock, and extra released stock is
-// harmless because no money has moved yet. A compensation failure is alarmed
-// (Outcome=rollback_error) and logged for manual stock repair.
+// compensateStockAdjustments best-effort reverses stock writes that earlier
+// products in the same call already applied before a later product failed.
+// A compensation failure is alarmed (Outcome=rollback_error) and logged for
+// manual stock repair.
 func compensateStockAdjustments(ctx context.Context, store stockProductStore, metrics observability.Recorder, applied []productStockAdjustments) {
 	for _, group := range applied {
-		releases := make([]StockAdjustment, 0, len(group.adjustments))
+		inverted := make([]StockAdjustment, 0, len(group.adjustments))
 		for _, adjustment := range group.adjustments {
-			if adjustment.Delta >= 0 {
-				continue
-			}
-			releases = append(releases, StockAdjustment{
+			inverted = append(inverted, StockAdjustment{
 				ProductID: adjustment.ProductID,
 				VariantID: adjustment.VariantID,
 				Delta:     -adjustment.Delta,
 			})
 		}
-		if len(releases) == 0 {
-			continue
-		}
-		if err := adjustProductStock(ctx, store, metrics, productStockAdjustments{productID: group.productID, adjustments: releases}); err != nil {
+		if err := adjustProductStock(ctx, store, metrics, productStockAdjustments{productID: group.productID, adjustments: inverted}); err != nil {
 			recordStockAdjust(metrics, stockOutcomeRollbackError)
 			stockLogger.Error("stock adjustment compensation failed",
 				slog.String("service", "catalog"),

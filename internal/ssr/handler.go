@@ -43,7 +43,7 @@ type Handler struct {
 	customerSessionSecret      string
 	passwordHashCost           int
 	now                        func() time.Time
-	originSecretDigest         [32]byte
+	originSecretDigests        httpapi.OriginSecretDigests
 	originSecretSet            bool
 }
 
@@ -61,14 +61,14 @@ func NewHandlerWithProductImagePlaceholderURL(catalogStore catalog.Store, placeh
 		placeholderURL = catalog.DefaultProductImagePlaceholderURL
 	}
 
-	originSecretDigest, originSecretSet := httpapi.OriginSecretDigestFromEnvironment()
+	originSecretDigests, originSecretSet := httpapi.OriginSecretDigestsFromEnvironment()
 	return &Handler{
 		catalogStore:               catalogStore,
 		productImagePlaceholderURL: placeholderURL,
 		cartCookieSecret:           os.Getenv(cart.EnvCookieSecret),
 		customerSessionSecret:      os.Getenv(commerce.EnvSessionSecret),
 		now:                        time.Now,
-		originSecretDigest:         originSecretDigest,
+		originSecretDigests:        originSecretDigests,
 		originSecretSet:            originSecretSet,
 	}
 }
@@ -103,12 +103,14 @@ func NewHandlerFromEnvironment(ctx context.Context) (*Handler, error) {
 	} else {
 		handler.payments = paymentsProvider
 		handler.checkout = &checkout.Service{
-			Commerce:    commerceStore,
-			Payments:    paymentsProvider,
-			Stock:       handler.stock,
-			Metrics:     metrics,
-			EmailSender: emailSender,
-			BaseURL:     payments.PublicBaseURLFromEnvironment(),
+			Commerce:            commerceStore,
+			Payments:            paymentsProvider,
+			Stock:               handler.stock,
+			Metrics:             metrics,
+			EmailSender:         emailSender,
+			BaseURL:             payments.PublicBaseURLFromEnvironment(),
+			GuestOrderAccessURL: handler.guestOrderAccessURL(payments.PublicBaseURLFromEnvironment()),
+			CancelReturnURL:     handler.checkoutCancelReturnURL(payments.PublicBaseURLFromEnvironment()),
 		}
 	}
 	return handler, nil
@@ -132,11 +134,13 @@ func NewLocalDemoHandlerWithEmailSender(catalogStore *catalog.MemoryStore, comme
 	handler.payments = provider
 	handler.stock = catalogStore
 	handler.checkout = &checkout.Service{
-		Commerce:    commerceStore,
-		Payments:    provider,
-		Stock:       catalogStore,
-		EmailSender: handler.emailSender,
-		BaseURL:     localDemoBaseURL(),
+		Commerce:            commerceStore,
+		Payments:            provider,
+		Stock:               catalogStore,
+		EmailSender:         handler.emailSender,
+		BaseURL:             localDemoBaseURL(),
+		GuestOrderAccessURL: handler.guestOrderAccessURL(localDemoBaseURL()),
+		CancelReturnURL:     handler.checkoutCancelReturnURL(localDemoBaseURL()),
 	}
 	return handler
 }
@@ -170,6 +174,24 @@ func (h *Handler) currentTime() time.Time {
 		return time.Now()
 	}
 	return h.now()
+}
+
+func (h *Handler) guestOrderAccessURL(baseURL string) func(commerce.Order, time.Time) string {
+	return func(order commerce.Order, now time.Time) string {
+		expiresAt := order.PaidAt.UTC().Add(guestOrderAccessTTL)
+		if order.PaidAt.IsZero() {
+			expiresAt = now.UTC().Add(guestOrderAccessTTL)
+		}
+		if !now.UTC().Before(expiresAt) {
+			return ""
+		}
+		token, err := h.mintGuestOrderAccessToken(order.ID, expiresAt)
+		if err != nil {
+			logAccountError("guest order access URL: mint token", err)
+			return ""
+		}
+		return strings.TrimRight(baseURL, "/") + guestOrderAccessPath(order.ID, token)
+	}
 }
 
 var defaultHandler = NewHandler(catalog.EmptyStore{})

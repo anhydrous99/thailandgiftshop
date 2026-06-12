@@ -6,10 +6,11 @@ import (
 )
 
 const envOriginHeaderSecret = httpapi.EnvOriginHeaderSecret
+const envPreviousOriginHeaderSecret = httpapi.EnvPreviousOriginHeaderSecret
 const originSecretHeaderName = httpapi.OriginSecretHeaderName
 
 // validOrigin rejects requests that bypassed CloudFront — and with it the WAF
 // and edge cache — by calling the API Gateway execute-api endpoint directly.
 func (h *Handler) validOrigin(request events.APIGatewayV2HTTPRequest) bool {
-	return httpapi.ValidOriginSecret(request, h.originSecretDigest, h.originSecretSet)
+	return httpapi.ValidOriginSecrets(request, h.originSecretDigests, h.originSecretSet)
 }

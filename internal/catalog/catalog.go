@@ -114,7 +114,18 @@ func (p Product) TotalAvailableStock() int {
 func (p Product) Validate() error {
 	activeLabels := make([]string, 0, len(p.Variants))
 	activeVariantIDs := map[string]string{}
+	variantIDs := map[string]ProductVariant{}
 	for _, variant := range p.Variants {
+		variantID := strings.TrimSpace(variant.ID)
+		if variantID != "" {
+			if existing, exists := variantIDs[variantID]; exists {
+				if existing.Status == StatusActive && variant.Status == StatusActive {
+					return fmt.Errorf("duplicate active variant ID %q for %q and %q", variantID, strings.TrimSpace(existing.Label), strings.TrimSpace(variant.Label))
+				}
+				return fmt.Errorf("duplicate variant ID %q for %q and %q", variantID, strings.TrimSpace(existing.Label), strings.TrimSpace(variant.Label))
+			}
+			variantIDs[variantID] = variant
+		}
 		if variant.Status != StatusActive {
 			continue
 		}
@@ -131,7 +142,6 @@ func (p Product) Validate() error {
 		}
 		activeLabels = append(activeLabels, label)
 
-		variantID := strings.TrimSpace(variant.ID)
 		if variantID == "" {
 			return fmt.Errorf("active variant ID is required for %q", label)
 		}

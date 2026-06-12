@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/anhydrous99/thailandgiftshop/internal/cart"
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
 	"github.com/anhydrous99/thailandgiftshop/internal/commerce"
 	"github.com/anhydrous99/thailandgiftshop/internal/email"
@@ -142,13 +143,15 @@ var checkoutLogger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
 // absolute public origin used to build success/cancel URLs; Now is the
 // injected clock (nil falls back to time.Now, the admin precedent).
 type Service struct {
-	Commerce    commerce.Store
-	Payments    payments.Provider
-	Stock       catalog.StockStore
-	Metrics     observability.Recorder
-	EmailSender email.Sender
-	BaseURL     string
-	Now         func() time.Time
+	Commerce            commerce.Store
+	Payments            payments.Provider
+	Stock               catalog.StockStore
+	Metrics             observability.Recorder
+	EmailSender         email.Sender
+	BaseURL             string
+	Now                 func() time.Time
+	GuestOrderAccessURL func(commerce.Order, time.Time) string
+	CancelReturnURL     func(commerce.Order, time.Time) string
 }
 
 // PlaceOrderInput carries everything PlaceOrder needs, resolved by the ssr
@@ -276,7 +279,7 @@ func (s *Service) PlaceOrder(ctx context.Context, input PlaceOrderInput) (string
 		Lines:            sessionLines(created.Lines),
 		TotalCents:       created.TotalCents,
 		SuccessURL:       s.baseURL() + successURLTemplate,
-		CancelURL:        s.baseURL() + cancelURLPath,
+		CancelURL:        s.cancelURL(created),
 		ExpiresAt:        s.now().Add(paymentSessionTTL),
 		Attempt:          created.CheckoutAttempt,
 	})
@@ -349,6 +352,13 @@ func (s *Service) resumePendingOrder(ctx context.Context, pendingOrderID string,
 		// (owner "") can therefore only ever touch guest orders, and customer
 		// pointers only their own.
 		return "", commerce.Order{}, false, nil
+	}
+
+	if orderIsPaidOrLater(pending.Status) && pending.CartFingerprint == fingerprint {
+		if err := s.clearCartAfterPayment(ctx, pending); err != nil {
+			return "", commerce.Order{}, false, err
+		}
+		return s.orderURL(pending.ID), pending, true, nil
 	}
 
 	if pending.Status == commerce.OrderStatusPendingPayment && pending.CartFingerprint == fingerprint && pending.StripeCheckoutSessionID != "" {
@@ -453,10 +463,10 @@ func (s *Service) FinalizePayment(ctx context.Context, orderID string, paymentSe
 	}
 
 	if paymentSession.OrderID != orderID {
-		return order, fmt.Errorf("checkout: payment session %q belongs to order %q, not %q", paymentSession.ID, paymentSession.OrderID, orderID)
+		return order, fmt.Errorf("checkout: payment session belongs to order %q, not %q", paymentSession.OrderID, orderID)
 	}
 	if paymentSession.PaymentStatus != paymentStatusPaid {
-		return order, fmt.Errorf("checkout: payment session %q is %q, not paid", paymentSession.ID, paymentSession.PaymentStatus)
+		return order, fmt.Errorf("checkout: payment session is %q, not paid", paymentSession.PaymentStatus)
 	}
 
 	// Webhook payloads carry the payment intent as a bare ID with no card
@@ -720,7 +730,9 @@ func (s *Service) CancelPendingOrderAs(ctx context.Context, order commerce.Order
 		return err
 	}
 
-	s.sendOrderStatusChangedEmail(ctx, updated, commerce.OrderStatusPendingPayment, commerce.OrderStatusCanceled)
+	if actor != commerce.OrderActorSystem {
+		s.sendOrderStatusChangedEmail(ctx, updated, commerce.OrderStatusPendingPayment, commerce.OrderStatusCanceled)
+	}
 	return s.ClaimAndReleaseOrderStock(ctx, order.ID)
 }
 
@@ -749,7 +761,7 @@ func (s *Service) expirePaymentSessionForCancel(ctx context.Context, order comme
 	case paymentSession.Status == payments.SessionStatusExpired:
 		return nil
 	case paymentSession.Status == payments.SessionStatusComplete:
-		return fmt.Errorf("%w: session %q for order %q", ErrPaymentSessionInFlight, paymentSession.ID, order.ID)
+		return fmt.Errorf("%w: order %q", ErrPaymentSessionInFlight, order.ID)
 	}
 
 	expireErr := s.Payments.ExpireSession(ctx, order.StripeCheckoutSessionID)
@@ -768,7 +780,7 @@ func (s *Service) expirePaymentSessionForCancel(ctx context.Context, order comme
 		case current.Status == payments.SessionStatusExpired:
 			return nil
 		case current.Status == payments.SessionStatusComplete:
-			return fmt.Errorf("%w: session %q for order %q", ErrPaymentSessionInFlight, current.ID, order.ID)
+			return fmt.Errorf("%w: order %q", ErrPaymentSessionInFlight, order.ID)
 		}
 	}
 
@@ -1489,16 +1501,21 @@ func (s *Service) orderURL(orderID string) string {
 }
 
 func (s *Service) lifecycleEmailURL(order commerce.Order) string {
-	if order.CustomerID == "" && strings.TrimSpace(order.StripeCheckoutSessionID) != "" {
-		return s.confirmURL(order.StripeCheckoutSessionID)
+	if order.CustomerID == "" {
+		if s.GuestOrderAccessURL != nil {
+			if accessURL := strings.TrimSpace(s.GuestOrderAccessURL(order, s.now())); accessURL != "" {
+				return accessURL
+			}
+		}
+		return ""
 	}
 	return s.orderURL(order.ID)
 }
 
-// clearCartAfterPayment empties the server cart and clears its pending
-// pointer once payment succeeded. The pointer guard keeps a late replay from
-// clobbering a cart that a newer checkout already owns; version conflicts are
-// re-read and retried because the operation is idempotent.
+// clearCartAfterPayment removes only the paid order's lines and clears its
+// pending pointer once payment succeeds. The pointer guard keeps a late replay
+// from clobbering a cart that a newer checkout already owns; version conflicts
+// are re-read and retried because the operation is idempotent.
 func (s *Service) clearCartAfterPayment(ctx context.Context, order commerce.Order) error {
 	if order.CustomerID == "" {
 		// Guest orders have no server cart; the cookie cart is cleared by the
@@ -1513,7 +1530,7 @@ func (s *Service) clearCartAfterPayment(ctx context.Context, order commerce.Orde
 		if !found || record.PendingOrderID != order.ID {
 			return nil
 		}
-		record.Lines = nil
+		record.Lines = cartLinesAfterPaidOrder(record.Lines, order.Lines)
 		record.PendingOrderID = ""
 		record.PendingFingerprint = ""
 		if _, err := s.Commerce.PutCart(ctx, record); err != nil {
@@ -1526,6 +1543,29 @@ func (s *Service) clearCartAfterPayment(ctx context.Context, order commerce.Orde
 	}
 
 	return fmt.Errorf("checkout: cart clear for customer %q failed after %d attempts: %w", order.CustomerID, cartUpdateAttempts, commerce.ErrVersionConflict)
+}
+
+func cartLinesAfterPaidOrder(lines []cart.Line, orderLines []commerce.OrderLine) []cart.Line {
+	remaining := lines[:0]
+	for _, line := range lines {
+		quantity := line.Quantity - paidOrderQuantity(orderLines, line.Slug, line.VariantID)
+		if quantity <= 0 {
+			continue
+		}
+		line.Quantity = quantity
+		remaining = append(remaining, line)
+	}
+	return remaining
+}
+
+func paidOrderQuantity(lines []commerce.OrderLine, slug string, variantID string) int {
+	quantity := 0
+	for _, line := range lines {
+		if line.Slug == slug && line.VariantID == variantID {
+			quantity += line.Quantity
+		}
+	}
+	return quantity
 }
 
 // pointCartAtOrder persists the pending-order pointer on the cart record. On
@@ -1602,9 +1642,13 @@ func (s *Service) expandSessionCard(ctx context.Context, paymentSession payments
 
 	expanded, err := s.Payments.GetSession(ctx, paymentSession.ID)
 	if err != nil {
+		errorKind := "provider_error"
+		if errors.Is(err, payments.ErrSessionNotFound) {
+			errorKind = "not_found"
+		}
 		checkoutLogger.Warn("checkout could not expand the payment session card details",
-			slog.String("session_id", paymentSession.ID),
-			slog.String("error", err.Error()),
+			slog.String("order_id", paymentSession.OrderID),
+			slog.String("error_kind", errorKind),
 		)
 		return paymentSession
 	}
@@ -1639,6 +1683,15 @@ func (s *Service) baseURL() string {
 
 func (s *Service) confirmURL(sessionID string) string {
 	return s.baseURL() + confirmURLPath + "?session_id=" + url.QueryEscape(sessionID)
+}
+
+func (s *Service) cancelURL(order commerce.Order) string {
+	if s.CancelReturnURL != nil {
+		if cancelURL := strings.TrimSpace(s.CancelReturnURL(order, s.now())); cancelURL != "" {
+			return cancelURL
+		}
+	}
+	return s.baseURL() + cancelURLPath
 }
 
 func (s *Service) now() time.Time {

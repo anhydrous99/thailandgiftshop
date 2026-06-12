@@ -45,20 +45,21 @@ const dummyBcryptHash = "$2a$04$Vn0nSllZrX4bNwFaMifZAuS4xCZ9oE4DngJ02k8pYDz7zlXz
 const adminCredentialsTTL = 5 * time.Minute
 
 type Handler struct {
-	stateMu            sync.RWMutex
-	credentials        Credentials
-	credentialsExpiry  time.Time
-	now                func() time.Time
-	catalog            catalog.AdminStore
-	commerce           commerce.Store
-	stock              catalog.StockStore
-	payments           payments.Provider
-	emailSender        email.Sender
-	uploads            productImageUploads
-	loginThrottle      adminLoginThrottle
-	metrics            observability.Recorder
-	originSecretDigest [32]byte
-	originSecretSet    bool
+	stateMu               sync.RWMutex
+	credentials           Credentials
+	credentialsExpiry     time.Time
+	now                   func() time.Time
+	catalog               catalog.AdminStore
+	commerce              commerce.Store
+	stock                 catalog.StockStore
+	payments              payments.Provider
+	emailSender           email.Sender
+	uploads               productImageUploads
+	loginThrottle         adminLoginThrottle
+	metrics               observability.Recorder
+	customerSessionSecret string
+	originSecretDigests   httpapi.OriginSecretDigests
+	originSecretSet       bool
 }
 
 var adminColdStartRecorded atomic.Bool
@@ -72,7 +73,7 @@ func NewHandlerWithCredentials(credentials Credentials) *Handler {
 }
 
 func withOriginSecretFromEnvironment(h *Handler) *Handler {
-	h.originSecretDigest, h.originSecretSet = httpapi.OriginSecretDigestFromEnvironment()
+	h.originSecretDigests, h.originSecretSet = httpapi.OriginSecretDigestsFromEnvironment()
 	return h
 }
 
@@ -96,6 +97,7 @@ func NewLocalDemoHandlerWithEmailSender(credentials Credentials, adminStore cata
 	handler.stock = stockStore
 	handler.payments = paymentsProvider
 	handler.emailSender = emailSender
+	handler.customerSessionSecret = strings.TrimSpace(os.Getenv(commerce.EnvSessionSecret))
 	return handler
 }
 
@@ -130,6 +132,7 @@ func NewHandlerFromEnvironment(ctx context.Context) (*Handler, error) {
 	handler.storeCredentials(credentials)
 	handler.commerce = commerceStore
 	handler.emailSender = emailSender
+	handler.customerSessionSecret = strings.TrimSpace(os.Getenv(commerce.EnvSessionSecret))
 	// The catalog admin store doubles as the stock store (both the Dynamo and
 	// memory implementations satisfy catalog.StockStore), so admin order
 	// cancellations release stock through the same versioned write path.
@@ -421,7 +424,6 @@ func (h *Handler) validPasswordWithCredentials(credentials Credentials, password
 		return false
 	}
 
-	h.storeCredentials(credentials)
 	return true
 }
 
@@ -608,7 +610,7 @@ func requestCookieValue(request events.APIGatewayV2HTTPRequest, name string) (st
 }
 
 func (h *Handler) validAdminOrigin(request events.APIGatewayV2HTTPRequest) bool {
-	return httpapi.ValidOriginSecret(request, h.originSecretDigest, h.originSecretSet)
+	return httpapi.ValidOriginSecrets(request, h.originSecretDigests, h.originSecretSet)
 }
 
 func adminLoginClient(request events.APIGatewayV2HTTPRequest) string {

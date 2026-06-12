@@ -716,6 +716,11 @@ func (h *Handler) handlePasswordChange(ctx context.Context, request events.APIGa
 		h.recordCustomerAuth(authOperationPasswordChange, authOutcomeError)
 		return accountHTMLResponse(http.StatusInternalServerError, "Internal server error", pageAccountPassword, nil)
 	}
+	if err := h.commerce.DeletePasswordResetToken(ctx, customer.ID); err != nil {
+		logAccountError("password change: delete reset token", err)
+		h.recordCustomerAuth(authOperationPasswordChange, authOutcomeError)
+		return accountHTMLResponse(http.StatusInternalServerError, "Internal server error", pageAccountPassword, nil)
+	}
 	if err := h.commerce.UpdatePassword(ctx, customer.ID, string(newHash), customer.Version); err != nil {
 		if errors.Is(err, commerce.ErrVersionConflict) {
 			return h.renderAccountPage(ctx, request, session, customer, accountPageState{PasswordError: "Your account changed in another window. Try again."}, http.StatusConflict)

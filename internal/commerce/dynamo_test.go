@@ -226,6 +226,35 @@ func TestListOrdersByCustomerPagesAcrossDynamoQueryPages(t *testing.T) {
 	}
 }
 
+func TestDeleteAllSessionsQueriesBaseTableConsistently(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeCommerceClient()
+	clock := newTestClock()
+	store := NewDynamoStoreWithClock(client, testDynamoConfig(), nil, clock.Now)
+
+	session := Session{
+		CustomerID: "cust1",
+		TokenHash:  "sessionhash",
+		Nonce:      "nonce",
+		CreatedAt:  clock.Now(),
+		ExpiresAt:  clock.Now().Add(time.Hour),
+	}
+	if err := store.PutSession(ctx, session); err != nil {
+		t.Fatalf("PutSession returned error: %v", err)
+	}
+	if err := store.DeleteAllSessions(ctx, session.CustomerID); err != nil {
+		t.Fatalf("DeleteAllSessions returned error: %v", err)
+	}
+
+	input := client.lastQueryInput(t)
+	if input.IndexName != nil {
+		t.Fatalf("DeleteAllSessions queried index %q, want base table", aws.ToString(input.IndexName))
+	}
+	if !aws.ToBool(input.ConsistentRead) {
+		t.Fatalf("DeleteAllSessions ConsistentRead = false, want true")
+	}
+}
+
 func TestCustomerItemShape(t *testing.T) {
 	now := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
 	attrs, err := customerItem(Customer{ID: "cust1", Email: "Shopper@example.test", EmailNormalized: "shopper@example.test", PasswordHash: testPasswordHash, Version: 1, CreatedAt: now, UpdatedAt: now})
@@ -531,6 +560,7 @@ type fakeCommerceClient struct {
 	// continuation exactly like a small real DynamoDB page.
 	forcedQueryPageSize int
 	queryCalls          int
+	queryInputs         []dynamodb.QueryInput
 }
 
 func newFakeCommerceClient() *fakeCommerceClient {
@@ -633,6 +663,7 @@ func (f *fakeCommerceClient) Query(ctx context.Context, input *dynamodb.QueryInp
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.captureExpressions(input.KeyConditionExpression, input.FilterExpression)
+	f.queryInputs = append(f.queryInputs, *input)
 
 	pkAttribute := "pk"
 	skAttribute := "sk"
@@ -775,6 +806,16 @@ func (f *fakeCommerceClient) queryCallCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.queryCalls
+}
+
+func (f *fakeCommerceClient) lastQueryInput(t *testing.T) dynamodb.QueryInput {
+	t.Helper()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.queryInputs) == 0 {
+		t.Fatal("no Query calls captured")
+	}
+	return f.queryInputs[len(f.queryInputs)-1]
 }
 
 func (f *fakeCommerceClient) itemForKey(t *testing.T, pk string, sk string) map[string]types.AttributeValue {

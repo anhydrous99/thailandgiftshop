@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -18,11 +19,10 @@ const (
 	defaultRegion         = "us-east-1"
 	defaultTableName      = "thailandgiftshop-catalog"
 	maxBatchWriteAttempts = 8
-	maxBatchWriteItems    = 25
 )
 
-type batchWriteClient interface {
-	BatchWriteItem(ctx context.Context, params *dynamodb.BatchWriteItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.BatchWriteItemOutput, error)
+type seedWriteClient interface {
+	PutItem(ctx context.Context, params *dynamodb.PutItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error)
 }
 
 func main() {
@@ -51,61 +51,59 @@ func main() {
 	}
 
 	client := dynamodb.NewFromConfig(awsConfig)
-	if err := batchWriteCatalogItems(ctx, client, *tableName, items); err != nil {
+	if err := writeCatalogItems(ctx, client, *tableName, items); err != nil {
 		log.Fatalf("seed catalog table: %v", err)
 	}
 
 	printSeedSummary("seeded", *tableName, *region, counts)
 }
 
-func batchWriteCatalogItems(ctx context.Context, client batchWriteClient, tableName string, items []map[string]types.AttributeValue) error {
-	requests := make([]types.WriteRequest, 0, len(items))
-	for _, item := range items {
-		requests = append(requests, types.WriteRequest{
-			PutRequest: &types.PutRequest{
-				Item: item,
-			},
-		})
-	}
-
-	for start := 0; start < len(requests); start += maxBatchWriteItems {
-		end := start + maxBatchWriteItems
-		if end > len(requests) {
-			end = len(requests)
-		}
-		if err := batchWriteChunk(ctx, client, tableName, requests[start:end]); err != nil {
-			return fmt.Errorf("items %d-%d: %w", start+1, end, err)
+func writeCatalogItems(ctx context.Context, client seedWriteClient, tableName string, items []map[string]types.AttributeValue) error {
+	for index, item := range items {
+		if err := putCatalogItemIfMissing(ctx, client, tableName, item); err != nil {
+			return fmt.Errorf("item %d: %w", index+1, err)
 		}
 	}
 
 	return nil
 }
 
-func batchWriteChunk(ctx context.Context, client batchWriteClient, tableName string, requests []types.WriteRequest) error {
-	pending := requests
-	for attempt := 1; len(pending) > 0; attempt++ {
-		if attempt > maxBatchWriteAttempts {
-			return fmt.Errorf("%d DynamoDB write requests remained unprocessed after %d attempts", len(pending), maxBatchWriteAttempts)
-		}
+func putCatalogItemIfMissing(ctx context.Context, client seedWriteClient, tableName string, item map[string]types.AttributeValue) error {
+	var lastErr error
+	for attempt := 1; attempt <= maxBatchWriteAttempts; attempt++ {
 		if attempt > 1 {
 			if err := sleepBeforeRetry(ctx, attempt); err != nil {
 				return err
 			}
 		}
-
-		output, err := client.BatchWriteItem(ctx, &dynamodb.BatchWriteItemInput{
-			RequestItems: map[string][]types.WriteRequest{
-				tableName: pending,
+		_, err := client.PutItem(ctx, &dynamodb.PutItemInput{
+			TableName:           &tableName,
+			Item:                item,
+			ConditionExpression: stringPtr("attribute_not_exists(#pk)"),
+			ExpressionAttributeNames: map[string]string{
+				"#pk": "pk",
 			},
 		})
-		if err != nil {
-			return err
+		switch {
+		case err == nil:
+			return nil
+		case isConditionalCheckFailed(err):
+			return nil
+		default:
+			lastErr = err
 		}
-
-		pending = output.UnprocessedItems[tableName]
 	}
 
-	return nil
+	return fmt.Errorf("put item after %d attempts: %w", maxBatchWriteAttempts, lastErr)
+}
+
+func isConditionalCheckFailed(err error) bool {
+	var conditional *types.ConditionalCheckFailedException
+	return errors.As(err, &conditional)
+}
+
+func stringPtr(value string) *string {
+	return &value
 }
 
 func sleepBeforeRetry(ctx context.Context, attempt int) error {
@@ -120,12 +118,13 @@ func sleepBeforeRetry(ctx context.Context, attempt int) error {
 
 func printSeedSummary(action string, tableName string, region string, counts catalog.DemoSeedCounts) {
 	fmt.Printf(
-		"%s %s in %s: %d categories, %d products, %d category-product rows, %d DynamoDB items\n",
+		"%s %s in %s: %d categories, %d products, %d product slug-lock rows, %d category-product rows, %d DynamoDB items\n",
 		action,
 		tableName,
 		region,
 		counts.Categories,
 		counts.Products,
+		counts.ProductSlugLockRows,
 		counts.CategoryProductRows,
 		counts.Items,
 	)

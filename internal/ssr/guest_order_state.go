@@ -2,9 +2,9 @@ package ssr
 
 import (
 	"net/http"
-	"net/url"
 	"time"
 
+	"github.com/anhydrous99/thailandgiftshop/internal/checkout"
 	"github.com/anhydrous99/thailandgiftshop/internal/commerce"
 	"github.com/anhydrous99/thailandgiftshop/internal/httpapi"
 	"github.com/anhydrous99/thailandgiftshop/internal/signedtoken"
@@ -16,13 +16,8 @@ import (
 // 30-minute hosted-checkout session.
 const guestOrderPointerTTL = time.Hour
 
-// Guest order access: the read-only "check your order" link handed out at
-// confirmation. 30 days from payment covers shipping + delivery at launch
-// scale; the window is anchored to Order.PaidAt (§7.3), never extended by
-// confirm replays.
-const guestOrderAccessTTL = 30 * 24 * time.Hour
-
-const guestOrderAccessParam = "access"
+const guestOrderAccessTTL = checkout.GuestOrderAccessTTL
+const guestOrderAccessParam = checkout.GuestOrderAccessParam
 
 // Both values are signed with the existing customer session secret; the
 // purpose strings provide domain separation (signedtoken HMACs over
@@ -100,11 +95,7 @@ func clearGuestOrderCookie() *http.Cookie {
 // caller supplies expiresAt (confirm passes PaidAt+30d, §7.3) so replays
 // re-mint identically-expiring tokens, never fresher ones.
 func (h *Handler) mintGuestOrderAccessToken(orderID string, expiresAt time.Time) (string, error) {
-	return signedtoken.Encode(guestOrderAccessPayload{
-		Version:   customerSignedValueVersion,
-		OrderID:   orderID,
-		ExpiresAt: expiresAt.Unix(),
-	}, h.customerSessionSecret, guestOrderAccessPurpose)
+	return checkout.MintGuestOrderAccessToken(orderID, h.customerSessionSecret, expiresAt)
 }
 
 // validGuestOrderAccess reports whether the request's ?access token grants a
@@ -126,5 +117,5 @@ func (h *Handler) validGuestOrderAccess(request events.APIGatewayV2HTTPRequest, 
 }
 
 func guestOrderAccessPath(orderID string, token string) string {
-	return "/orders/" + orderID + "?" + guestOrderAccessParam + "=" + url.QueryEscape(token)
+	return checkout.GuestOrderAccessPath(orderID, token)
 }

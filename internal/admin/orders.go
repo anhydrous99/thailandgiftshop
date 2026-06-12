@@ -282,13 +282,25 @@ func (h *Handler) setOrderTracking(ctx context.Context, request events.APIGatewa
 // (checkout.ErrRefundProviderUnavailable — refunds move money).
 func (h *Handler) checkoutService() *checkout.Service {
 	return &checkout.Service{
-		Commerce:    h.commerceStore(),
-		Payments:    h.payments,
-		Stock:       h.stock,
-		Metrics:     h.metrics,
-		EmailSender: h.emailSender,
-		BaseURL:     payments.PublicBaseURLFromEnvironment(),
-		Now:         h.now,
+		Commerce:            h.commerceStore(),
+		Payments:            h.payments,
+		Stock:               h.stock,
+		Metrics:             h.metrics,
+		EmailSender:         h.emailSender,
+		BaseURL:             payments.PublicBaseURLFromEnvironment(),
+		Now:                 h.now,
+		GuestOrderAccessURL: h.guestOrderAccessURL(payments.PublicBaseURLFromEnvironment()),
+	}
+}
+
+func (h *Handler) guestOrderAccessURL(baseURL string) func(commerce.Order, time.Time) string {
+	return func(order commerce.Order, now time.Time) string {
+		accessURL, err := checkout.GuestOrderAccessURL(order, now, baseURL, h.customerSessionSecret)
+		if err != nil {
+			logAdminError("orders: mint guest order access URL", err)
+			return ""
+		}
+		return accessURL
 	}
 }
 
