@@ -47,7 +47,7 @@ func orderDetailPage(vm orderDetailPageData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<main><section class=\"px-5 pt-10 pb-12 sm:px-8 lg:pt-14 lg:pb-16\"><div class=\"mx-auto w-full max-w-7xl\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<main id=\"main-content\" tabindex=\"-1\"><section class=\"px-5 pt-10 pb-12 sm:px-8 lg:pt-14 lg:pb-16\"><div class=\"mx-auto w-full max-w-7xl\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -123,7 +123,7 @@ func orderDetailPage(vm orderDetailPageData) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if vm.Placed {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<p role=\"status\" data-testid=\"order-placed-banner\" class=\"mb-8 border-l-4 border-flag-blue bg-flag-blue/10 px-4 py-3 text-sm font-semibold text-flag-blue\">Thank you — your order is placed. Stripe handled your payment securely; we never see or store card numbers. ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<p role=\"status\" data-testid=\"order-placed-banner\" class=\"mb-8 alert-success\">Thank you — your order is placed. Stripe handled your payment securely; we never see or store card numbers. ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -139,7 +139,7 @@ func orderDetailPage(vm orderDetailPageData) templ.Component {
 			}
 		}
 		if vm.Guest {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<p role=\"status\" data-testid=\"guest-order-link-notice\" class=\"mb-8 border-l-4 border-flag-blue bg-flag-blue/10 px-4 py-3 text-sm font-semibold text-flag-blue\">Save this private link to check on your order any time in the next 30 days: <a href=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<p role=\"status\" data-testid=\"guest-order-link-notice\" class=\"mb-8 alert-success\">Save this private link to check on your order any time in the next 30 days: <a href=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

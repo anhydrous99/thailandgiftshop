@@ -8,7 +8,7 @@ templ home(vm homePageViewModel) {
 		@siteHead(vm.Metadata)
 		<body class="min-h-screen bg-paper text-ink antialiased">
 			@siteHeader("home", vm.HeaderCartLabel)
-			<main>
+			<main id="main-content" tabindex="-1">
 				<section data-testid="home-building-banner" aria-label="Home page status" class="border-b-2 border-ink bg-flag-white">
 					@flagBand("h-3")
 					<div class="mx-auto w-full max-w-7xl px-5 py-5 sm:px-8">

@@ -3,33 +3,33 @@ package ssr
 templ addressFormFields(form addressFormData) {
 	<label class="grid gap-2 text-xs font-medium text-muted">
 		Full name
-		<input type="text" name="full_name" value={ form.FullName } autocomplete="name" required class="h-12 border border-flag-blue/25 bg-flag-white px-4 text-base font-medium text-ink transition focus:border-flag-blue focus:bg-paper"/>
+		<input type="text" name="full_name" value={ form.FullName } autocomplete="name" required class="field-input h-12 text-base"/>
 	</label>
 	<label class="grid gap-2 text-xs font-medium text-muted">
 		Address line 1
-		<input type="text" name="line1" value={ form.Line1 } autocomplete="address-line1" required class="h-12 border border-flag-blue/25 bg-flag-white px-4 text-base font-medium text-ink transition focus:border-flag-blue focus:bg-paper"/>
+		<input type="text" name="line1" value={ form.Line1 } autocomplete="address-line1" required class="field-input h-12 text-base"/>
 	</label>
 	<label class="grid gap-2 text-xs font-medium text-muted">
 		Address line 2 (optional)
-		<input type="text" name="line2" value={ form.Line2 } autocomplete="address-line2" class="h-12 border border-flag-blue/25 bg-flag-white px-4 text-base font-medium text-ink transition focus:border-flag-blue focus:bg-paper"/>
+		<input type="text" name="line2" value={ form.Line2 } autocomplete="address-line2" class="field-input h-12 text-base"/>
 	</label>
 	<div class="grid gap-4 sm:grid-cols-3">
 		<label class="grid gap-2 text-xs font-medium text-muted">
 			City
-			<input type="text" name="city" value={ form.City } autocomplete="address-level2" required class="h-12 border border-flag-blue/25 bg-flag-white px-4 text-base font-medium text-ink transition focus:border-flag-blue focus:bg-paper"/>
+			<input type="text" name="city" value={ form.City } autocomplete="address-level2" required class="field-input h-12 text-base"/>
 		</label>
 		<label class="grid gap-2 text-xs font-medium text-muted">
 			State
-			<input type="text" name="region" value={ form.Region } autocomplete="address-level1" required class="h-12 border border-flag-blue/25 bg-flag-white px-4 text-base font-medium text-ink transition focus:border-flag-blue focus:bg-paper"/>
+			<input type="text" name="region" value={ form.Region } autocomplete="address-level1" required class="field-input h-12 text-base"/>
 		</label>
 		<label class="grid gap-2 text-xs font-medium text-muted">
 			ZIP code
-			<input type="text" name="postal_code" value={ form.PostalCode } autocomplete="postal-code" required class="h-12 border border-flag-blue/25 bg-flag-white px-4 text-base font-medium text-ink transition focus:border-flag-blue focus:bg-paper"/>
+			<input type="text" name="postal_code" value={ form.PostalCode } autocomplete="postal-code" required class="field-input h-12 text-base"/>
 		</label>
 	</div>
 	<label class="grid gap-2 text-xs font-medium text-muted">
 		Phone (optional)
-		<input type="tel" name="phone" value={ form.Phone } autocomplete="tel" class="h-12 border border-flag-blue/25 bg-flag-white px-4 text-base font-medium text-ink transition focus:border-flag-blue focus:bg-paper"/>
+		<input type="tel" name="phone" value={ form.Phone } autocomplete="tel" class="field-input h-12 text-base"/>
 	</label>
 	<p class="text-xs font-medium text-muted">Country: United States (US only while we launch)</p>
 }
@@ -40,7 +40,7 @@ templ addressesPage(vm addressesPageData) {
 		@siteHead(vm.Metadata)
 		<body class="min-h-screen bg-paper text-ink antialiased">
 			@siteHeader("page", vm.HeaderCartLabel)
-			<main>
+			<main id="main-content" tabindex="-1">
 				<section class="px-5 pt-10 pb-12 sm:px-8 lg:pt-14 lg:pb-16">
 					<div class="mx-auto w-full max-w-7xl">
 						@breadcrumbNav(vm.Breadcrumbs)
@@ -100,10 +100,10 @@ templ addressesPage(vm addressesPageData) {
 						<div class="p-6">
 							<h2 class="font-display text-2xl font-bold tracking-tight text-flag-blue">Add an address</h2>
 							if vm.AtLimit {
-								<p class="mt-4 border-l-4 border-flag-red bg-flag-red/10 px-4 py-3 text-sm font-semibold text-flag-red">You can save up to 10 addresses. Remove one to add another.</p>
+								<p class="mt-4 alert-error">You can save up to 10 addresses. Remove one to add another.</p>
 							} else {
 								if vm.Form.ErrorMessage != "" {
-									<p role="alert" class="mt-4 border-l-4 border-flag-red bg-flag-red/10 px-4 py-3 text-sm font-semibold text-flag-red">{ vm.Form.ErrorMessage }</p>
+									<p role="alert" class="mt-4 alert-error">{ vm.Form.ErrorMessage }</p>
 								}
 								<form method="post" action="/account/addresses" data-testid="address-form" class="mt-5 grid gap-4">
 									<input type="hidden" name="csrf_token" value={ vm.CSRFToken }/>

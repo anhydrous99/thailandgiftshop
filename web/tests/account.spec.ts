@@ -56,12 +56,14 @@ test.describe('without JavaScript', () => {
     await page.getByRole('button', { name: 'Sign out' }).click();
     await expect(page).toHaveURL(/\/$/);
 
-    // A duplicate sign-up for the same email re-renders with the documented message.
+    // A duplicate sign-up for the same email re-renders with the documented
+    // message inline on the email field, which is flagged aria-invalid.
     await page.goto('/account/sign-up');
     await page.getByLabel('Email').fill(email);
     await page.getByLabel('Password (8 to 72 characters)').fill(password);
     await page.getByRole('button', { name: 'Create account' }).click();
     await expect(page.getByRole('alert')).toContainText('An account with this email already exists. Sign in instead.');
+    await expect(page.getByLabel('Email')).toHaveAttribute('aria-invalid', 'true');
 
     // Protected pages now bounce to sign-in with a validated return_to.
     await page.goto('/account');

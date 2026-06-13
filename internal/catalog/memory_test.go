@@ -197,7 +197,7 @@ func TestDemoCatalogProductsIncludesAdminE2EVariantProduct(t *testing.T) {
 		t.Fatal("active demo variant product handwoven-indigo-scarf not found")
 	}
 
-	wantStocks := map[string]int{"S": 1, "M": 2, "XL": 0}
+	wantStocks := map[string]int{"S": 1, "M": 12, "XL": 0}
 	variants := product.ActiveVariants()
 	if len(variants) != len(wantStocks) {
 		t.Fatalf("active variants = %d, want %d", len(variants), len(wantStocks))
@@ -211,8 +211,8 @@ func TestDemoCatalogProductsIncludesAdminE2EVariantProduct(t *testing.T) {
 			t.Fatalf("variant %s stock = %d, want %d", variant.Label, variant.StockQuantity, wantStock)
 		}
 	}
-	if got := product.TotalAvailableStock(); got != 3 {
-		t.Fatalf("variant product total stock = %d, want 3", got)
+	if got := product.TotalAvailableStock(); got != 13 {
+		t.Fatalf("variant product total stock = %d, want 13", got)
 	}
 }
 

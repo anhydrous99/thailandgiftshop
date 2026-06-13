@@ -2539,10 +2539,11 @@ func TestProductDetailRendersVariantSelectorForVariantProduct(t *testing.T) {
 		`data-testid="variant-select"`,
 		`name="variant_id" required`,
 		`<option value="">Select a size</option>`,
-		`<option value="var-small">Small</option>`,
-		`<option value="var-large">Large</option>`,
+		`<option value="var-small" data-stock="2">Small</option>`,
+		`<option value="var-large" data-stock="7">Large</option>`,
 		`<option value="var-sold-out" disabled>Medium - out of stock</option>`,
 		`type="number" name="quantity" value="1" min="1" max="9"`,
+		`data-variant-stock-hint`,
 	})
 	assertBodyOmits(t, response.Body, []string{`var-archived`, `Archived`})
 }

@@ -45,7 +45,7 @@ func categoryDetailPage(vm categoryDetailPageViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<main><section class=\"px-5 pt-10 pb-12 sm:px-8 lg:pt-14 lg:pb-16\"><div class=\"mx-auto w-full max-w-7xl\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<main id=\"main-content\" tabindex=\"-1\"><section class=\"px-5 pt-10 pb-12 sm:px-8 lg:pt-14 lg:pb-16\"><div class=\"mx-auto w-full max-w-7xl\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

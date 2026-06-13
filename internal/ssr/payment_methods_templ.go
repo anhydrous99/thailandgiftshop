@@ -45,7 +45,7 @@ func paymentMethodsPage(vm paymentMethodsPageData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<main><section class=\"px-5 pt-10 pb-12 sm:px-8 lg:pt-14 lg:pb-16\"><div class=\"mx-auto w-full max-w-7xl\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<main id=\"main-content\" tabindex=\"-1\"><section class=\"px-5 pt-10 pb-12 sm:px-8 lg:pt-14 lg:pb-16\"><div class=\"mx-auto w-full max-w-7xl\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -66,7 +66,7 @@ func paymentMethodsPage(vm paymentMethodsPageData) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if vm.Saved {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<p role=\"status\" class=\"mb-8 border-l-4 border-flag-blue bg-flag-blue/10 px-4 py-3 text-sm font-semibold text-flag-blue\">Card saved.</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<p role=\"status\" class=\"mb-8 alert-success\">Card saved.</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
