@@ -47,7 +47,7 @@ func cartPage(vm cartPageViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<main><section class=\"px-5 pt-10 pb-12 sm:px-8 lg:pt-14 lg:pb-16\"><div class=\"mx-auto w-full max-w-7xl\"><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Gift bag</p><h1 class=\"mt-3 font-display text-5xl font-bold leading-none tracking-tight text-flag-blue sm:text-6xl\">Cart</h1><p class=\"mt-5 max-w-3xl text-lg leading-8 text-muted\">Review quantities for your Thai gift-shop finds before secure Stripe checkout.</p></div></section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<main id=\"main-content\" tabindex=\"-1\"><section class=\"px-5 pt-10 pb-12 sm:px-8 lg:pt-14 lg:pb-16\"><div class=\"mx-auto w-full max-w-7xl\"><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Gift bag</p><h1 class=\"mt-3 font-display text-5xl font-bold leading-none tracking-tight text-flag-blue sm:text-6xl\">Cart</h1><p class=\"mt-5 max-w-3xl text-lg leading-8 text-muted\">Review quantities for your Thai gift-shop finds before secure Stripe checkout.</p></div></section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -154,14 +154,14 @@ func cartPage(vm cartPageViewModel) templ.Component {
 					}
 				}
 				if !line.Available {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<p class=\"mt-3 border-l-4 border-flag-red bg-flag-red/10 px-4 py-3 text-sm font-semibold text-flag-red\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<p class=\"mt-3 alert-error\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var7 string
 					templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(line.UnavailableMessage)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/cart.templ`, Line: 43, Col: 142}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/cart.templ`, Line: 43, Col: 66}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 					if templ_7745c5c3_Err != nil {
@@ -255,7 +255,7 @@ func cartPage(vm cartPageViewModel) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "\" class=\"h-11 w-24 border border-flag-blue/25 bg-flag-white px-4 text-sm font-medium text-ink transition focus:border-flag-blue focus:bg-paper\"></label> <button type=\"submit\" class=\"inline-flex h-11 items-center justify-center bg-flag-blue px-4 text-sm font-bold text-white transition hover:bg-ink\">Update</button></form>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "\" class=\"field-input h-11 w-24 text-sm\"></label> <button type=\"submit\" class=\"inline-flex h-11 items-center justify-center bg-flag-blue px-4 text-sm font-bold text-white transition hover:bg-ink\">Update</button></form>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -273,7 +273,7 @@ func cartPage(vm cartPageViewModel) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "\" class=\"h-11 w-24 border border-flag-blue/25 bg-flag-white px-4 text-sm font-medium text-ink\" disabled></label> <button type=\"button\" class=\"inline-flex h-11 cursor-not-allowed items-center justify-center bg-muted/40 px-4 text-sm font-bold text-white/80\" disabled>Update</button></div>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "\" class=\"field-input h-11 w-24 text-sm\" disabled></label> <button type=\"button\" class=\"inline-flex h-11 cursor-not-allowed items-center justify-center bg-muted/40 px-4 text-sm font-bold text-white/80\" disabled>Update</button></div>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}

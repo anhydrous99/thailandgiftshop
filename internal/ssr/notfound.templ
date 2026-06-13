@@ -22,7 +22,7 @@ templ notFoundPage(headerCartLabel string) {
 		@notFoundHead()
 		<body class="min-h-screen bg-paper text-ink antialiased">
 			@siteHeader("page", headerCartLabel)
-			<main>
+			<main id="main-content" tabindex="-1">
 				<section class="bg-flag-blue text-white">
 					<div class="mx-auto w-full max-w-7xl px-5 py-20 sm:px-8 lg:py-28">
 						<p class="font-display text-7xl font-bold leading-none tracking-tight text-white/25 sm:text-8xl">404</p>

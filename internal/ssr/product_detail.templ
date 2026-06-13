@@ -6,7 +6,7 @@ templ productDetailPage(vm productDetailPageViewModel) {
 		@siteHead(vm.Metadata)
 		<body class="min-h-screen bg-paper text-ink antialiased">
 			@siteHeader("page", vm.HeaderCartLabel)
-			<main>
+			<main id="main-content" tabindex="-1">
 				<section class="mx-auto grid w-full max-w-7xl gap-8 px-5 py-12 sm:px-8 lg:grid-cols-[1fr_0.9fr] lg:py-16">
 					<div class="relative self-start border border-flag-blue/15 bg-paper">
 						<img class="aspect-[4/3] w-full bg-flag-white object-cover" src={ vm.Product.DisplayImageURL(vm.ProductImagePlaceholderURL) } alt={ vm.Product.Name }/>
@@ -40,11 +40,11 @@ templ productDetailPage(vm productDetailPageViewModel) {
 									if vm.Product.UsesVariants() {
 										<label class="block text-xs font-medium text-muted">
 											<span class="block">Size</span>
-											<select data-testid="variant-select" class="mt-2 h-12 w-full border border-flag-blue/25 bg-flag-white px-4 text-base font-medium text-ink transition focus:border-flag-blue focus:bg-paper" name="variant_id" required>
+											<select data-testid="variant-select" class="field-input mt-2 h-12 w-full text-base" name="variant_id" required>
 												<option value="">Select a size</option>
 												for _, variant := range vm.Product.ActiveVariants() {
 													if variant.StockQuantity > 0 {
-														<option value={ variant.ID }>{ variant.Label }</option>
+														<option value={ variant.ID } data-stock={ variant.StockQuantity }>{ variant.Label }</option>
 													} else {
 														<option value={ variant.ID } disabled>{ variant.Label } - out of stock</option>
 													}
@@ -54,10 +54,13 @@ templ productDetailPage(vm productDetailPageViewModel) {
 									}
 									<label class="block text-xs font-medium text-muted">
 										<span class="block">Quantity</span>
-										<input class="mt-2 h-12 w-28 border border-flag-blue/25 bg-flag-white px-4 text-base font-medium text-ink transition focus:border-flag-blue focus:bg-paper" type="number" name="quantity" value="1" min="1" max={ cartQuantityLimit(vm.Product) }/>
+										<input class="field-input mt-2 h-12 w-28 text-base" type="number" name="quantity" value="1" min="1" max={ cartQuantityLimit(vm.Product) }/>
 									</label>
 									<button type="submit" class="inline-flex h-12 items-center justify-center bg-flag-red px-6 text-sm font-bold text-white transition hover:bg-flag-red-deep">Add to cart</button>
 								</form>
+								if vm.Product.UsesVariants() {
+									<p data-variant-stock-hint aria-live="polite" hidden class="mt-4 text-xs font-semibold text-flag-blue"></p>
+								}
 								<p class="mt-5 text-sm leading-6 text-muted">Checkout is handled securely by Stripe. Shipping is free while we launch; tax is not collected yet.</p>
 							</div>
 						}

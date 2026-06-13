@@ -47,7 +47,7 @@ func home(vm homePageViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<main><section data-testid=\"home-building-banner\" aria-label=\"Home page status\" class=\"border-b-2 border-ink bg-flag-white\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<main id=\"main-content\" tabindex=\"-1\"><section data-testid=\"home-building-banner\" aria-label=\"Home page status\" class=\"border-b-2 border-ink bg-flag-white\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

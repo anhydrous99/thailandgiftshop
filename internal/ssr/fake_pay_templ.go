@@ -45,7 +45,7 @@ func fakePayPage(vm fakePayPageData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<main><section class=\"mx-auto w-full max-w-7xl px-5 py-16 sm:px-8\"><div class=\"mx-auto max-w-xl border-2 border-ink bg-paper\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<main id=\"main-content\" tabindex=\"-1\"><section class=\"mx-auto w-full max-w-7xl px-5 py-16 sm:px-8\"><div class=\"mx-auto max-w-xl border-2 border-ink bg-paper\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

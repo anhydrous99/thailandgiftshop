@@ -47,7 +47,7 @@ func checkoutPage(vm checkoutPageViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<main><section class=\"px-5 pt-10 pb-12 sm:px-8 lg:pt-14 lg:pb-16\"><div class=\"mx-auto w-full max-w-7xl\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<main id=\"main-content\" tabindex=\"-1\"><section class=\"px-5 pt-10 pb-12 sm:px-8 lg:pt-14 lg:pb-16\"><div class=\"mx-auto w-full max-w-7xl\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -68,20 +68,20 @@ func checkoutPage(vm checkoutPageViewModel) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if vm.Canceled {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<p role=\"status\" data-testid=\"checkout-canceled-notice\" class=\"mb-8 border-l-4 border-flag-blue bg-flag-blue/10 px-4 py-3 text-sm font-semibold text-flag-blue\">Payment canceled. Your cart is unchanged — continue whenever you are ready.</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<p role=\"status\" data-testid=\"checkout-canceled-notice\" class=\"mb-8 alert-success\">Payment canceled. Your cart is unchanged — continue whenever you are ready.</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
 		if vm.ErrorMessage != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<p role=\"alert\" data-testid=\"checkout-error\" class=\"mb-8 border-l-4 border-flag-red bg-flag-red/10 px-4 py-3 text-sm font-semibold text-flag-red\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<p role=\"alert\" data-testid=\"checkout-error\" class=\"mb-8 alert-error\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var2 string
 			templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(vm.ErrorMessage)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 27, Col: 169}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 27, Col: 93}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 			if templ_7745c5c3_Err != nil {
@@ -127,7 +127,7 @@ func checkoutPage(vm checkoutPageViewModel) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "\" autocomplete=\"email\" required data-testid=\"guest-email-input\" class=\"h-12 border border-flag-blue/25 bg-flag-white px-4 text-base font-medium text-ink transition focus:border-flag-blue focus:bg-paper\"></label><p class=\"mt-4 text-sm leading-6 text-muted\">Have an account? <a href=\"/account/sign-in?return_to=%2Fcheckout\" data-testid=\"checkout-sign-in-link\" class=\"font-bold text-flag-red transition hover:text-flag-red-deep hover:underline hover:underline-offset-4\">Sign in</a></p></div></section><section aria-label=\"Shipping address\" class=\"border-2 border-ink bg-paper\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "\" autocomplete=\"email\" required data-testid=\"guest-email-input\" class=\"field-input h-12 text-base\"></label><p class=\"mt-4 text-sm leading-6 text-muted\">Have an account? <a href=\"/account/sign-in?return_to=%2Fcheckout\" data-testid=\"checkout-sign-in-link\" class=\"font-bold text-flag-red transition hover:text-flag-red-deep hover:underline hover:underline-offset-4\">Sign in</a></p></div></section><section aria-label=\"Shipping address\" class=\"border-2 border-ink bg-paper\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -504,14 +504,14 @@ func checkoutItemsSection(vm checkoutPageViewModel) templ.Component {
 				}
 			}
 			if line.Notice != "" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "<p data-testid=\"checkout-line-notice\" class=\"mt-3 border-l-4 border-flag-red bg-flag-red/10 px-4 py-3 text-sm font-semibold text-flag-red\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "<p data-testid=\"checkout-line-notice\" class=\"mt-3 alert-error\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var20 string
 				templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(line.Notice)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 156, Col: 159}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 156, Col: 83}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 				if templ_7745c5c3_Err != nil {
@@ -695,7 +695,7 @@ func checkoutPaymentReceivedPage(vm checkoutProcessingPageData) templ.Component 
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "<main><section class=\"mx-auto w-full max-w-7xl px-5 py-16 sm:px-8\"><div data-testid=\"checkout-payment-received\" class=\"mx-auto max-w-xl border-2 border-ink bg-paper\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "<main id=\"main-content\" tabindex=\"-1\"><section class=\"mx-auto w-full max-w-7xl px-5 py-16 sm:px-8\"><div data-testid=\"checkout-payment-received\" class=\"mx-auto max-w-xl border-2 border-ink bg-paper\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -789,7 +789,7 @@ func checkoutProcessingPage(vm checkoutProcessingPageData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "<main><section class=\"mx-auto w-full max-w-7xl px-5 py-16 sm:px-8\"><div data-testid=\"checkout-processing\" class=\"mx-auto max-w-xl border-2 border-ink bg-paper\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "<main id=\"main-content\" tabindex=\"-1\"><section class=\"mx-auto w-full max-w-7xl px-5 py-16 sm:px-8\"><div data-testid=\"checkout-processing\" class=\"mx-auto max-w-xl border-2 border-ink bg-paper\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

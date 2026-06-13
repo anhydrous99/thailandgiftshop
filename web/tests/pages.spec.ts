@@ -31,6 +31,28 @@ async function expectCheckoutEntryPoint(page: Page) {
   await expect(page.getByRole('link', { name: 'Check out', exact: true })).toHaveAttribute('href', '/checkout');
 }
 
+test('variant picker reflects the selected size stock into the quantity limit and a live hint', async ({ page }) => {
+  await page.goto('/products/handwoven-indigo-scarf');
+
+  const variant = page.getByTestId('variant-select');
+  const quantity = page.getByLabel('Quantity');
+  const hint = page.locator('[data-variant-stock-hint]');
+
+  // No size chosen yet — the hint stays hidden.
+  await expect(hint).toBeHidden();
+
+  // Pre-fill an over-limit quantity, then pick the well-stocked M size.
+  // enhance.js clamps the quantity, mirrors the size's stock into the max, and
+  // shows a live hint. Stock is read from the DOM so the test stays correct
+  // regardless of how much of the shared demo catalog other tests have used.
+  await quantity.fill('50');
+  await variant.selectOption({ label: 'M' });
+  const stock = await variant.locator('option:checked').getAttribute('data-stock');
+  await expect(quantity).toHaveAttribute('max', stock!);
+  await expect(quantity).toHaveValue(stock!);
+  await expect(hint).toHaveText(`${stock} left in this size`);
+});
+
 test('catalog slug navigation clicks category and product cards to canonical URLs', async ({ page }) => {
   await page.goto('/');
 

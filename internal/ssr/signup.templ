@@ -6,7 +6,7 @@ templ signUpPage(vm signUpPageData) {
 		@siteHead(vm.Metadata)
 		<body class="min-h-screen bg-paper text-ink antialiased">
 			@siteHeader("page", vm.HeaderCartLabel)
-			<main class="flex min-h-[60vh] items-center justify-center px-5 py-16 sm:px-8">
+			<main id="main-content" tabindex="-1" class="flex min-h-[60vh] items-center justify-center px-5 py-16 sm:px-8">
 				<div class="w-full max-w-sm border-2 border-ink bg-paper">
 					@flagBand("h-1.5")
 					<div class="p-8">
@@ -14,7 +14,7 @@ templ signUpPage(vm signUpPageData) {
 						<h1 class="mt-2 font-display text-3xl font-bold tracking-tight text-flag-blue">Create account</h1>
 						<p class="mt-3 text-sm leading-6 text-muted">Accounts are active immediately — track orders, save addresses, and check out faster.</p>
 						if vm.ErrorMessage != "" {
-							<p role="alert" class="mt-5 border-l-4 border-flag-red bg-flag-red/10 px-4 py-3 text-sm font-semibold text-flag-red">{ vm.ErrorMessage }</p>
+							<p role="alert" class="mt-5 alert-error">{ vm.ErrorMessage }</p>
 						}
 						<form method="post" action="/account/sign-up" data-testid="signup-form" class="mt-6 grid gap-4">
 							<input type="hidden" name="guest_csrf_token" value={ vm.GuestCSRFToken }/>
@@ -23,11 +23,41 @@ templ signUpPage(vm signUpPageData) {
 							}
 							<label class="grid gap-2 text-xs font-medium text-muted">
 								Email
-								<input type="email" name="email" value={ vm.Email } autocomplete="email" required class="h-12 border border-flag-blue/25 bg-flag-white px-4 text-base font-medium text-ink transition focus:border-flag-blue focus:bg-paper"/>
+								<input
+									type="email"
+									name="email"
+									value={ vm.Email }
+									autocomplete="email"
+									required
+									if vm.EmailError != "" {
+										aria-invalid="true"
+										aria-describedby="signup-email-error"
+										autofocus
+									}
+									class="field-input h-12 text-base"
+								/>
+								if vm.EmailError != "" {
+									<p id="signup-email-error" role="alert" class="field-error">{ vm.EmailError }</p>
+								}
 							</label>
 							<label class="grid gap-2 text-xs font-medium text-muted">
 								Password (8 to 72 characters)
-								<input type="password" name="password" autocomplete="new-password" required minlength="8" class="h-12 border border-flag-blue/25 bg-flag-white px-4 text-base font-medium text-ink transition focus:border-flag-blue focus:bg-paper"/>
+								<input
+									type="password"
+									name="password"
+									autocomplete="new-password"
+									required
+									minlength="8"
+									if vm.PasswordError != "" {
+										aria-invalid="true"
+										aria-describedby="signup-password-error"
+										autofocus
+									}
+									class="field-input h-12 text-base"
+								/>
+								if vm.PasswordError != "" {
+									<p id="signup-password-error" role="alert" class="field-error">{ vm.PasswordError }</p>
+								}
 							</label>
 							<button type="submit" class="inline-flex h-12 items-center justify-center bg-flag-red px-6 text-sm font-bold text-white transition hover:bg-flag-red-deep">Create account</button>
 						</form>

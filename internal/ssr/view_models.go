@@ -136,6 +136,8 @@ type signUpPageData struct {
 	Email           string
 	ReturnTo        string
 	ErrorMessage    string
+	EmailError      string
+	PasswordError   string
 }
 
 type passwordResetRequestPageData struct {
@@ -145,6 +147,7 @@ type passwordResetRequestPageData struct {
 	Email           string
 	Sent            bool
 	ErrorMessage    string
+	EmailError      string
 }
 
 type passwordResetConfirmPageData struct {
@@ -153,6 +156,7 @@ type passwordResetConfirmPageData struct {
 	GuestCSRFToken  string
 	Token           string
 	ErrorMessage    string
+	PasswordError   string
 }
 
 // accountOrderView is a frozen snapshot for the overview's recent-orders

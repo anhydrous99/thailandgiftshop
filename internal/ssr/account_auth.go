@@ -192,12 +192,12 @@ func (h *Handler) handleSignUpSubmit(ctx context.Context, request events.APIGate
 
 	guestToken := form.Get(guestCSRFFieldName)
 	if !validCustomerEmail(email) {
-		rerender.ErrorMessage = invalidEmailError
+		rerender.EmailError = invalidEmailError
 		return h.signUpPageResponse(ctx, request, http.StatusBadRequest, rerender, guestToken)
 	}
 	password := form.Get("password")
 	if !validCustomerPassword(password) {
-		rerender.ErrorMessage = invalidPasswordError
+		rerender.PasswordError = invalidPasswordError
 		return h.signUpPageResponse(ctx, request, http.StatusBadRequest, rerender, guestToken)
 	}
 
@@ -212,7 +212,7 @@ func (h *Handler) handleSignUpSubmit(ctx context.Context, request events.APIGate
 		// Accepted, rate-limited enumeration trade-off: without email
 		// infrastructure there is no "we emailed you a link" alternative.
 		h.recordCustomerAuth(authOperationSignUp, authOutcomeInvalid)
-		rerender.ErrorMessage = emailTakenError
+		rerender.EmailError = emailTakenError
 		return h.signUpPageResponse(ctx, request, http.StatusBadRequest, rerender, guestToken)
 	}
 	if err != nil {
@@ -367,7 +367,7 @@ func (h *Handler) handlePasswordResetRequestSubmit(ctx context.Context, request 
 	}
 	guestToken := form.Get(guestCSRFFieldName)
 	if !validCustomerEmail(emailAddress) {
-		rerender.ErrorMessage = invalidEmailError
+		rerender.EmailError = invalidEmailError
 		return h.passwordResetRequestPageResponse(ctx, request, http.StatusBadRequest, rerender, guestToken)
 	}
 	if h.commerce == nil || h.emailSender == nil {
@@ -470,7 +470,7 @@ func (h *Handler) handlePasswordResetConfirmSubmit(ctx context.Context, request 
 	guestToken := form.Get(guestCSRFFieldName)
 	newPassword := form.Get("new_password")
 	if !validCustomerPassword(newPassword) {
-		renderData.ErrorMessage = invalidPasswordError
+		renderData.PasswordError = invalidPasswordError
 		return h.passwordResetConfirmPageResponse(ctx, request, http.StatusBadRequest, renderData, guestToken)
 	}
 	payload, ok := h.decodePasswordResetToken(tokenValue)

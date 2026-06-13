@@ -6,7 +6,7 @@ templ categoryDetailPage(vm categoryDetailPageViewModel) {
 		@siteHead(vm.Metadata)
 		<body class="min-h-screen bg-paper text-ink antialiased">
 			@siteHeader("page", vm.HeaderCartLabel)
-			<main>
+			<main id="main-content" tabindex="-1">
 				<section class="px-5 pt-10 pb-12 sm:px-8 lg:pt-14 lg:pb-16">
 					<div class="mx-auto w-full max-w-7xl">
 						@breadcrumbNav(vm.Breadcrumbs)

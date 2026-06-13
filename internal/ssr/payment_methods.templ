@@ -6,7 +6,7 @@ templ paymentMethodsPage(vm paymentMethodsPageData) {
 		@siteHead(vm.Metadata)
 		<body class="min-h-screen bg-paper text-ink antialiased">
 			@siteHeader("page", vm.HeaderCartLabel)
-			<main>
+			<main id="main-content" tabindex="-1">
 				<section class="px-5 pt-10 pb-12 sm:px-8 lg:pt-14 lg:pb-16">
 					<div class="mx-auto w-full max-w-7xl">
 						@breadcrumbNav(vm.Breadcrumbs)
@@ -18,7 +18,7 @@ templ paymentMethodsPage(vm paymentMethodsPageData) {
 				@flagBand("h-3")
 				<section class="mx-auto w-full max-w-7xl px-5 py-12 sm:px-8 lg:py-16">
 					if vm.Saved {
-						<p role="status" class="mb-8 border-l-4 border-flag-blue bg-flag-blue/10 px-4 py-3 text-sm font-semibold text-flag-blue">Card saved.</p>
+						<p role="status" class="mb-8 alert-success">Card saved.</p>
 					}
 					<div class="grid gap-8 lg:grid-cols-[1fr_22rem] lg:items-start">
 						<section aria-label="Saved cards" class="grid gap-4">
