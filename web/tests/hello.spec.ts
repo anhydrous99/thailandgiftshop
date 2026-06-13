@@ -29,6 +29,14 @@ async function expectHomeBuildingBannerVisible(page: Page) {
   expect(bannerPrecedesHeroHeading).toBe(true);
 }
 
+async function expectSkipLinkBox(page: Page, maxWidth: number, maxHeight: number) {
+  const box = await page.getByRole('link', { name: 'Skip to content' }).boundingBox();
+
+  expect(box).not.toBeNull();
+  expect(box?.width).toBeLessThanOrEqual(maxWidth);
+  expect(box?.height).toBeLessThanOrEqual(maxHeight);
+}
+
 test('home page assets, nav anchors, cart link, and aisle category route work end-to-end', async ({ page }) => {
   const htmxResponsePromise = page.waitForResponse((response) =>
     response.url().endsWith('/static/vendor/htmx.min.js') && response.status() === 200,
@@ -75,6 +83,21 @@ test('home page assets, nav anchors, cart link, and aisle category route work en
   await marketFindsAisle.click();
   await expect(page).toHaveURL(/\/categories\/market-finds$/);
   await expect(page.getByRole('heading', { name: 'Bangkok Market Finds', level: 1 })).toBeVisible();
+});
+
+test('skip link is visually hidden even if external CSS is stale or unavailable', async ({ page }) => {
+  await page.route('**/static/assets/app.css', (route) => route.abort());
+
+  await page.goto('/');
+
+  await expectSkipLinkBox(page, 1, 1);
+
+  await page.keyboard.press('Tab');
+  const focusedBox = await page.getByRole('link', { name: 'Skip to content' }).boundingBox();
+
+  expect(focusedBox).not.toBeNull();
+  expect(focusedBox?.width).toBeGreaterThan(40);
+  expect(focusedBox?.height).toBeGreaterThan(20);
 });
 
 test.describe('without JavaScript', () => {

@@ -74,6 +74,7 @@ const (
 
 	ssrOriginRequestPolicyName = "thailandgiftshop-ssr-origin"
 	ssrCachePolicyName         = "thailandgiftshop-ssr-cache"
+	skipLinkStyleCSPHash       = "'sha256-rE+bFBvY9ntOvyDDnI4OBE9+BdhsJpyJJWxGWylO5oY='"
 
 	operationsDashboardName  = "ThailandGiftshop-Operations"
 	operationsAlarmTopicName = "thailandgiftshop-operations-alarms"
@@ -1464,7 +1465,7 @@ func siteSecurityHeaders(stack awscdk.Stack) awscloudfront.ResponseHeadersPolicy
 		Comment: jsii.String("Security headers for thailandgiftshop.com"),
 		SecurityHeadersBehavior: &awscloudfront.ResponseSecurityHeadersBehavior{
 			ContentSecurityPolicy: &awscloudfront.ResponseHeadersContentSecurityPolicy{
-				ContentSecurityPolicy: jsii.String("default-src 'self'; base-uri 'self'; connect-src 'self' https://*.s3.amazonaws.com https://*.s3.us-east-1.amazonaws.com; frame-ancestors 'none'; form-action 'self' https://*.s3.amazonaws.com https://*.s3.us-east-1.amazonaws.com https://checkout.stripe.com; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self'; manifest-src 'self'"),
+				ContentSecurityPolicy: jsii.String("default-src 'self'; base-uri 'self'; connect-src 'self' https://*.s3.amazonaws.com https://*.s3.us-east-1.amazonaws.com; frame-ancestors 'none'; form-action 'self' https://*.s3.amazonaws.com https://*.s3.us-east-1.amazonaws.com https://checkout.stripe.com; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self' " + skipLinkStyleCSPHash + "; manifest-src 'self'"),
 				Override:              jsii.Bool(true),
 			},
 			ContentTypeOptions: &awscloudfront.ResponseHeadersContentTypeOptions{

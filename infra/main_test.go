@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -1256,6 +1257,20 @@ func TestStackIncludesStaticAssetsDistribution(t *testing.T) {
 		"ResponseHeadersPolicyConfig": map[string]any{
 			"SecurityHeadersConfig": map[string]any{
 				"ContentSecurityPolicy": map[string]any{
+					"ContentSecurityPolicy": assertions.Match_StringLikeRegexp(jsii.String("style-src 'self' " + regexp.QuoteMeta(skipLinkStyleCSPHash) + ";")),
+					"Override":              true,
+				},
+			},
+		},
+	})
+	securityHeadersCSP := responseHeadersPolicyCSP(t, template.ToJSON())
+	if strings.Contains(securityHeadersCSP, "'unsafe-inline'") {
+		t.Fatalf("CSP must not allow arbitrary inline styles: %s", securityHeadersCSP)
+	}
+	template.HasResourceProperties(jsii.String("AWS::CloudFront::ResponseHeadersPolicy"), map[string]any{
+		"ResponseHeadersPolicyConfig": map[string]any{
+			"SecurityHeadersConfig": map[string]any{
+				"ContentSecurityPolicy": map[string]any{
 					"ContentSecurityPolicy": assertions.Match_StringLikeRegexp(jsii.String("connect-src 'self'.*s3")),
 					"Override":              true,
 				},
@@ -1777,6 +1792,29 @@ func templateResources(t *testing.T, templateJSON *map[string]any) map[string]an
 	}
 
 	return resources
+}
+
+func responseHeadersPolicyCSP(t *testing.T, templateJSON *map[string]any) string {
+	t.Helper()
+
+	for _, resource := range templateResources(t, templateJSON) {
+		resourceMap := asStringMap(t, resource)
+		if resourceMap["Type"] != "AWS::CloudFront::ResponseHeadersPolicy" {
+			continue
+		}
+		properties := asStringMap(t, resourceMap["Properties"])
+		config := asStringMap(t, properties["ResponseHeadersPolicyConfig"])
+		securityHeaders := asStringMap(t, config["SecurityHeadersConfig"])
+		contentSecurityPolicy := asStringMap(t, securityHeaders["ContentSecurityPolicy"])
+		csp, ok := contentSecurityPolicy["ContentSecurityPolicy"].(string)
+		if !ok {
+			t.Fatalf("ContentSecurityPolicy has unexpected shape: %#v", contentSecurityPolicy["ContentSecurityPolicy"])
+		}
+		return csp
+	}
+
+	t.Fatal("CloudFront response headers policy not found")
+	return ""
 }
 
 func managedLogGroupExists(t *testing.T, templateJSON *map[string]any, logGroupName string) bool {

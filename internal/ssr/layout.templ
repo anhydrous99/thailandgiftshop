@@ -34,6 +34,7 @@ templ siteHead(metadata seoMetadata) {
 		<link rel="preload" href="/static/fonts/space-grotesk-latin-700.woff2" as="font" type="font/woff2" crossorigin/>
 		<link rel="preload" href="/static/fonts/inter-latin-400.woff2" as="font" type="font/woff2" crossorigin/>
 		<link rel="stylesheet" href="/static/assets/app.css"/>
+		<style>.skip-link{position:absolute;top:0;left:0;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0}.skip-link:focus{left:1rem;top:1rem;z-index:50;display:inline-flex;width:auto;height:2.75rem;align-items:center;margin:0;padding:0 1rem;overflow:visible;clip:auto;clip-path:none;background-color:var(--color-flag-blue, #2d2a4a);color:#fff;font-size:var(--text-sm, 0.875rem);font-weight:var(--font-weight-bold, 700);white-space:normal}</style>
 		<script src="/static/vendor/htmx.min.js" defer></script>
 		<script src="/static/js/enhance.js" defer></script>
 		for index, jsonLD := range metadata.JSONLD {
