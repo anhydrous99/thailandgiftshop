@@ -109,8 +109,8 @@ func categoryDetailPage(vm categoryDetailPageViewModel) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			for _, product := range vm.Products {
-				templ_7745c5c3_Err = productCard(product, vm.ProductImagePlaceholderURL).Render(ctx, templ_7745c5c3_Buffer)
+			for index, product := range vm.Products {
+				templ_7745c5c3_Err = productCard(product, vm.ProductImagePlaceholderURL, index < 4).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

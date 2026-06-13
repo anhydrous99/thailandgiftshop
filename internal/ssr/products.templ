@@ -27,8 +27,8 @@ templ productListingPage(vm productListingPageViewModel) {
 						</section>
 					} else {
 						<section aria-label="Products" class="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-							for _, product := range vm.Products {
-								@productCard(product, vm.ProductImagePlaceholderURL)
+							for index, product := range vm.Products {
+								@productCard(product, vm.ProductImagePlaceholderURL, index < 4)
 							}
 						</section>
 					}

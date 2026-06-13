@@ -33,7 +33,7 @@ func paymentMethodsPage(vm paymentMethodsPageData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = siteHead(vm.Metadata).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = siteHeadWithOptions(vm.Metadata, siteHeadOptions{Enhance: true}).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -3,7 +3,7 @@ package ssr
 templ passwordResetRequestPage(vm passwordResetRequestPageData) {
 	<!DOCTYPE html>
 	<html lang="en" class="scroll-smooth">
-		@siteHead(vm.Metadata)
+		@siteHeadWithOptions(vm.Metadata, siteHeadOptions{Enhance: true})
 		<body class="min-h-screen bg-paper text-ink antialiased">
 			@siteHeader("page", vm.HeaderCartLabel)
 			<main id="main-content" tabindex="-1" class="flex min-h-[60vh] items-center justify-center px-5 py-16 sm:px-8">
@@ -54,7 +54,7 @@ templ passwordResetRequestPage(vm passwordResetRequestPageData) {
 templ passwordResetConfirmPage(vm passwordResetConfirmPageData) {
 	<!DOCTYPE html>
 	<html lang="en" class="scroll-smooth">
-		@siteHead(vm.Metadata)
+		@siteHeadWithOptions(vm.Metadata, siteHeadOptions{Enhance: true})
 		<body class="min-h-screen bg-paper text-ink antialiased">
 			@siteHeader("page", vm.HeaderCartLabel)
 			<main id="main-content" tabindex="-1" class="flex min-h-[60vh] items-center justify-center px-5 py-16 sm:px-8">
@@ -104,7 +104,7 @@ templ passwordResetConfirmPage(vm passwordResetConfirmPageData) {
 templ accountPage(vm accountPageData) {
 	<!DOCTYPE html>
 	<html lang="en" class="scroll-smooth">
-		@siteHead(vm.Metadata)
+		@siteHeadWithOptions(vm.Metadata, siteHeadOptions{Enhance: true})
 		<body class="min-h-screen bg-paper text-ink antialiased">
 			@siteHeader("page", vm.HeaderCartLabel)
 			<main id="main-content" tabindex="-1">

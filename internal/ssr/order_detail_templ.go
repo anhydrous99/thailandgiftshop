@@ -188,7 +188,7 @@ func orderDetailPage(vm orderDetailPageData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "\" loading=\"lazy\"><div class=\"flex flex-col justify-center\"><h3 class=\"font-display text-xl font-medium leading-7 text-flag-blue\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "\" width=\"1200\" height=\"900\" sizes=\"7rem\" loading=\"lazy\"><div class=\"flex flex-col justify-center\"><h3 class=\"font-display text-xl font-medium leading-7 text-flag-blue\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

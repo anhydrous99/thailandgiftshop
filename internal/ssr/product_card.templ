@@ -2,11 +2,15 @@ package ssr
 
 import "github.com/anhydrous99/thailandgiftshop/internal/catalog"
 
-templ productCard(product catalog.Product, productImagePlaceholderURL string) {
+templ productCard(product catalog.Product, productImagePlaceholderURL string, priority bool) {
 	<a data-testid="product-card" href={ "/products/" + product.Slug } class="group flex flex-col border border-flag-blue/15 bg-paper transition hover:border-flag-blue hover:shadow-lift">
 		<span aria-hidden="true" class="block h-1 w-full bg-flag-red opacity-0 transition group-hover:opacity-100"></span>
 		<span class="block overflow-hidden">
-			<img class="aspect-[4/3] w-full bg-flag-white object-cover transition duration-300 group-hover:scale-[1.02]" src={ product.DisplayImageURL(productImagePlaceholderURL) } alt={ product.Name } loading="lazy"/>
+			if priority {
+				<img class="aspect-[4/3] w-full bg-flag-white object-cover transition duration-300 group-hover:scale-[1.02]" src={ product.DisplayImageURL(productImagePlaceholderURL) } alt={ product.Name } width="1200" height="900" sizes="(min-width: 1024px) 25vw, (min-width: 640px) 50vw, 100vw" loading="eager" fetchpriority="high"/>
+			} else {
+				<img class="aspect-[4/3] w-full bg-flag-white object-cover transition duration-300 group-hover:scale-[1.02]" src={ product.DisplayImageURL(productImagePlaceholderURL) } alt={ product.Name } width="1200" height="900" sizes="(min-width: 1024px) 25vw, (min-width: 640px) 50vw, 100vw" loading="lazy"/>
+			}
 		</span>
 		<div class="flex grow flex-col p-5">
 			<div class="flex items-start justify-between gap-4">

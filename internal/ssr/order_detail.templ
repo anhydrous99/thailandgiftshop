@@ -49,7 +49,7 @@ templ orderDetailPage(vm orderDetailPageData) {
 								<div class="mt-3 grid gap-4">
 									for _, line := range vm.Lines {
 										<article data-testid="order-line-item" class="grid gap-4 border border-flag-blue/10 bg-flag-white p-4 sm:grid-cols-[7rem_1fr]">
-											<img class="aspect-[4/3] w-full bg-paper object-cover" src={ line.ImageURL } alt={ line.Name } loading="lazy"/>
+											<img class="aspect-[4/3] w-full bg-paper object-cover" src={ line.ImageURL } alt={ line.Name } width="1200" height="900" sizes="7rem" loading="lazy"/>
 											<div class="flex flex-col justify-center">
 												<h3 class="font-display text-xl font-medium leading-7 text-flag-blue">{ line.Name }</h3>
 												if line.VariantLabel != "" {

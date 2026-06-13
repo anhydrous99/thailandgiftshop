@@ -43,9 +43,8 @@ var expectedHomeContent = []string{
 	`<link rel="apple-touch-icon" href="/static/apple-touch-icon.png" sizes="180x180">`,
 	`<link rel="manifest" href="/static/site.webmanifest">`,
 	`/static/assets/app.css`,
-	`/static/vendor/htmx.min.js`,
 	`src="/static/logo.svg"`,
-	`src="/static/home-hero.png"`,
+	`src="/static/home-hero.jpg"`,
 	`aria-label="Main navigation"`,
 	`href="/products"`,
 	`href="#latest"`,
@@ -1548,9 +1547,8 @@ func TestHomeIncludesFrontendAssets(t *testing.T) {
 
 	for _, want := range []string{
 		`/static/assets/app.css`,
-		`/static/vendor/htmx.min.js`,
 		`/static/logo.svg`,
-		`/static/home-hero.png`,
+		`/static/home-hero.jpg`,
 		`Bangkok gift shop online`,
 		`Latest products`,
 		`No products are available yet.`,
@@ -1558,6 +1556,45 @@ func TestHomeIncludesFrontendAssets(t *testing.T) {
 		if !strings.Contains(response.Body, want) {
 			t.Fatalf("body does not contain %q: %q", want, response.Body)
 		}
+	}
+	assertBodyOmits(t, response.Body, []string{
+		`/static/vendor/htmx.min.js`,
+		`/static/js/enhance.js`,
+		`<style>.skip-link`,
+	})
+}
+
+func TestEnhancementScriptIsScopedToInteractivePages(t *testing.T) {
+	handler := NewHandler(routeMatrixStore())
+	tests := []struct {
+		path        string
+		wantScript  bool
+		description string
+	}{
+		{path: "/", description: "home"},
+		{path: "/products", description: "product listing"},
+		{path: "/categories", description: "category listing"},
+		{path: "/story", description: "story"},
+		{path: "/products/thai-tea-sampler", wantScript: true, description: "product detail add-to-cart form"},
+		{path: "/account/sign-in", wantScript: true, description: "sign-in form"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.description, func(t *testing.T) {
+			response, err := handler.Handle(context.Background(), pageRequest(http.MethodGet, test.path))
+			if err != nil {
+				t.Fatalf("Handle returned error: %v", err)
+			}
+			if response.StatusCode != http.StatusOK {
+				t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
+			}
+
+			hasScript := strings.Contains(response.Body, `/static/js/enhance.js`)
+			if hasScript != test.wantScript {
+				t.Fatalf("enhance script presence = %t, want %t in body: %q", hasScript, test.wantScript, response.Body)
+			}
+			assertBodyOmits(t, response.Body, []string{`/static/vendor/htmx.min.js`})
+		})
 	}
 }
 

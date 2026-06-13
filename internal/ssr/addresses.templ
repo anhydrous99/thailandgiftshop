@@ -37,7 +37,7 @@ templ addressFormFields(form addressFormData) {
 templ addressesPage(vm addressesPageData) {
 	<!DOCTYPE html>
 	<html lang="en" class="scroll-smooth">
-		@siteHead(vm.Metadata)
+		@siteHeadWithOptions(vm.Metadata, siteHeadOptions{Enhance: true})
 		<body class="min-h-screen bg-paper text-ink antialiased">
 			@siteHeader("page", vm.HeaderCartLabel)
 			<main id="main-content" tabindex="-1">

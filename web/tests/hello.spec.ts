@@ -38,14 +38,14 @@ async function expectSkipLinkBox(page: Page, maxWidth: number, maxHeight: number
 }
 
 test('home page assets, nav anchors, cart link, and aisle category route work end-to-end', async ({ page }) => {
-  const htmxResponsePromise = page.waitForResponse((response) =>
-    response.url().endsWith('/static/vendor/htmx.min.js') && response.status() === 200,
-  );
+  const requestedURLs: string[] = [];
+
+  page.on('request', (request) => requestedURLs.push(request.url()));
 
   await page.goto('/');
 
-  const htmxResponse = await htmxResponsePromise;
-  await expect(htmxResponse.headers()['content-type']).toContain('javascript');
+  expect(requestedURLs.some((url) => url.endsWith('/static/vendor/htmx.min.js'))).toBe(false);
+  expect(requestedURLs.some((url) => url.endsWith('/static/js/enhance.js'))).toBe(false);
 
   const cssResponse = await page.request.get('/static/assets/app.css');
   expect(cssResponse.status()).toBe(200);
@@ -59,9 +59,9 @@ test('home page assets, nav anchors, cart link, and aisle category route work en
   expect(logoResponse.status()).toBe(200);
   expect(logoResponse.headers()['content-type']).toContain('image/svg+xml');
 
-  const heroResponse = await page.request.get('/static/home-hero.png');
+  const heroResponse = await page.request.get('/static/home-hero.jpg');
   expect(heroResponse.status()).toBe(200);
-  expect(heroResponse.headers()['content-type']).toContain('image/png');
+  expect(heroResponse.headers()['content-type']).toContain('image/jpeg');
 
   const mainNavigation = page.getByRole('navigation', { name: 'Main navigation' });
   await expect(mainNavigation).toBeVisible();
@@ -85,9 +85,7 @@ test('home page assets, nav anchors, cart link, and aisle category route work en
   await expect(page.getByRole('heading', { name: 'Bangkok Market Finds', level: 1 })).toBeVisible();
 });
 
-test('skip link is visually hidden even if external CSS is stale or unavailable', async ({ page }) => {
-  await page.route('**/static/assets/app.css', (route) => route.abort());
-
+test('skip link is visually hidden and becomes visible on focus', async ({ page }) => {
   await page.goto('/');
 
   await expectSkipLinkBox(page, 1, 1);

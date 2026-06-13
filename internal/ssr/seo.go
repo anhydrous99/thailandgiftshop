@@ -49,7 +49,7 @@ func metadataForPath(title string, description string, path string) seoMetadata 
 		Title:       title,
 		Description: normalizeMetaDescription(description),
 		Canonical:   canonicalURL(path),
-		SocialImage: canonicalURL("/static/home-hero.png"),
+		SocialImage: canonicalURL("/static/home-hero.jpg"),
 	}
 }
 

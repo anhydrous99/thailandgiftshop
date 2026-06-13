@@ -33,7 +33,7 @@ func productDetailPage(vm productDetailPageViewModel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = siteHead(vm.Metadata).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = siteHeadWithOptions(vm.Metadata, siteHeadOptions{Enhance: true}).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -52,7 +52,7 @@ func productDetailPage(vm productDetailPageViewModel) templ.Component {
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.ResolveAttributeValue(vm.Product.DisplayImageURL(vm.ProductImagePlaceholderURL))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/product_detail.templ`, Line: 12, Col: 129}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/product_detail.templ`, Line: 12, Col: 128}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var2)
 		if templ_7745c5c3_Err != nil {
@@ -65,13 +65,13 @@ func productDetailPage(vm productDetailPageViewModel) templ.Component {
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.ResolveAttributeValue(vm.Product.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/product_detail.templ`, Line: 12, Col: 153}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/product_detail.templ`, Line: 12, Col: 152}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var3)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\"><div class=\"absolute inset-y-0 left-0\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\" width=\"1200\" height=\"900\" sizes=\"(min-width: 1024px) 50vw, 100vw\" fetchpriority=\"high\"><div class=\"absolute inset-y-0 left-0\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
