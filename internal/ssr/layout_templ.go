@@ -456,7 +456,7 @@ func siteHeader(mode string, cartLabel string) templ.Component {
 			templ_7745c5c3_Var24 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "<header class=\"sticky top-0 z-30 border-b-2 border-ink bg-paper\"><a href=\"#main-content\" class=\"sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:inline-flex focus:h-11 focus:items-center focus:bg-flag-blue focus:px-4 focus:text-sm focus:font-bold focus:text-white\">Skip to content</a>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "<header class=\"sticky top-0 z-30 border-b-2 border-ink bg-paper\"><a href=\"#main-content\" class=\"skip-link\">Skip to content</a>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
