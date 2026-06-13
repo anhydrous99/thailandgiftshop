@@ -524,6 +524,22 @@ func TestStackIncludesAdminCloudFrontWAFRateLimits(t *testing.T) {
 	})
 }
 
+func TestStackDisablesWAFSampledRequests(t *testing.T) {
+	defer jsii.Close()
+
+	app := awscdk.NewApp(nil)
+	stack := NewThailandGiftshopStack(app, "TestStack", nil)
+	template := assertions.Template_FromStack(stack, nil)
+
+	enabled, disabled := countSampledRequestsSettings(t, template.ToJSON())
+	if enabled != 0 {
+		t.Fatalf("WAF sampled requests enabled in %d visibility configs", enabled)
+	}
+	if disabled < 5 {
+		t.Fatalf("disabled sampled-request config count = %d, want at least WebACL plus four rules", disabled)
+	}
+}
+
 func TestStackWiresWafObservability(t *testing.T) {
 	defer jsii.Close()
 
@@ -1944,6 +1960,42 @@ func policyForFunctionHasSESAction(t *testing.T, templateJSON *map[string]any, f
 
 func containsAction(actions []string, expected string) bool {
 	return slices.Contains(actions, expected)
+}
+
+func countSampledRequestsSettings(t *testing.T, value any) (int, int) {
+	t.Helper()
+
+	enabled := 0
+	disabled := 0
+	switch typed := value.(type) {
+	case *map[string]any:
+		return countSampledRequestsSettings(t, *typed)
+	case map[string]any:
+		for key, item := range typed {
+			if key == "SampledRequestsEnabled" {
+				setting, ok := item.(bool)
+				if !ok {
+					t.Fatalf("SampledRequestsEnabled has unexpected shape: %#v", item)
+				}
+				if setting {
+					enabled++
+				} else {
+					disabled++
+				}
+			}
+			childEnabled, childDisabled := countSampledRequestsSettings(t, item)
+			enabled += childEnabled
+			disabled += childDisabled
+		}
+	case []any:
+		for _, item := range typed {
+			childEnabled, childDisabled := countSampledRequestsSettings(t, item)
+			enabled += childEnabled
+			disabled += childDisabled
+		}
+	}
+
+	return enabled, disabled
 }
 
 func asStringMap(t *testing.T, value any) map[string]any {

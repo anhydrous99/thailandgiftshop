@@ -743,7 +743,7 @@ func wafVisibility(metricName string) *awswafv2.CfnWebACL_VisibilityConfigProper
 	return &awswafv2.CfnWebACL_VisibilityConfigProperty{
 		CloudWatchMetricsEnabled: jsii.Bool(true),
 		MetricName:               jsii.String(metricName),
-		SampledRequestsEnabled:   jsii.Bool(true),
+		SampledRequestsEnabled:   jsii.Bool(false),
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"strconv"
@@ -28,6 +29,7 @@ const textContentType = httpapi.TextContentType
 const xmlContentType = httpapi.XMLContentType
 const helloFragmentBody = "HTMX refreshed this greeting from the server"
 const latestProductLimit = 8
+const minimumProductionSigningSecretLength = 32
 
 type Handler struct {
 	catalogStore               catalog.Store
@@ -74,6 +76,10 @@ func NewHandlerWithProductImagePlaceholderURL(catalogStore catalog.Store, placeh
 }
 
 func NewHandlerFromEnvironment(ctx context.Context) (*Handler, error) {
+	if err := validateProductionSigningSecrets(); err != nil {
+		return nil, err
+	}
+
 	metrics := observability.NewEMFRecorder(os.Stdout)
 	catalogStore, _, err := catalog.NewStoreFromEnvWithRecorder(ctx, metrics)
 	if err != nil {
@@ -114,6 +120,23 @@ func NewHandlerFromEnvironment(ctx context.Context) (*Handler, error) {
 		}
 	}
 	return handler, nil
+}
+
+func validateProductionSigningSecrets() error {
+	if !appenv.IsProduction() {
+		return nil
+	}
+	if err := validateProductionSigningSecret(cart.EnvCookieSecret, os.Getenv(cart.EnvCookieSecret)); err != nil {
+		return err
+	}
+	return validateProductionSigningSecret(commerce.EnvSessionSecret, os.Getenv(commerce.EnvSessionSecret))
+}
+
+func validateProductionSigningSecret(name string, value string) error {
+	if len(strings.TrimSpace(value)) < minimumProductionSigningSecretLength {
+		return fmt.Errorf("%s must be at least %d characters in production", name, minimumProductionSigningSecretLength)
+	}
+	return nil
 }
 
 // NewLocalDemoHandler wires the in-memory commerce store and the fake payment
