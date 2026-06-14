@@ -80,6 +80,9 @@ type cartPageViewModel struct {
 	Lines                      []cartLineView
 	ProductImagePlaceholderURL string
 	HeaderCartLabel            string
+	// CartAdjusted shows the auto-update notice when normalization removed
+	// out-of-stock lines or reduced quantities on this read.
+	CartAdjusted bool
 }
 
 // checkoutLineView is one priced order line on the checkout page. Strings are

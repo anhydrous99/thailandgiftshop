@@ -336,6 +336,7 @@ func (h *Handler) handle(ctx context.Context, request events.APIGatewayV2HTTPReq
 			Lines:                      pageCartState.lines,
 			ProductImagePlaceholderURL: h.productImagePlaceholderURL,
 			HeaderCartLabel:            headerCartLabel,
+			CartAdjusted:               pageCartState.adjusted,
 		})
 	default:
 		statusCode = http.StatusNotFound

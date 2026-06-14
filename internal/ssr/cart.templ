@@ -18,6 +18,9 @@ templ cartPage(vm cartPageViewModel) {
 				</section>
 				@flagBand("h-3")
 				<section class="mx-auto w-full max-w-7xl px-5 py-12 sm:px-8 lg:py-16">
+					if vm.CartAdjusted {
+						<div data-testid="cart-adjusted-notice" role="status" class="mb-8 border-l-4 border-flag-blue bg-flag-white px-4 py-3 text-sm font-medium leading-6 text-flag-blue">We updated your cart — out-of-stock items were removed and quantities were adjusted to match what's in stock.</div>
+					}
 					if len(vm.Lines) == 0 {
 						<section class="border-2 border-dashed border-flag-blue/25 bg-paper p-10 text-center">
 							<div class="mx-auto w-16">

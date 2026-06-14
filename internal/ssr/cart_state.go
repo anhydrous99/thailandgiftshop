@@ -260,6 +260,10 @@ type requestCart struct {
 	cookies  []string
 	signedIn bool
 	record   commerce.CartRecord
+	// adjusted reports that normalization changed the cart on this read
+	// (out-of-stock lines dropped or quantities reduced), so the cart page
+	// can tell the shopper their cart was auto-updated.
+	adjusted bool
 	// session and customer carry the resolved signed-in session and customer
 	// (zero values when anonymous), so callers that already obtained the cart
 	// state do not re-resolve the session with two more GetItem reads.
@@ -316,7 +320,7 @@ func (h *Handler) cartStateFromRequest(ctx context.Context, request events.APIGa
 	}
 	// Dead session cookies ride along with the anonymous fallback so
 	// cart-bearing routes clear them instead of re-validating them forever.
-	state := requestCart{cart: normalizedCart, lines: lines, cookies: sessionClearing, sessionErr: sessionErr}
+	state := requestCart{cart: normalizedCart, lines: lines, cookies: sessionClearing, sessionErr: sessionErr, adjusted: changed}
 	if needsClear || (changed && normalizedCart.LineCount() == 0) {
 		state.cookies = append(state.cookies, clearCartCookie(request))
 		return state, nil
@@ -405,6 +409,7 @@ func (h *Handler) serverCartState(ctx context.Context, request events.APIGateway
 		cookies:  []string{h.mirrorCartCookie(normalizedCart, request)},
 		signedIn: true,
 		record:   record,
+		adjusted: changed,
 	}, nil
 }
 

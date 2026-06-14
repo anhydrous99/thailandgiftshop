@@ -1033,6 +1033,20 @@ func TestCartPageShowsCappedInventoryQuantities(t *testing.T) {
 		t.Fatalf("bounded lines = %#v, want stock cap 5 and max quantity %d", lines, cart.MaxQuantity)
 	}
 	assertBodyContains(t, response.Body, []string{`Cart (104)`, `Mango Sticky Rice Treats`, `High Stock Product`, `max="5"`, `value="5"`, `max="99"`, `value="99"`})
+	// The cart was auto-adjusted (quantities reduced), so the shopper is told.
+	assertBodyContains(t, response.Body, []string{`data-testid="cart-adjusted-notice"`, `We updated your cart`})
+}
+
+func TestCartPageOmitsAdjustedNoticeWhenCartUnchanged(t *testing.T) {
+	t.Setenv(cart.EnvCookieSecret, ssrTestCartSecret)
+	request := pageRequest(http.MethodGet, "/cart")
+	request.Cookies = []string{cart.CookieName + "=" + encodedTestCart(t, []cart.Line{{Slug: "mango-sticky-rice-kit", Quantity: 2}})}
+
+	response, err := NewHandler(cartRouteStore()).Handle(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	assertBodyOmits(t, response.Body, []string{`data-testid="cart-adjusted-notice"`})
 }
 
 func TestCheckoutPageExcludesDroppedStaleItems(t *testing.T) {
