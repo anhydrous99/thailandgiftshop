@@ -24,5 +24,8 @@ web/test-results/
 # AI environment
 .omo
 .claude
+.agents/
+.junie/
+skills-lock.json
 AGENTS.md
 CLAUDE.md
