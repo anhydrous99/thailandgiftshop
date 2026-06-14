@@ -1731,9 +1731,10 @@ func TestFinalizePaymentCardExpansionLogRedactsPaymentSessionCredentials(t *test
 	logs := captureCheckoutLogs(t)
 
 	_, err := env.service.FinalizePayment(context.Background(), order.ID, payments.Session{
-		ID:            order.StripeCheckoutSessionID,
-		OrderID:       order.ID,
-		PaymentStatus: paymentStatusPaid,
+		ID:               order.StripeCheckoutSessionID,
+		OrderID:          order.ID,
+		PaymentStatus:    paymentStatusPaid,
+		AmountTotalCents: order.TotalCents,
 	})
 	if err != nil {
 		t.Fatalf("FinalizePayment returned error: %v", err)
@@ -1743,6 +1744,30 @@ func TestFinalizePaymentCardExpansionLogRedactsPaymentSessionCredentials(t *test
 		t.Fatalf("checkout log output = %q, want card expansion warning", output)
 	}
 	assertNoCheckoutCredentialLeak(t, output, order.StripeCheckoutSessionID)
+}
+
+func TestFinalizePaymentAmountMismatchDoesNotFinalize(t *testing.T) {
+	env := newTestEnv(t)
+	_, order := env.mustPlaceOrder(t, checkoutTestLines())
+	session := env.paidSession(t, order.StripeCheckoutSessionID)
+	// A paid session whose charged amount diverges from the frozen order
+	// total must never finalize the order to paid.
+	session.AmountTotalCents = order.TotalCents + 100
+
+	_, err := env.service.FinalizePayment(context.Background(), order.ID, session)
+	if !errors.Is(err, ErrPaymentAmountMismatch) {
+		t.Fatalf("FinalizePayment error = %v, want %v", err, ErrPaymentAmountMismatch)
+	}
+	pending := env.mustGetOrder(t, order.ID)
+	if pending.Status != commerce.OrderStatusPendingPayment {
+		t.Errorf("order status = %q, want it left %q (never finalized on amount mismatch)", pending.Status, commerce.OrderStatusPendingPayment)
+	}
+	if got := env.metrics.count(observability.MetricCheckoutPayment, "amount_mismatch"); got != 1 {
+		t.Errorf("amount_mismatch metric count = %d, want 1", got)
+	}
+	if got := env.metrics.count(observability.MetricCheckoutPayment, "success"); got != 0 {
+		t.Errorf("success metric count = %d, want 0 (the order was never paid)", got)
+	}
 }
 
 func TestApplyWebhookEventPaidAfterTerminalIssuesAutoRefund(t *testing.T) {

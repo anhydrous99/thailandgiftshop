@@ -662,6 +662,14 @@ func (h *Handler) handleCheckoutConfirm(ctx context.Context, request events.APIG
 			logAccountError("checkout confirm: payment received for terminal order", err)
 			return h.renderCheckoutPaymentReceivedPage(ctx, request, order.ID, rideAlongCookies)
 		}
+		if errors.Is(err, checkout.ErrPaymentAmountMismatch) {
+			// Integrity anomaly: the paid session's amount does not match the
+			// order total. Never claim success — leave the order pending (it
+			// expires and releases stock) and show the self-refreshing
+			// processing page while ops is alarmed on the mismatch metric.
+			logAccountError("checkout confirm: payment amount mismatch", err)
+			return h.renderCheckoutProcessingPage(ctx, request, order.ID, rideAlongCookies)
+		}
 		if !orderStatusPaidOrLater(finalized.Status) {
 			logAccountError("checkout confirm: finalize payment", err)
 			return accountHTMLResponse(http.StatusInternalServerError, "Internal server error", pageCheckoutConfirm, nil)

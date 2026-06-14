@@ -48,6 +48,11 @@ var (
 	// terminal non-paid status: money moved but the order can never reconcile,
 	// so webhook retries cannot fix it (§7.2/§7.3).
 	ErrOrderNotFinalizable = errors.New("checkout: order is in a terminal status and cannot be finalized")
+	// ErrPaymentAmountMismatch reports that a paid session's charged amount
+	// does not match the order's server-authoritative total. The hosted
+	// session is created from the frozen order total, so a mismatch is a
+	// "never happens" integrity anomaly: the order is never finalized to paid.
+	ErrPaymentAmountMismatch = errors.New("checkout: payment amount does not match the order total")
 	// ErrOrderPaidNotCanceled reports that a cancel found the order's checkout
 	// session already paid, so the order was finalized to paid instead of
 	// being canceled.
@@ -108,10 +113,11 @@ const (
 
 // CheckoutPayment metric outcomes.
 const (
-	outcomePaymentSuccess    = "success"
-	outcomeInsufficientStock = "insufficient_stock"
-	outcomeProviderError     = "provider_error"
-	outcomePaymentError      = "error"
+	outcomePaymentSuccess        = "success"
+	outcomeInsufficientStock     = "insufficient_stock"
+	outcomeProviderError         = "provider_error"
+	outcomePaymentError          = "error"
+	outcomePaymentAmountMismatch = "amount_mismatch"
 )
 
 // CheckoutRefund metric outcomes.
@@ -476,6 +482,21 @@ func (s *Service) FinalizePayment(ctx context.Context, orderID string, paymentSe
 	}
 	if paymentSession.PaymentStatus != paymentStatusPaid {
 		return order, fmt.Errorf("checkout: payment session is %q, not paid", paymentSession.PaymentStatus)
+	}
+	if paymentSession.AmountTotalCents != order.TotalCents {
+		// Server-authoritative integrity check: the hosted session is built
+		// from this order's frozen total, so a mismatch is a "never happens"
+		// anomaly. Never transition to paid — alarm and let the order expire
+		// (releasing stock) instead of capturing a wrong amount. The webhook
+		// path runs this same cross-check before FinalizePayment; this closes
+		// the /checkout/confirm reconcile path too.
+		checkoutLogger.Error("checkout: payment amount does not match the order total",
+			slog.String("order_id", order.ID),
+			slog.Int("amount_total_cents", paymentSession.AmountTotalCents),
+			slog.Int("order_total_cents", order.TotalCents),
+		)
+		s.recordCheckoutPayment(outcomePaymentAmountMismatch)
+		return order, fmt.Errorf("%w: order %q total %d, session %d", ErrPaymentAmountMismatch, order.ID, order.TotalCents, paymentSession.AmountTotalCents)
 	}
 
 	// Webhook payloads carry the payment intent as a bare ID with no card
