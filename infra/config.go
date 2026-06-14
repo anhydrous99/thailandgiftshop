@@ -37,10 +37,13 @@ const (
 	adminCredentialsSecretName                   = "thailandgiftshop/admin/credentials"
 	stripeCredentialsSecretName                  = "thailandgiftshop/stripe/credentials"
 	ssrLambdaLogGroupName                        = "/aws/lambda/thailandgiftshop-ssr"
+	ssrLambdaAliasName                           = "live"
+	ssrProvisionedConcurrency                    = 1
 	adminLambdaLogGroupName                      = "/aws/lambda/thailandgiftshop-admin"
 	adminLoginAttemptsPKName                     = "client_key"
 	adminLoginAttemptsTTLName                    = "expires_at"
 	adminPreviousOriginHeaderSecretParameterName = "AdminOriginHeaderPreviousSecret"
+	adminOriginHeaderVersionParameterName        = "AdminOriginHeaderVersion"
 	lambdaMemorySizeMB                           = 128
 	lambdaHighMemoryUsedMB                       = 100
 	lambdaNearTimeoutDurationMs                  = 8000

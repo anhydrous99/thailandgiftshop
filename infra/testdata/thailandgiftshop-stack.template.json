@@ -84,8 +84,13 @@
   "Parameters": {
     "AdminOriginHeaderPreviousSecret": {
       "Default": "",
-      "Description": "Previous X-TGS-Origin-Secret value accepted during CloudFront origin header rotations",
+      "Description": "Previous X-TGS-Origin-Secret value accepted during CloudFront origin header rotations. Also update AdminOriginHeaderVersion when changing this value.",
       "NoEcho": true,
+      "Type": "String"
+    },
+    "AdminOriginHeaderVersion": {
+      "Default": "1",
+      "Description": "Non-secret marker to force publishing a new SSR Lambda version when origin header runtime configuration changes",
       "Type": "String"
     },
     "AlarmNotificationEmail": {
@@ -4478,10 +4483,7 @@
         },
         "IntegrationType": "AWS_PROXY",
         "IntegrationUri": {
-          "Fn::GetAtt": [
-            "SsrLambda06B7747A",
-            "Arn"
-          ]
+          "Ref": "SsrLambdaAliaslive41AD2B90"
         },
         "PayloadFormatVersion": "2.0",
         "TimeoutInMillis": 10000
@@ -4492,10 +4494,7 @@
       "Properties": {
         "Action": "lambda:InvokeFunction",
         "FunctionName": {
-          "Fn::GetAtt": [
-            "SsrLambda06B7747A",
-            "Arn"
-          ]
+          "Ref": "SsrLambdaAliaslive41AD2B90"
         },
         "Principal": "apigateway.amazonaws.com",
         "SourceArn": {
@@ -4702,6 +4701,45 @@
         }
       },
       "Type": "AWS::Lambda::Function"
+    },
+    "SsrLambdaAliaslive41AD2B90": {
+      "Properties": {
+        "FunctionName": {
+          "Ref": "SsrLambda06B7747A"
+        },
+        "FunctionVersion": {
+          "Fn::GetAtt": [
+            "SsrLambdaCurrentVersion647BF8905ac472753538fa6c8a9b4a0bf71f65db",
+            "Version"
+          ]
+        },
+        "Name": "live",
+        "ProvisionedConcurrencyConfig": {
+          "ProvisionedConcurrentExecutions": 1
+        }
+      },
+      "Type": "AWS::Lambda::Alias"
+    },
+    "SsrLambdaCurrentVersion647BF8905ac472753538fa6c8a9b4a0bf71f65db": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "Description": {
+          "Fn::Join": [
+            "",
+            [
+              "SSR origin header version ",
+              {
+                "Ref": "AdminOriginHeaderVersion"
+              }
+            ]
+          ]
+        },
+        "FunctionName": {
+          "Ref": "SsrLambda06B7747A"
+        }
+      },
+      "Type": "AWS::Lambda::Version",
+      "UpdateReplacePolicy": "Delete"
     },
     "SsrLambdaDurationMaxNearTimeoutAlarm66293608": {
       "Properties": {

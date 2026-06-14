@@ -34,6 +34,61 @@ func TestLambdaBuildCommandSnapshot(t *testing.T) {
 	}, "\n")))
 }
 
+func TestSSRProvisionedConcurrencyUsesDestroyableAliasVersion(t *testing.T) {
+	defer jsii.Close()
+
+	template := synthesizedNormalizedTemplate(t)
+	parameters := requireMap(t, template["Parameters"], "template parameters")
+	if _, ok := parameters[adminOriginHeaderVersionParameterName]; !ok {
+		t.Fatalf("template is missing %s parameter", adminOriginHeaderVersionParameterName)
+	}
+
+	aliases := resourcesOfType(t, template, "AWS::Lambda::Alias")
+	if len(aliases) != 1 {
+		t.Fatalf("Lambda alias count = %d, want 1", len(aliases))
+	}
+	_, alias := onlyResource(t, aliases)
+	aliasProps := resourceProperties(t, alias)
+	if got := aliasProps["Name"]; got != ssrLambdaAliasName {
+		t.Fatalf("SSR alias name = %v, want %q", got, ssrLambdaAliasName)
+	}
+	provisionedConfig := requireMap(t, aliasProps["ProvisionedConcurrencyConfig"], "alias provisioned concurrency config")
+	if got := provisionedConfig["ProvisionedConcurrentExecutions"]; got != float64(ssrProvisionedConcurrency) {
+		t.Fatalf("SSR provisioned concurrency = %v, want %d", got, ssrProvisionedConcurrency)
+	}
+
+	versions := resourcesOfType(t, template, "AWS::Lambda::Version")
+	if len(versions) != 1 {
+		t.Fatalf("Lambda version count = %d, want 1", len(versions))
+	}
+	versionID, version := onlyResource(t, versions)
+	assertResourceNotRetained(t, versionID, version)
+	versionProps := resourceProperties(t, version)
+	if _, ok := versionProps["ProvisionedConcurrencyConfig"]; ok {
+		t.Fatalf("%s configures provisioned concurrency; expected concurrency on alias only", versionID)
+	}
+	if !containsStringFragment(versionProps["Description"], adminOriginHeaderVersionParameterName) {
+		t.Fatalf("%s Description does not reference %s; parameter-only origin header rotations would not publish a new version", versionID, adminOriginHeaderVersionParameterName)
+	}
+}
+
+func TestSSRHttpIntegrationInvokesProvisionedAlias(t *testing.T) {
+	defer jsii.Close()
+
+	template := synthesizedNormalizedTemplate(t)
+	integrationID, integration := resourceByIDPrefix(t, resourcesOfType(t, template, "AWS::ApiGatewayV2::Integration"), "SsrDefaultRouteSsrLambdaIntegration")
+	integrationURI := resourceProperties(t, integration)["IntegrationUri"]
+	if !containsStringFragment(integrationURI, ":"+ssrLambdaAliasName) && !containsStringFragment(integrationURI, ssrLambdaAliasName) {
+		t.Fatalf("%s IntegrationUri does not reference SSR alias %q: %#v", integrationID, ssrLambdaAliasName, integrationURI)
+	}
+
+	permissionID, permission := resourceByIDPrefix(t, resourcesOfType(t, template, "AWS::Lambda::Permission"), "SsrDefaultRouteSsrLambdaIntegrationPermission")
+	functionName := resourceProperties(t, permission)["FunctionName"]
+	if !containsStringFragment(functionName, ":"+ssrLambdaAliasName) && !containsStringFragment(functionName, ssrLambdaAliasName) {
+		t.Fatalf("%s FunctionName does not reference SSR alias %q: %#v", permissionID, ssrLambdaAliasName, functionName)
+	}
+}
+
 func TestConcreteNonProductionRegionPanicSnapshot(t *testing.T) {
 	defer jsii.Close()
 
@@ -52,6 +107,98 @@ func TestConcreteNonProductionRegionPanicSnapshot(t *testing.T) {
 	}
 
 	assertSnapshot(t, "concrete-non-production-region-panic.txt", []byte(fmt.Sprint(panicValue)))
+}
+
+func synthesizedNormalizedTemplate(t *testing.T) map[string]any {
+	t.Helper()
+
+	app := awscdk.NewApp(nil)
+	stack := NewThailandGiftshopStack(app, "TestStack", nil)
+	template := assertions.Template_FromStack(stack, nil)
+	return normalizeTemplate(t, template.ToJSON())
+}
+
+func resourcesOfType(t *testing.T, template map[string]any, resourceType string) map[string]map[string]any {
+	t.Helper()
+
+	resources := requireMap(t, template["Resources"], "template resources")
+	matches := map[string]map[string]any{}
+	for id, resource := range resources {
+		resourceMap := requireMap(t, resource, "resource "+id)
+		if resourceMap["Type"] == resourceType {
+			matches[id] = resourceMap
+		}
+	}
+	return matches
+}
+
+func onlyResource(t *testing.T, resources map[string]map[string]any) (string, map[string]any) {
+	t.Helper()
+
+	if len(resources) != 1 {
+		t.Fatalf("resource count = %d, want 1", len(resources))
+	}
+	for id, resource := range resources {
+		return id, resource
+	}
+	panic("unreachable")
+}
+
+func resourceByIDPrefix(t *testing.T, resources map[string]map[string]any, prefix string) (string, map[string]any) {
+	t.Helper()
+
+	matches := map[string]map[string]any{}
+	for id, resource := range resources {
+		if strings.HasPrefix(id, prefix) {
+			matches[id] = resource
+		}
+	}
+	return onlyResource(t, matches)
+}
+
+func resourceProperties(t *testing.T, resource map[string]any) map[string]any {
+	t.Helper()
+	return requireMap(t, resource["Properties"], "resource properties")
+}
+
+func requireMap(t *testing.T, value any, name string) map[string]any {
+	t.Helper()
+
+	valueMap, ok := value.(map[string]any)
+	if !ok {
+		t.Fatalf("%s has type %T, want map[string]any", name, value)
+	}
+	return valueMap
+}
+
+func assertResourceNotRetained(t *testing.T, id string, resource map[string]any) {
+	t.Helper()
+
+	for _, policyName := range []string{"DeletionPolicy", "UpdateReplacePolicy"} {
+		if got := resource[policyName]; got == "Retain" {
+			t.Fatalf("%s has %s=Retain; Lambda versions must be destroyable to avoid version bloat", id, policyName)
+		}
+	}
+}
+
+func containsStringFragment(value any, fragment string) bool {
+	switch typed := value.(type) {
+	case string:
+		return strings.Contains(typed, fragment)
+	case []any:
+		for _, item := range typed {
+			if containsStringFragment(item, fragment) {
+				return true
+			}
+		}
+	case map[string]any:
+		for _, item := range typed {
+			if containsStringFragment(item, fragment) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func capturePanic(fn func()) (panicValue any) {

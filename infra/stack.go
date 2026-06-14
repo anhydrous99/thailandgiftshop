@@ -24,9 +24,10 @@ func NewThailandGiftshopStack(scope constructs.Construct, id string, props *Thai
 	adminLoginAttemptsTable := addAdminLoginAttempts(stack)
 	adminOriginHeaderSecret := addAdminOriginHeaderSecret(stack)
 	adminPreviousOriginHeaderSecret := adminPreviousOriginHeaderSecretValue(stack)
+	adminOriginHeaderVersion := adminOriginHeaderVersionValue(stack)
 	hostedZone := siteHostedZone(stack)
 	emailIdentity := addEmailIdentity(stack, hostedZone)
-	ssr := addSSR(stack, catalogTable, commerceTable, productImagesBucket, adminLoginAttemptsTable, adminOriginHeaderSecret, adminPreviousOriginHeaderSecret, emailIdentity)
+	ssr := addSSR(stack, catalogTable, commerceTable, productImagesBucket, adminLoginAttemptsTable, adminOriginHeaderSecret, adminPreviousOriginHeaderSecret, adminOriginHeaderVersion, emailIdentity)
 	site := addSite(stack, ssr.httpAPI, productImagesBucket, adminOriginHeaderSecret, hostedZone)
 	addObservability(stack, observabilityResources{
 		catalogTable:            catalogTable,

@@ -21,7 +21,7 @@ import (
 	"github.com/aws/jsii-runtime-go"
 )
 
-func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable awsdynamodb.ITable, productImagesBucket awss3.IBucket, adminLoginAttemptsTable awsdynamodb.ITable, adminOriginHeaderSecret awssecretsmanager.ISecret, adminPreviousOriginHeaderSecret *string, emailIdentity awsses.IEmailIdentity) ssrResources {
+func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable awsdynamodb.ITable, productImagesBucket awss3.IBucket, adminLoginAttemptsTable awsdynamodb.ITable, adminOriginHeaderSecret awssecretsmanager.ISecret, adminPreviousOriginHeaderSecret *string, adminOriginHeaderVersion *string, emailIdentity awsses.IEmailIdentity) ssrResources {
 	lambdaLogGroup := awslogs.NewLogGroup(stack, jsii.String("SsrLambdaLogGroup"), &awslogs.LogGroupProps{
 		LogGroupName: jsii.String(ssrLambdaLogGroupName),
 		Retention:    awslogs.RetentionDays_THREE_MONTHS,
@@ -40,6 +40,10 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable a
 			DeployTime:  jsii.Bool(true),
 			DisplayName: jsii.String("ssr-lambda"),
 		}),
+		CurrentVersionOptions: &awslambda.VersionOptions{
+			Description:   awscdk.Fn_Join(jsii.String(""), &[]*string{jsii.String("SSR origin header version "), adminOriginHeaderVersion}),
+			RemovalPolicy: awscdk.RemovalPolicy_DESTROY,
+		},
 		Description: jsii.String("Server-side HTML renderer for thailandgiftshop.com"),
 		Environment: &map[string]*string{
 			catalog.EnvTableName:                         catalogTable.TableName(),
@@ -93,6 +97,9 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable a
 			commerceTable.TableArn(),
 		},
 	}))
+	ssrAlias := ssrFunction.AddAlias(jsii.String(ssrLambdaAliasName), &awslambda.AliasOptions{
+		ProvisionedConcurrentExecutions: jsii.Number(ssrProvisionedConcurrency),
+	})
 
 	httpAPI := awsapigatewayv2.NewHttpApi(stack, jsii.String("SsrHttpApi"), &awsapigatewayv2.HttpApiProps{
 		ApiName:            jsii.String("thailandgiftshop-ssr"),
@@ -103,7 +110,7 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable a
 	defaultRoute := awsapigatewayv2.NewHttpRoute(stack, jsii.String("SsrDefaultRoute"), &awsapigatewayv2.HttpRouteProps{
 		HttpApi:  httpAPI,
 		RouteKey: awsapigatewayv2.HttpRouteKey_DEFAULT(),
-		Integration: awsapigatewayv2integrations.NewHttpLambdaIntegration(jsii.String("SsrLambdaIntegration"), ssrFunction, &awsapigatewayv2integrations.HttpLambdaIntegrationProps{
+		Integration: awsapigatewayv2integrations.NewHttpLambdaIntegration(jsii.String("SsrLambdaIntegration"), ssrAlias, &awsapigatewayv2integrations.HttpLambdaIntegrationProps{
 			PayloadFormatVersion: awsapigatewayv2.PayloadFormatVersion_VERSION_2_0(),
 			Timeout:              awscdk.Duration_Seconds(jsii.Number(10)),
 		}),

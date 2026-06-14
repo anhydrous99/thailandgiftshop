@@ -23,11 +23,20 @@ func addAdminOriginHeaderSecret(stack awscdk.Stack) awssecretsmanager.Secret {
 func adminPreviousOriginHeaderSecretValue(stack awscdk.Stack) *string {
 	previousOriginSecret := awscdk.NewCfnParameter(stack, jsii.String(adminPreviousOriginHeaderSecretParameterName), &awscdk.CfnParameterProps{
 		Default:     jsii.String(""),
-		Description: jsii.String("Previous X-TGS-Origin-Secret value accepted during CloudFront origin header rotations"),
+		Description: jsii.String("Previous X-TGS-Origin-Secret value accepted during CloudFront origin header rotations. Also update AdminOriginHeaderVersion when changing this value."),
 		NoEcho:      jsii.Bool(true),
 		Type:        jsii.String("String"),
 	})
 	return previousOriginSecret.ValueAsString()
+}
+
+func adminOriginHeaderVersionValue(stack awscdk.Stack) *string {
+	originHeaderVersion := awscdk.NewCfnParameter(stack, jsii.String(adminOriginHeaderVersionParameterName), &awscdk.CfnParameterProps{
+		Default:     jsii.String("1"),
+		Description: jsii.String("Non-secret marker to force publishing a new SSR Lambda version when origin header runtime configuration changes"),
+		Type:        jsii.String("String"),
+	})
+	return originHeaderVersion.ValueAsString()
 }
 
 func adminOriginHeaderSecretReference(secret awssecretsmanager.ISecret) *string {
