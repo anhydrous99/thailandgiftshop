@@ -4,6 +4,8 @@ import (
 	appobservability "github.com/anhydrous99/thailandgiftshop/internal/observability"
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudwatch"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awsiam"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awskms"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssns"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssnssubscriptions"
 	"github.com/aws/jsii-runtime-go"
@@ -260,8 +262,25 @@ func addOperationsAlarmTopic(stack awscdk.Stack) awssns.Topic {
 		Description: jsii.String("Email address subscribed to critical operations alarms"),
 		Type:        jsii.String("String"),
 	})
+	// A customer-managed key (not alias/aws/sns) is required so the key policy
+	// can grant CloudWatch permission to publish; otherwise alarm actions to an
+	// SSE-SNS topic fail silently.
+	alarmKey := awskms.NewKey(stack, jsii.String("OperationsAlarmKey"), &awskms.KeyProps{
+		Description:       jsii.String("Encrypts the thailandgiftshop operations alarm SNS topic"),
+		Alias:             jsii.String("alias/thailandgiftshop-operations-alarms"),
+		EnableKeyRotation: jsii.Bool(true),
+	})
+	alarmKey.AddToResourcePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+		Sid:        jsii.String("AllowCloudWatchAlarmsToPublish"),
+		Effect:     awsiam.Effect_ALLOW,
+		Principals: &[]awsiam.IPrincipal{awsiam.NewServicePrincipal(jsii.String("cloudwatch.amazonaws.com"), nil)},
+		Actions:    jsii.Strings("kms:Decrypt", "kms:GenerateDataKey*"),
+		Resources:  jsii.Strings("*"),
+	}), jsii.Bool(false))
+
 	topic := awssns.NewTopic(stack, jsii.String("OperationsAlarmTopic"), &awssns.TopicProps{
 		TopicName: jsii.String(operationsAlarmTopicName),
+		MasterKey: alarmKey,
 	})
 	topic.AddSubscription(awssnssubscriptions.NewEmailSubscription(alarmNotificationEmail.ValueAsString(), nil))
 

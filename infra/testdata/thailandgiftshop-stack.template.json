@@ -3846,8 +3846,85 @@
       },
       "Type": "AWS::IAM::Policy"
     },
+    "OperationsAlarmKeyAF887FAB": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "Description": "Encrypts the thailandgiftshop operations alarm SNS topic",
+        "EnableKeyRotation": true,
+        "KeyPolicy": {
+          "Statement": [
+            {
+              "Action": "kms:*",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition"
+                      },
+                      ":iam::",
+                      {
+                        "Ref": "AWS::AccountId"
+                      },
+                      ":root"
+                    ]
+                  ]
+                }
+              },
+              "Resource": "*"
+            },
+            {
+              "Action": [
+                "kms:Decrypt",
+                "kms:GenerateDataKey*"
+              ],
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "cloudwatch.amazonaws.com"
+              },
+              "Resource": "*",
+              "Sid": "AllowCloudWatchAlarmsToPublish"
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ]
+      },
+      "Type": "AWS::KMS::Key",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "OperationsAlarmKeyAliasA0D3A05F": {
+      "Properties": {
+        "AliasName": "alias/thailandgiftshop-operations-alarms",
+        "TargetKeyId": {
+          "Fn::GetAtt": [
+            "OperationsAlarmKeyAF887FAB",
+            "Arn"
+          ]
+        }
+      },
+      "Type": "AWS::KMS::Alias"
+    },
     "OperationsAlarmTopic741F169B": {
       "Properties": {
+        "KmsMasterKeyId": {
+          "Fn::GetAtt": [
+            "OperationsAlarmKeyAF887FAB",
+            "Arn"
+          ]
+        },
         "Tags": [
           {
             "Key": "ManagedBy",
