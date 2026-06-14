@@ -198,14 +198,7 @@ func (p *StripeProvider) CreateSetupSession(ctx context.Context, input SetupSess
 	if err != nil {
 		return Session{}, err
 	}
-	params := &stripe.CheckoutSessionCreateParams{
-		Mode:       stripe.String(string(stripe.CheckoutSessionModeSetup)),
-		Customer:   stripe.String(input.StripeCustomerID),
-		Metadata:   map[string]string{"customer_id": input.CustomerID},
-		SuccessURL: stripe.String(input.SuccessURL),
-		CancelURL:  stripe.String(input.CancelURL),
-	}
-	params.SetIdempotencyKey("setup-" + input.CustomerID + "-" + nonce)
+	params := setupSessionCreateParams(input, nonce)
 
 	checkoutSession, err := p.client.V1CheckoutSessions.Create(ctx, params)
 	if err != nil {
@@ -213,6 +206,19 @@ func (p *StripeProvider) CreateSetupSession(ctx context.Context, input SetupSess
 	}
 
 	return sessionFromCheckoutSession(checkoutSession), nil
+}
+
+func setupSessionCreateParams(input SetupSessionInput, nonce string) *stripe.CheckoutSessionCreateParams {
+	params := &stripe.CheckoutSessionCreateParams{
+		Mode:       stripe.String(string(stripe.CheckoutSessionModeSetup)),
+		Currency:   stripe.String("usd"),
+		Customer:   stripe.String(input.StripeCustomerID),
+		Metadata:   map[string]string{"customer_id": input.CustomerID},
+		SuccessURL: stripe.String(input.SuccessURL),
+		CancelURL:  stripe.String(input.CancelURL),
+	}
+	params.SetIdempotencyKey("setup-" + input.CustomerID + "-" + nonce)
+	return params
 }
 
 // GetSession retrieves the session server-side with the payment method

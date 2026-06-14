@@ -237,6 +237,37 @@ func TestCheckoutSessionCreateParamsGuest(t *testing.T) {
 	}
 }
 
+func TestSetupSessionCreateParamsIncludesCurrency(t *testing.T) {
+	params := setupSessionCreateParams(SetupSessionInput{
+		CustomerID:       "cus0000000000000000000000a",
+		StripeCustomerID: "cus_stripe_123",
+		SuccessURL:       "https://thailandgiftshop.com/account/payment-methods?saved=1",
+		CancelURL:        "https://thailandgiftshop.com/account/payment-methods",
+	}, "nonce123")
+
+	if got := stringValue(params.Mode); got != string(stripe.CheckoutSessionModeSetup) {
+		t.Fatalf("Mode = %q, want setup", got)
+	}
+	if got := stringValue(params.Currency); got != "usd" {
+		t.Fatalf("Currency = %q, want usd", got)
+	}
+	if got := stringValue(params.Customer); got != "cus_stripe_123" {
+		t.Fatalf("Customer = %q, want Stripe customer id", got)
+	}
+	if params.Metadata["customer_id"] != "cus0000000000000000000000a" {
+		t.Fatalf("Metadata = %#v, want customer_id", params.Metadata)
+	}
+	if got := stringValue(params.SuccessURL); got != "https://thailandgiftshop.com/account/payment-methods?saved=1" {
+		t.Fatalf("SuccessURL = %q", got)
+	}
+	if got := stringValue(params.CancelURL); got != "https://thailandgiftshop.com/account/payment-methods" {
+		t.Fatalf("CancelURL = %q", got)
+	}
+	if got := stringValue(params.IdempotencyKey); got != "setup-cus0000000000000000000000a-nonce123" {
+		t.Fatalf("IdempotencyKey = %q, want setup idempotency key", got)
+	}
+}
+
 func TestStripeProviderKind(t *testing.T) {
 	provider := NewStripeProvider(StripeCredentials{SecretKey: "sk_test_placeholder", WebhookSigningSecret: testWebhookSigningSecret})
 	if provider.Kind() != KindStripe {
