@@ -85,7 +85,7 @@ test.describe('without JavaScript', () => {
     await fillAddress(page.getByTestId('address-form'), '10 force-reject Way');
     await page.getByTestId('address-form').getByRole('button', { name: 'Save address' }).click();
 
-    await expect(page.getByText('We could not verify this address.', { exact: false })).toBeVisible();
+    await expect(page.getByText('We could not verify this as a US shipping address.', { exact: false })).toBeVisible();
     await expect(page.getByTestId('address-row')).toHaveCount(0);
   });
 

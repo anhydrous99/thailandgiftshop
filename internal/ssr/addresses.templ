@@ -50,7 +50,7 @@ templ addressFormFields(form addressFormData) {
 		Phone (optional)
 		<input type="tel" name="phone" value={ form.Phone } autocomplete="tel" class="field-input h-12 text-base"/>
 	</label>
-	<p class="text-xs font-medium text-muted">Country: United States (US only while we launch)</p>
+	<p class="text-xs font-medium text-muted">Country: United States. We currently ship only within the United States while we launch.</p>
 }
 
 templ addressesPage(vm addressesPageData) {
@@ -65,7 +65,7 @@ templ addressesPage(vm addressesPageData) {
 						@breadcrumbNav(vm.Breadcrumbs)
 						<p class="text-xs font-semibold uppercase tracking-eyebrow text-flag-red">Account</p>
 						<h1 class="mt-3 font-display text-5xl font-bold leading-none tracking-tight text-flag-blue sm:text-6xl">Addresses</h1>
-						<p class="mt-5 max-w-3xl text-lg leading-8 text-muted">Save the shipping addresses you use for orders. US addresses only while we launch.</p>
+						<p class="mt-5 max-w-3xl text-lg leading-8 text-muted">Save the shipping addresses you use for orders. We currently ship only within the United States while we launch.</p>
 					</div>
 				</section>
 				@flagBand("h-3")

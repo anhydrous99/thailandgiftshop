@@ -217,7 +217,7 @@ func addressFormFields(form addressFormData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "\" autocomplete=\"tel\" class=\"field-input h-12 text-base\"></label><p class=\"text-xs font-medium text-muted\">Country: United States (US only while we launch)</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "\" autocomplete=\"tel\" class=\"field-input h-12 text-base\"></label><p class=\"text-xs font-medium text-muted\">Country: United States. We currently ship only within the United States while we launch.</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -270,7 +270,7 @@ func addressesPage(vm addressesPageData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Account</p><h1 class=\"mt-3 font-display text-5xl font-bold leading-none tracking-tight text-flag-blue sm:text-6xl\">Addresses</h1><p class=\"mt-5 max-w-3xl text-lg leading-8 text-muted\">Save the shipping addresses you use for orders. US addresses only while we launch.</p></div></section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Account</p><h1 class=\"mt-3 font-display text-5xl font-bold leading-none tracking-tight text-flag-blue sm:text-6xl\">Addresses</h1><p class=\"mt-5 max-w-3xl text-lg leading-8 text-muted\">Save the shipping addresses you use for orders. We currently ship only within the United States while we launch.</p></div></section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

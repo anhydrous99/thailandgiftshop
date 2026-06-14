@@ -12,7 +12,7 @@ import (
 
 // unverifiableAddressError is shown when Amazon Location Service cannot match
 // the entry to a deliverable address (the hard-block case).
-const unverifiableAddressError = "We could not verify this address. Check the street, city, state, and ZIP code."
+const unverifiableAddressError = "We could not verify this as a US shipping address. We currently ship only within the United States while we launch. Please check the street, city, state, and ZIP code."
 
 const (
 	addressChoiceSuggested = "suggested"

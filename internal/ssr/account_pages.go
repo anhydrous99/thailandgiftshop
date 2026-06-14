@@ -20,7 +20,7 @@ const maxAddressFieldLength = 120
 const maxAddressPostalCodeLength = 20
 const maxAddressPhoneLength = 32
 
-const invalidAddressError = "Fill in name, address line 1, city, state, and ZIP code."
+const invalidAddressError = "Enter a US shipping address with a name, street, city, state, and ZIP code."
 const addressLimitError = "You can save up to 10 addresses. Remove one to add another."
 const addressConflictError = "This address changed in another window. Review and try again."
 

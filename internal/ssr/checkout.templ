@@ -53,7 +53,7 @@ templ checkoutPage(vm checkoutPageViewModel) {
 										<div class="p-6">
 											<p class="text-xs font-semibold uppercase tracking-eyebrow text-flag-red">Shipping address</p>
 											<h2 class="mt-2 font-display text-2xl font-bold tracking-tight text-flag-blue">Where is this order going?</h2>
-											<p class="mt-3 text-sm leading-6 text-muted">US addresses only while we launch.</p>
+											<p class="mt-3 text-sm leading-6 text-muted">We currently ship only within the United States while we launch.</p>
 											<div class="mt-5 grid gap-4">
 												@addressFormFields(vm.AddressForm)
 											</div>
@@ -72,7 +72,7 @@ templ checkoutPage(vm checkoutPageViewModel) {
 									<div class="p-6">
 										<p class="text-xs font-semibold uppercase tracking-eyebrow text-flag-red">Shipping address</p>
 										<h2 class="mt-2 font-display text-2xl font-bold tracking-tight text-flag-blue">Add an address to continue</h2>
-										<p class="mt-3 text-sm leading-6 text-muted">Save the shipping address for this order. US addresses only while we launch.</p>
+										<p class="mt-3 text-sm leading-6 text-muted">Save the shipping address for this order. We currently ship only within the United States while we launch.</p>
 										<form method="post" action="/account/addresses" data-testid="address-form" class="mt-5 grid gap-4">
 											<input type="hidden" name="csrf_token" value={ vm.CSRFToken }/>
 											<input type="hidden" name="next" value="/checkout"/>

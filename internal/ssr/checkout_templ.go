@@ -139,7 +139,7 @@ func checkoutPage(vm checkoutPageViewModel) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<div class=\"p-6\"><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Shipping address</p><h2 class=\"mt-2 font-display text-2xl font-bold tracking-tight text-flag-blue\">Where is this order going?</h2><p class=\"mt-3 text-sm leading-6 text-muted\">US addresses only while we launch.</p><div class=\"mt-5 grid gap-4\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<div class=\"p-6\"><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Shipping address</p><h2 class=\"mt-2 font-display text-2xl font-bold tracking-tight text-flag-blue\">Where is this order going?</h2><p class=\"mt-3 text-sm leading-6 text-muted\">We currently ship only within the United States while we launch.</p><div class=\"mt-5 grid gap-4\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -176,7 +176,7 @@ func checkoutPage(vm checkoutPageViewModel) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<div class=\"p-6\"><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Shipping address</p><h2 class=\"mt-2 font-display text-2xl font-bold tracking-tight text-flag-blue\">Add an address to continue</h2><p class=\"mt-3 text-sm leading-6 text-muted\">Save the shipping address for this order. US addresses only while we launch.</p><form method=\"post\" action=\"/account/addresses\" data-testid=\"address-form\" class=\"mt-5 grid gap-4\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<div class=\"p-6\"><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Shipping address</p><h2 class=\"mt-2 font-display text-2xl font-bold tracking-tight text-flag-blue\">Add an address to continue</h2><p class=\"mt-3 text-sm leading-6 text-muted\">Save the shipping address for this order. We currently ship only within the United States while we launch.</p><form method=\"post\" action=\"/account/addresses\" data-testid=\"address-form\" class=\"mt-5 grid gap-4\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
