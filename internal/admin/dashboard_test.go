@@ -6,7 +6,25 @@ import (
 	"testing"
 
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
+	"github.com/anhydrous99/thailandgiftshop/internal/staticassets"
 )
+
+// TestDashboardUsesExternalScript guards the CSP fix: the dashboard upload-
+// failure counter must load from an external file, never an inline <script>.
+func TestDashboardUsesExternalScript(t *testing.T) {
+	handler, _ := newAuthTestHandler(t)
+	response := authenticatedProductGet(t, handler, "/admin")
+
+	if strings.Contains(response.Body, "<script>") {
+		t.Fatalf("admin dashboard embeds an inline <script> blocked by the production CSP: %q", response.Body)
+	}
+	if strings.Contains(response.Body, "sessionStorage") || strings.Contains(response.Body, "querySelector") {
+		t.Fatalf("inline dashboard script logic leaked into the admin dashboard HTML: %q", response.Body)
+	}
+	if !strings.Contains(response.Body, `<script src="`+staticassets.AdminDashboardJSPath+`" defer>`) {
+		t.Fatalf("admin dashboard missing the external script %q: %q", staticassets.AdminDashboardJSPath, response.Body)
+	}
+}
 
 func TestDashboardMetricsCountsCatalogOperationalState(t *testing.T) {
 	handler, _ := newAuthTestHandler(t)

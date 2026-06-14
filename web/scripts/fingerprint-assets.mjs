@@ -13,7 +13,7 @@ const repoRoot = path.resolve(webRoot, "..");
 
 const cssDir = path.join(webRoot, "static", "assets");
 const cssTempPath = path.join(cssDir, "app.css");
-const jsSourcePath = path.join(webRoot, "src", "js", "enhance.js");
+const jsSourceDir = path.join(webRoot, "src", "js");
 const jsDir = path.join(webRoot, "static", "js");
 const fontSourceDir = path.join(webRoot, "src", "fonts");
 const fontDir = path.join(webRoot, "static", "fonts");
@@ -25,6 +25,12 @@ const fonts = [
 	["inter-latin-400.woff2", "Inter400FontPath"],
 	["inter-latin-500.woff2", "Inter500FontPath"],
 	["inter-latin-700.woff2", "Inter700FontPath"],
+];
+
+const scripts = [
+	["enhance.js", "EnhanceJSPath"],
+	["admin-product-upload.js", "AdminProductUploadJSPath"],
+	["admin-dashboard.js", "AdminDashboardJSPath"],
 ];
 
 function fingerprint(buffer) {
@@ -84,19 +90,24 @@ const cssFilename = await fingerprintBuffer({
 });
 await rm(cssTempPath, { force: true });
 
-const jsFilename = await fingerprintFile({
-	sourcePath: jsSourcePath,
-	outputDir: jsDir,
-	basename: "enhance",
-	extension: "js",
-	cleanPattern: /^enhance\.[a-f0-9]{12}\.js$/,
-});
+const scriptPaths = new Map();
+for (const [filename, constName] of scripts) {
+	const extension = path.extname(filename).slice(1);
+	const basename = path.basename(filename, `.${extension}`);
+	const hashedFilename = await fingerprintFile({
+		sourcePath: path.join(jsSourceDir, filename),
+		outputDir: jsDir,
+		basename,
+		extension,
+		cleanPattern: new RegExp(`^${basename}\\.[a-f0-9]{12}\\.${extension}$`),
+	});
+	scriptPaths.set(constName, `/static/js/${hashedFilename}`);
+}
 
 const appCSSPath = `/static/assets/${cssFilename}`;
-const enhanceJSPath = `/static/js/${jsFilename}`;
 const generatedConstants = [
 	["AppCSSPath", appCSSPath],
-	["EnhanceJSPath", enhanceJSPath],
+	...Array.from(scriptPaths.entries()),
 	...Array.from(fontPaths.entries()),
 ]
 	.map(([name, value]) => `\t${name} = ${JSON.stringify(value)}`)
@@ -108,7 +119,9 @@ await writeFile(generatedGoPath, generatedGo);
 await run("gofmt", ["-w", generatedGoPath]);
 
 console.log(`fingerprinted ${appCSSPath}`);
-console.log(`fingerprinted ${enhanceJSPath}`);
+for (const assetPath of scriptPaths.values()) {
+	console.log(`fingerprinted ${assetPath}`);
+}
 for (const assetPath of fontPaths.values()) {
 	console.log(`fingerprinted ${assetPath}`);
 }

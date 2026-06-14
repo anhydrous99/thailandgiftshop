@@ -3,11 +3,13 @@
 package staticassets
 
 const (
-	AppCSSPath              = "/static/assets/app.b84e425bec20.css"
-	EnhanceJSPath           = "/static/js/enhance.12a509bb07d6.js"
-	SpaceGrotesk500FontPath = "/static/fonts/space-grotesk-latin-500.1b1a8131d9ed.woff2"
-	SpaceGrotesk700FontPath = "/static/fonts/space-grotesk-latin-700.35f8aec56cfd.woff2"
-	Inter400FontPath        = "/static/fonts/inter-latin-400.8909904ab6c8.woff2"
-	Inter500FontPath        = "/static/fonts/inter-latin-500.f3779f1efccc.woff2"
-	Inter700FontPath        = "/static/fonts/inter-latin-700.6f56409fd3d6.woff2"
+	AppCSSPath               = "/static/assets/app.b84e425bec20.css"
+	EnhanceJSPath            = "/static/js/enhance.12a509bb07d6.js"
+	AdminProductUploadJSPath = "/static/js/admin-product-upload.160ffcb1aea2.js"
+	AdminDashboardJSPath     = "/static/js/admin-dashboard.5735b0da2bbd.js"
+	SpaceGrotesk500FontPath  = "/static/fonts/space-grotesk-latin-500.1b1a8131d9ed.woff2"
+	SpaceGrotesk700FontPath  = "/static/fonts/space-grotesk-latin-700.35f8aec56cfd.woff2"
+	Inter400FontPath         = "/static/fonts/inter-latin-400.8909904ab6c8.woff2"
+	Inter500FontPath         = "/static/fonts/inter-latin-500.f3779f1efccc.woff2"
+	Inter700FontPath         = "/static/fonts/inter-latin-700.6f56409fd3d6.woff2"
 )

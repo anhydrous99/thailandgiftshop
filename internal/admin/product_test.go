@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
+	"github.com/anhydrous99/thailandgiftshop/internal/staticassets"
 	"github.com/aws/aws-lambda-go/events"
 )
 
@@ -43,6 +44,24 @@ func TestProductNewFormRendersUploadVariantAndCategoryControls(t *testing.T) {
 		if !strings.Contains(response.Body, want) {
 			t.Fatalf("new form missing %q: %q", want, response.Body)
 		}
+	}
+}
+
+// TestProductFormUsesExternalUploadScript guards the CSP fix: the production
+// Content-Security-Policy is script-src 'self' with no 'unsafe-inline', so the
+// admin image upload must load from an external file, never an inline <script>.
+func TestProductFormUsesExternalUploadScript(t *testing.T) {
+	handler, _ := newProductTestHandler(t)
+	response := authenticatedProductGet(t, handler, "/admin/products/new")
+
+	if strings.Contains(response.Body, "<script>") {
+		t.Fatalf("admin product form embeds an inline <script> blocked by the production CSP: %q", response.Body)
+	}
+	if strings.Contains(response.Body, "addEventListener") || strings.Contains(response.Body, "querySelector") {
+		t.Fatalf("inline upload script logic leaked into the admin product HTML: %q", response.Body)
+	}
+	if !strings.Contains(response.Body, `<script src="`+staticassets.AdminProductUploadJSPath+`" defer>`) {
+		t.Fatalf("admin product form missing the external upload script %q: %q", staticassets.AdminProductUploadJSPath, response.Body)
 	}
 }
 

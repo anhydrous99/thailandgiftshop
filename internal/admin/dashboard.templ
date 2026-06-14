@@ -147,13 +147,7 @@ templ adminDashboardPage(vm adminDashboardViewModel) {
 					</section>
 				</main>
 			</div>
-			<script>
-				(() => {
-					const uploadFailures = document.querySelector('[data-testid="admin-metric-upload-failures"]');
-					if (!uploadFailures) return;
-					uploadFailures.textContent = window.sessionStorage.getItem('adminProductImageUploadFailures') || uploadFailures.textContent;
-				})();
-			</script>
+			<script src={ staticassets.AdminDashboardJSPath } defer></script>
 		</body>
 	</html>
 }

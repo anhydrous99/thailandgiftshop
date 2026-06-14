@@ -8,7 +8,11 @@ package admin
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-import "strconv"
+import (
+	"strconv"
+
+	"github.com/anhydrous99/thailandgiftshop/internal/staticassets"
+)
 
 func adminProductHeader(csrfValue string, current string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
@@ -46,7 +50,7 @@ func adminProductHeader(csrfValue string, current string) templ.Component {
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.ResolveAttributeValue(csrfValue)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 22, Col: 61}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 26, Col: 61}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var2)
 		if templ_7745c5c3_Err != nil {
@@ -117,7 +121,7 @@ func adminProductListPage(vm adminProductListViewModel) templ.Component {
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(vm.Flash)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 50, Col: 167}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 54, Col: 167}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
@@ -135,7 +139,7 @@ func adminProductListPage(vm adminProductListViewModel) templ.Component {
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue(vm.Filters.Search)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 53, Col: 153}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 57, Col: 153}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5)
 		if templ_7745c5c3_Err != nil {
@@ -178,7 +182,7 @@ func adminProductListPage(vm adminProductListViewModel) templ.Component {
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.ResolveAttributeValue(vm.Filters.Category)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 55, Col: 167}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 59, Col: 167}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var6)
 		if templ_7745c5c3_Err != nil {
@@ -206,7 +210,7 @@ func adminProductListPage(vm adminProductListViewModel) templ.Component {
 				var templ_7745c5c3_Var7 string
 				templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(product.DisplayImageURL("/images/placeholder-product.jpg"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 65, Col: 134}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 69, Col: 134}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
 				if templ_7745c5c3_Err != nil {
@@ -219,7 +223,7 @@ func adminProductListPage(vm adminProductListViewModel) templ.Component {
 				var templ_7745c5c3_Var8 string
 				templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.ResolveAttributeValue(product.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 65, Col: 155}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 69, Col: 155}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var8)
 				if templ_7745c5c3_Err != nil {
@@ -232,7 +236,7 @@ func adminProductListPage(vm adminProductListViewModel) templ.Component {
 				var templ_7745c5c3_Var9 templ.SafeURL
 				templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinURLErrs("/admin/products/" + product.ID + "/edit")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 67, Col: 62}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 71, Col: 62}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 				if templ_7745c5c3_Err != nil {
@@ -245,7 +249,7 @@ func adminProductListPage(vm adminProductListViewModel) templ.Component {
 				var templ_7745c5c3_Var10 string
 				templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(product.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 67, Col: 166}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 71, Col: 166}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 				if templ_7745c5c3_Err != nil {
@@ -258,7 +262,7 @@ func adminProductListPage(vm adminProductListViewModel) templ.Component {
 				var templ_7745c5c3_Var11 string
 				templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(product.Slug)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 68, Col: 80}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 72, Col: 80}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 				if templ_7745c5c3_Err != nil {
@@ -271,7 +275,7 @@ func adminProductListPage(vm adminProductListViewModel) templ.Component {
 				var templ_7745c5c3_Var12 string
 				templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(formatAdminPrice(product.PriceCents))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 68, Col: 124}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 72, Col: 124}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 				if templ_7745c5c3_Err != nil {
@@ -284,7 +288,7 @@ func adminProductListPage(vm adminProductListViewModel) templ.Component {
 				var templ_7745c5c3_Var13 string
 				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(product.TotalAvailableStock()))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 68, Col: 181}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 72, Col: 181}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 				if templ_7745c5c3_Err != nil {
@@ -297,7 +301,7 @@ func adminProductListPage(vm adminProductListViewModel) templ.Component {
 				var templ_7745c5c3_Var14 string
 				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(string(product.Status))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 69, Col: 153}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 73, Col: 153}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 				if templ_7745c5c3_Err != nil {
@@ -310,7 +314,7 @@ func adminProductListPage(vm adminProductListViewModel) templ.Component {
 				var templ_7745c5c3_Var15 templ.SafeURL
 				templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinURLErrs("/admin/products/" + product.ID + "/edit")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 71, Col: 61}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 75, Col: 61}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 				if templ_7745c5c3_Err != nil {
@@ -386,7 +390,7 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 		var templ_7745c5c3_Var17 string
 		templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(vm.Title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 97, Col: 118}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 101, Col: 118}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 		if templ_7745c5c3_Err != nil {
@@ -404,7 +408,7 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 			var templ_7745c5c3_Var18 string
 			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(vm.Product.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 100, Col: 132}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 104, Col: 132}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 			if templ_7745c5c3_Err != nil {
@@ -417,7 +421,7 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 			var templ_7745c5c3_Var19 string
 			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(vm.Product.Version))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 100, Col: 180}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 104, Col: 180}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 			if templ_7745c5c3_Err != nil {
@@ -440,7 +444,7 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 			var templ_7745c5c3_Var20 string
 			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(vm.Flash)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 106, Col: 169}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 110, Col: 169}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 			if templ_7745c5c3_Err != nil {
@@ -464,7 +468,7 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 				var templ_7745c5c3_Var21 string
 				templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(err)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 113, Col: 20}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 117, Col: 20}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 				if templ_7745c5c3_Err != nil {
@@ -487,7 +491,7 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 		var templ_7745c5c3_Var22 templ.SafeURL
 		templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinURLErrs(vm.Action)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 118, Col: 72}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 122, Col: 72}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 		if templ_7745c5c3_Err != nil {
@@ -500,7 +504,7 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 		var templ_7745c5c3_Var23 string
 		templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.ResolveAttributeValue(vm.CSRFValue)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 119, Col: 67}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 123, Col: 67}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var23)
 		if templ_7745c5c3_Err != nil {
@@ -513,7 +517,7 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 		var templ_7745c5c3_Var24 string
 		templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.ResolveAttributeValue(strconv.Itoa(vm.Product.Version))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 120, Col: 84}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 124, Col: 84}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var24)
 		if templ_7745c5c3_Err != nil {
@@ -526,7 +530,7 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 		var templ_7745c5c3_Var25 string
 		templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.ResolveAttributeValue(vm.Product.ImageURL)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 121, Col: 105}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 125, Col: 105}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var25)
 		if templ_7745c5c3_Err != nil {
@@ -539,7 +543,7 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 		var templ_7745c5c3_Var26 string
 		templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.ResolveAttributeValue(vm.ImageToken)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 122, Col: 103}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 126, Col: 103}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var26)
 		if templ_7745c5c3_Err != nil {
@@ -552,7 +556,7 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 		var templ_7745c5c3_Var27 string
 		templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.ResolveAttributeValue(vm.Product.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 124, Col: 155}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 128, Col: 155}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var27)
 		if templ_7745c5c3_Err != nil {
@@ -565,7 +569,7 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 		var templ_7745c5c3_Var28 string
 		templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.ResolveAttributeValue(vm.Product.Slug)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 125, Col: 155}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 129, Col: 155}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var28)
 		if templ_7745c5c3_Err != nil {
@@ -588,7 +592,7 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 		var templ_7745c5c3_Var29 string
 		templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(vm.Product.Description)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 127, Col: 327}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 131, Col: 327}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 		if templ_7745c5c3_Err != nil {
@@ -601,7 +605,7 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 		var templ_7745c5c3_Var30 string
 		templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.ResolveAttributeValue(priceInputValue(vm.Product.PriceCents))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 129, Col: 201}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 133, Col: 201}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var30)
 		if templ_7745c5c3_Err != nil {
@@ -614,7 +618,7 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 		var templ_7745c5c3_Var31 string
 		templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.ResolveAttributeValue(strconv.Itoa(vm.Product.SortOrder))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 130, Col: 152}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 134, Col: 152}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var31)
 		if templ_7745c5c3_Err != nil {
@@ -627,7 +631,7 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 		var templ_7745c5c3_Var32 string
 		templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.ResolveAttributeValue(strconv.Itoa(vm.Product.StockQuantity))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 131, Col: 170}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 135, Col: 170}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var32)
 		if templ_7745c5c3_Err != nil {
@@ -675,7 +679,7 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 			var templ_7745c5c3_Var33 string
 			templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.ResolveAttributeValue(vm.Product.ImageURL)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 137, Col: 140}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 141, Col: 140}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var33)
 			if templ_7745c5c3_Err != nil {
@@ -698,7 +702,7 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 			var templ_7745c5c3_Var34 string
 			templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.ResolveAttributeValue(category.Slug)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 144, Col: 231}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 148, Col: 231}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var34)
 			if templ_7745c5c3_Err != nil {
@@ -721,7 +725,7 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 			var templ_7745c5c3_Var35 string
 			templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(category.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 144, Col: 307}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 148, Col: 307}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 			if templ_7745c5c3_Err != nil {
@@ -739,7 +743,7 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 		var templ_7745c5c3_Var36 string
 		templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(vm.Product.TotalAvailableStock()))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 149, Col: 293}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 153, Col: 293}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
 		if templ_7745c5c3_Err != nil {
@@ -757,7 +761,7 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 			var templ_7745c5c3_Var37 string
 			templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.ResolveAttributeValue(variant.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 152, Col: 188}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 156, Col: 188}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var37)
 			if templ_7745c5c3_Err != nil {
@@ -770,7 +774,7 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 			var templ_7745c5c3_Var38 string
 			templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.ResolveAttributeValue(variant.Label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 152, Col: 343}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 156, Col: 343}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var38)
 			if templ_7745c5c3_Err != nil {
@@ -783,7 +787,7 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 			var templ_7745c5c3_Var39 string
 			templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.ResolveAttributeValue(strconv.Itoa(variant.StockQuantity))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 152, Col: 625}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 156, Col: 625}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var39)
 			if templ_7745c5c3_Err != nil {
@@ -831,7 +835,7 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 		var templ_7745c5c3_Var40 string
 		templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(vm.SubmitText)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 157, Col: 279}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 161, Col: 279}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 		if templ_7745c5c3_Err != nil {
@@ -859,7 +863,7 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 			var templ_7745c5c3_Var41 templ.SafeURL
 			templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinURLErrs("/admin/products/" + vm.Product.ID + "/archive")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 164, Col: 110}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 168, Col: 110}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 			if templ_7745c5c3_Err != nil {
@@ -872,7 +876,7 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 			var templ_7745c5c3_Var42 string
 			templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.ResolveAttributeValue(vm.CSRFValue)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 164, Col: 172}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 168, Col: 172}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var42)
 			if templ_7745c5c3_Err != nil {
@@ -883,7 +887,20 @@ func adminProductFormPage(vm adminProductFormViewModel) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 95, "</section></div></main></div><script>\n\t\t\t\t(() => {\n\t\t\t\t\tconst fileInput = document.querySelector('[data-testid=\"product-image-input\"]');\n\t\t\t\t\tconst urlInput = document.querySelector('[data-testid=\"product-image-url\"]');\n\t\t\t\t\tconst tokenInput = document.querySelector('[data-testid=\"product-image-token\"]');\n\t\t\t\t\tconst status = document.querySelector('[data-testid=\"product-image-status\"]');\n\t\t\t\t\tconst saveButton = document.querySelector('[data-testid=\"product-save-button\"]');\n\t\t\t\t\tconst csrfInput = document.querySelector('input[name=\"csrf_token\"]');\n\t\t\t\t\tif (!fileInput || !urlInput || !tokenInput || !status || !csrfInput) return;\n\t\t\t\t\tfileInput.addEventListener('change', async () => {\n\t\t\t\t\t\tconst file = fileInput.files && fileInput.files[0];\n\t\t\t\t\t\tif (!file) return;\n\t\t\t\t\t\tstatus.textContent = 'Preparing upload...';\n\t\t\t\t\t\tif (saveButton) saveButton.disabled = true;\n\t\t\t\t\t\ttry {\n\t\t\t\t\t\t\tconst headers = { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfInput.value };\n\t\t\t\t\t\t\tconst presign = await fetch('/admin/uploads/product-image/presign', { method: 'POST', headers, body: JSON.stringify({ content_type: file.type, size_bytes: file.size }) }).then((response) => response.json());\n\t\t\t\t\t\t\tif (!presign.key) throw new Error('presign failed');\n\t\t\t\t\t\t\tif (presign.url !== '/admin/uploads/product-image/local') {\n\t\t\t\t\t\t\t\tconst form = new FormData();\n\t\t\t\t\t\t\t\tObject.entries(presign.fields || {}).forEach(([key, value]) => form.append(key, value));\n\t\t\t\t\t\t\t\tform.append('file', file);\n\t\t\t\t\t\t\t\tconst uploaded = await fetch(presign.url, { method: 'POST', body: form });\n\t\t\t\t\t\t\t\tif (!uploaded.ok) throw new Error('upload failed');\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tconst confirmed = await fetch('/admin/uploads/product-image/confirm', { method: 'POST', headers, body: JSON.stringify({ key: presign.key, content_type: file.type, size_bytes: file.size }) }).then((response) => response.json());\n\t\t\t\t\t\t\tif (!confirmed.url || !confirmed.token) throw new Error('confirm failed');\n\t\t\t\t\t\t\turlInput.value = confirmed.url;\n\t\t\t\t\t\t\ttokenInput.value = confirmed.token;\n\t\t\t\t\t\t\tstatus.textContent = 'Image confirmed: ' + confirmed.url;\n\t\t\t\t\t\t\tif (saveButton) saveButton.disabled = false;\n\t\t\t\t\t\t} catch (error) {\n\t\t\t\t\t\t\turlInput.value = '';\n\t\t\t\t\t\t\ttokenInput.value = '';\n\t\t\t\t\t\t\twindow.sessionStorage.setItem('adminProductImageUploadFailures', String(Number(window.sessionStorage.getItem('adminProductImageUploadFailures') || '0') + 1));\n\t\t\t\t\t\t\tstatus.textContent = 'Image upload failed. Choose a JPEG, PNG, or WebP under 5 MiB.';\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t})();\n\t\t\t</script></body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 95, "</section></div></main></div><script src=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var43 string
+		templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.ResolveAttributeValue(staticassets.AdminProductUploadJSPath)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/product.templ`, Line: 174, Col: 54}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var43)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 96, "\" defer></script></body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
