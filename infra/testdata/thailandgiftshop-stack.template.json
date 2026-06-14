@@ -108,6 +108,54 @@
     }
   },
   "Resources": {
+    "AddressValidationUnavailableAlarmA4C1FDD7": {
+      "Properties": {
+        "ActionsEnabled": false,
+        "AlarmDescription": "Address validation was unavailable and failed open.",
+        "AlarmName": "ThailandGiftshop-AddressValidation-Unavailable",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "Metrics": [
+          {
+            "Id": "m1",
+            "Label": "Address validation unavailable",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Outcome",
+                    "Value": "unavailable"
+                  },
+                  {
+                    "Name": "Service",
+                    "Value": "ssr"
+                  }
+                ],
+                "MetricName": "AddressValidation",
+                "Namespace": "ThailandGiftshop/App"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": true
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
     "AdminCloudFrontWebACL": {
       "Properties": {
         "DefaultAction": {
@@ -513,12 +561,7 @@
     },
     "AdminLambdaDurationMaxNearTimeoutAlarm4B8A4D46": {
       "Properties": {
-        "ActionsEnabled": true,
-        "AlarmActions": [
-          {
-            "Ref": "OperationsAlarmTopic741F169B"
-          }
-        ],
+        "ActionsEnabled": false,
         "AlarmDescription": "Admin Lambda max duration is above 8 seconds and close to the 10 second timeout.",
         "AlarmName": "ThailandGiftshop-AdminLambda-DurationMax-NearTimeout",
         "ComparisonOperator": "GreaterThanThreshold",
@@ -645,12 +688,7 @@
     },
     "AdminLambdaMemoryUsedHighAlarm8C41F7F2": {
       "Properties": {
-        "ActionsEnabled": true,
-        "AlarmActions": [
-          {
-            "Ref": "OperationsAlarmTopic741F169B"
-          }
-        ],
+        "ActionsEnabled": false,
         "AlarmDescription": "Admin Lambda max memory used is above 100 MB after the 128 MB memory cutover.",
         "AlarmName": "ThailandGiftshop-AdminLambda-MemoryUsed-High",
         "ComparisonOperator": "GreaterThanThreshold",
@@ -1376,12 +1414,7 @@
     },
     "AdminOriginRejectedAlarm1A16AB49": {
       "Properties": {
-        "ActionsEnabled": true,
-        "AlarmActions": [
-          {
-            "Ref": "OperationsAlarmTopic741F169B"
-          }
-        ],
+        "ActionsEnabled": false,
         "AlarmDescription": "Admin origin header rejections were observed.",
         "AlarmName": "ThailandGiftshop-Admin-OriginRejected",
         "ComparisonOperator": "GreaterThanThreshold",
@@ -2281,12 +2314,7 @@
     },
     "CatalogWriteErrorsAlarm5D490D63": {
       "Properties": {
-        "ActionsEnabled": true,
-        "AlarmActions": [
-          {
-            "Ref": "OperationsAlarmTopic741F169B"
-          }
-        ],
+        "ActionsEnabled": false,
         "AlarmDescription": "Admin catalog write errors occurred.",
         "AlarmName": "ThailandGiftshop-CatalogWrite-Errors",
         "ComparisonOperator": "GreaterThanThreshold",
@@ -2573,6 +2601,218 @@
       },
       "Type": "AWS::CloudWatch::Alarm"
     },
+    "CommerceSystemErrorsAlarmD57E78DA": {
+      "Properties": {
+        "ActionsEnabled": false,
+        "AlarmDescription": "Commerce DynamoDB table has system errors.",
+        "AlarmName": "ThailandGiftshop-CommerceTable-SystemErrors",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "Metrics": [
+          {
+            "Expression": "cmeget+cmequery+cmeput+cmedelete+cmeupdate+cmebatchwrite+cmetransactwrite",
+            "Id": "expr_1",
+            "Label": "Commerce system errors",
+            "ReturnData": true
+          },
+          {
+            "Id": "cmebatchwrite",
+            "Label": "BatchWriteItem",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "BatchWriteItem"
+                  },
+                  {
+                    "Name": "TableName",
+                    "Value": {
+                      "Ref": "CommerceTable6CC80189"
+                    }
+                  }
+                ],
+                "MetricName": "SystemErrors",
+                "Namespace": "AWS/DynamoDB"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "cmedelete",
+            "Label": "DeleteItem",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "DeleteItem"
+                  },
+                  {
+                    "Name": "TableName",
+                    "Value": {
+                      "Ref": "CommerceTable6CC80189"
+                    }
+                  }
+                ],
+                "MetricName": "SystemErrors",
+                "Namespace": "AWS/DynamoDB"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "cmeget",
+            "Label": "GetItem",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "GetItem"
+                  },
+                  {
+                    "Name": "TableName",
+                    "Value": {
+                      "Ref": "CommerceTable6CC80189"
+                    }
+                  }
+                ],
+                "MetricName": "SystemErrors",
+                "Namespace": "AWS/DynamoDB"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "cmeput",
+            "Label": "PutItem",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "PutItem"
+                  },
+                  {
+                    "Name": "TableName",
+                    "Value": {
+                      "Ref": "CommerceTable6CC80189"
+                    }
+                  }
+                ],
+                "MetricName": "SystemErrors",
+                "Namespace": "AWS/DynamoDB"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "cmequery",
+            "Label": "Query",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "Query"
+                  },
+                  {
+                    "Name": "TableName",
+                    "Value": {
+                      "Ref": "CommerceTable6CC80189"
+                    }
+                  }
+                ],
+                "MetricName": "SystemErrors",
+                "Namespace": "AWS/DynamoDB"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "cmetransactwrite",
+            "Label": "TransactWriteItems",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "TransactWriteItems"
+                  },
+                  {
+                    "Name": "TableName",
+                    "Value": {
+                      "Ref": "CommerceTable6CC80189"
+                    }
+                  }
+                ],
+                "MetricName": "SystemErrors",
+                "Namespace": "AWS/DynamoDB"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "cmeupdate",
+            "Label": "UpdateItem",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "UpdateItem"
+                  },
+                  {
+                    "Name": "TableName",
+                    "Value": {
+                      "Ref": "CommerceTable6CC80189"
+                    }
+                  }
+                ],
+                "MetricName": "SystemErrors",
+                "Namespace": "AWS/DynamoDB"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
     "CommerceTable6CC80189": {
       "DeletionPolicy": "Retain",
       "Properties": {
@@ -2671,6 +2911,218 @@
       },
       "Type": "AWS::DynamoDB::Table",
       "UpdateReplacePolicy": "Retain"
+    },
+    "CommerceThrottlesAlarmFE515D04": {
+      "Properties": {
+        "ActionsEnabled": false,
+        "AlarmDescription": "Commerce DynamoDB table is throttling.",
+        "AlarmName": "ThailandGiftshop-CommerceTable-Throttles",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "Metrics": [
+          {
+            "Expression": "cmtget+cmtquery+cmtput+cmtdelete+cmtupdate+cmtbatchwrite+cmttransactwrite",
+            "Id": "expr_1",
+            "Label": "Commerce throttles",
+            "ReturnData": true
+          },
+          {
+            "Id": "cmtbatchwrite",
+            "Label": "BatchWriteItem",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "BatchWriteItem"
+                  },
+                  {
+                    "Name": "TableName",
+                    "Value": {
+                      "Ref": "CommerceTable6CC80189"
+                    }
+                  }
+                ],
+                "MetricName": "ThrottledRequests",
+                "Namespace": "AWS/DynamoDB"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "cmtdelete",
+            "Label": "DeleteItem",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "DeleteItem"
+                  },
+                  {
+                    "Name": "TableName",
+                    "Value": {
+                      "Ref": "CommerceTable6CC80189"
+                    }
+                  }
+                ],
+                "MetricName": "ThrottledRequests",
+                "Namespace": "AWS/DynamoDB"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "cmtget",
+            "Label": "GetItem",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "GetItem"
+                  },
+                  {
+                    "Name": "TableName",
+                    "Value": {
+                      "Ref": "CommerceTable6CC80189"
+                    }
+                  }
+                ],
+                "MetricName": "ThrottledRequests",
+                "Namespace": "AWS/DynamoDB"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "cmtput",
+            "Label": "PutItem",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "PutItem"
+                  },
+                  {
+                    "Name": "TableName",
+                    "Value": {
+                      "Ref": "CommerceTable6CC80189"
+                    }
+                  }
+                ],
+                "MetricName": "ThrottledRequests",
+                "Namespace": "AWS/DynamoDB"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "cmtquery",
+            "Label": "Query",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "Query"
+                  },
+                  {
+                    "Name": "TableName",
+                    "Value": {
+                      "Ref": "CommerceTable6CC80189"
+                    }
+                  }
+                ],
+                "MetricName": "ThrottledRequests",
+                "Namespace": "AWS/DynamoDB"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "cmttransactwrite",
+            "Label": "TransactWriteItems",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "TransactWriteItems"
+                  },
+                  {
+                    "Name": "TableName",
+                    "Value": {
+                      "Ref": "CommerceTable6CC80189"
+                    }
+                  }
+                ],
+                "MetricName": "ThrottledRequests",
+                "Namespace": "AWS/DynamoDB"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "cmtupdate",
+            "Label": "UpdateItem",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "UpdateItem"
+                  },
+                  {
+                    "Name": "TableName",
+                    "Value": {
+                      "Ref": "CommerceTable6CC80189"
+                    }
+                  }
+                ],
+                "MetricName": "ThrottledRequests",
+                "Namespace": "AWS/DynamoDB"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
     },
     "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C81C01536": {
       "DependsOn": [
@@ -2901,6 +3353,54 @@
       },
       "Type": "AWS::IAM::Policy"
     },
+    "CustomerAuthErrorsAlarm8B8ED80C": {
+      "Properties": {
+        "ActionsEnabled": false,
+        "AlarmDescription": "Customer account authentication flow errors occurred.",
+        "AlarmName": "ThailandGiftshop-CustomerAuth-Errors",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "Metrics": [
+          {
+            "Id": "m1",
+            "Label": "Customer auth errors",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Outcome",
+                    "Value": "error"
+                  },
+                  {
+                    "Name": "Service",
+                    "Value": "ssr"
+                  }
+                ],
+                "MetricName": "CustomerAuth",
+                "Namespace": "ThailandGiftshop/App"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": true
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
     "CustomerSessionSecret059A28A9": {
       "DeletionPolicy": "Delete",
       "Properties": {
@@ -3022,12 +3522,7 @@
     },
     "ImageUploadErrorsAlarm54BBCCCD": {
       "Properties": {
-        "ActionsEnabled": true,
-        "AlarmActions": [
-          {
-            "Ref": "OperationsAlarmTopic741F169B"
-          }
-        ],
+        "ActionsEnabled": false,
         "AlarmDescription": "Product image upload errors occurred.",
         "AlarmName": "ThailandGiftshop-ProductImageUpload-Errors",
         "ComparisonOperator": "GreaterThanThreshold",
@@ -3559,11 +4054,11 @@
               {
                 "Ref": "AWS::Region"
               },
-              "\",\"metrics\":[[\"ThailandGiftshop/App\",\"CustomerAuth\",\"Outcome\",\"success\",\"Service\",\"ssr\",{\"label\":\"Customer auth success\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"CustomerAuth\",\"Outcome\",\"invalid\",\"Service\",\"ssr\",{\"label\":\"Customer auth invalid\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"CustomerAuth\",\"Outcome\",\"throttled\",\"Service\",\"ssr\",{\"label\":\"Customer auth throttled\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"CustomerAuth\",\"Outcome\",\"error\",\"Service\",\"ssr\",{\"label\":\"Customer auth errors\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"CheckoutPayment\",\"Outcome\",\"success\",\"Service\",\"checkout\",{\"label\":\"Checkout payment success\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[\"ThailandGiftshop/App\",\"CheckoutPayment\",\"Outcome\",\"insufficient_stock\",\"Service\",\"checkout\",{\"label\":\"Checkout insufficient stock\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[\"ThailandGiftshop/App\",\"CheckoutPayment\",\"Outcome\",\"provider_error\",\"Service\",\"checkout\",{\"label\":\"Checkout provider errors\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[\"ThailandGiftshop/App\",\"CheckoutPayment\",\"Outcome\",\"error\",\"Service\",\"checkout\",{\"label\":\"Checkout errors\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[\"ThailandGiftshop/App\",\"CheckoutRefund\",\"Outcome\",\"issued\",\"Service\",\"checkout\",{\"label\":\"Refunds issued\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[\"ThailandGiftshop/App\",\"CheckoutRefund\",\"Outcome\",\"issued_auto\",\"Service\",\"checkout\",{\"label\":\"Refunds auto-issued\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[\"ThailandGiftshop/App\",\"CheckoutRefund\",\"Outcome\",\"settled\",\"Service\",\"checkout\",{\"label\":\"Refunds settled\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[{\"label\":\"Checkout refund errors\",\"expression\":\"crffailed+crfprovider_error+crferror\",\"yAxis\":\"right\"}],[\"ThailandGiftshop/App\",\"CheckoutRefund\",\"Outcome\",\"error\",\"Service\",\"checkout\",{\"label\":\"CheckoutRefund error\",\"id\":\"crferror\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"CheckoutRefund\",\"Outcome\",\"failed\",\"Service\",\"checkout\",{\"label\":\"CheckoutRefund failed\",\"id\":\"crffailed\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"CheckoutRefund\",\"Outcome\",\"provider_error\",\"Service\",\"checkout\",{\"label\":\"CheckoutRefund provider_error\",\"id\":\"crfprovider_error\",\"visible\":false,\"stat\":\"Sum\"}]],\"yAxis\":{}}},{\"type\":\"metric\",\"width\":12,\"height\":6,\"x\":12,\"y\":20,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Stripe webhooks and stock adjustments\",\"region\":\"",
+              "\",\"metrics\":[[\"ThailandGiftshop/App\",\"CustomerAuth\",\"Outcome\",\"success\",\"Service\",\"ssr\",{\"label\":\"Customer auth success\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"CustomerAuth\",\"Outcome\",\"invalid\",\"Service\",\"ssr\",{\"label\":\"Customer auth invalid\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"CustomerAuth\",\"Outcome\",\"throttled\",\"Service\",\"ssr\",{\"label\":\"Customer auth throttled\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"CustomerAuth\",\"Outcome\",\"error\",\"Service\",\"ssr\",{\"label\":\"Customer auth errors\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"AddressValidation\",\"Outcome\",\"unavailable\",\"Service\",\"ssr\",{\"label\":\"Address validation unavailable\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"CheckoutPayment\",\"Outcome\",\"success\",\"Service\",\"checkout\",{\"label\":\"Checkout payment success\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[\"ThailandGiftshop/App\",\"CheckoutPayment\",\"Outcome\",\"insufficient_stock\",\"Service\",\"checkout\",{\"label\":\"Checkout insufficient stock\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[\"ThailandGiftshop/App\",\"CheckoutPayment\",\"Outcome\",\"provider_error\",\"Service\",\"checkout\",{\"label\":\"Checkout provider errors\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[\"ThailandGiftshop/App\",\"CheckoutPayment\",\"Outcome\",\"error\",\"Service\",\"checkout\",{\"label\":\"Checkout errors\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[\"ThailandGiftshop/App\",\"CheckoutRefund\",\"Outcome\",\"issued\",\"Service\",\"checkout\",{\"label\":\"Refunds issued\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[\"ThailandGiftshop/App\",\"CheckoutRefund\",\"Outcome\",\"issued_auto\",\"Service\",\"checkout\",{\"label\":\"Refunds auto-issued\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[\"ThailandGiftshop/App\",\"CheckoutRefund\",\"Outcome\",\"settled\",\"Service\",\"checkout\",{\"label\":\"Refunds settled\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[{\"label\":\"Checkout refund errors\",\"expression\":\"crffailed+crfprovider_error+crferror\",\"yAxis\":\"right\"}],[\"ThailandGiftshop/App\",\"CheckoutRefund\",\"Outcome\",\"error\",\"Service\",\"checkout\",{\"label\":\"CheckoutRefund error\",\"id\":\"crferror\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"CheckoutRefund\",\"Outcome\",\"failed\",\"Service\",\"checkout\",{\"label\":\"CheckoutRefund failed\",\"id\":\"crffailed\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"CheckoutRefund\",\"Outcome\",\"provider_error\",\"Service\",\"checkout\",{\"label\":\"CheckoutRefund provider_error\",\"id\":\"crfprovider_error\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"OrderEmail\",\"Outcome\",\"sent\",\"Service\",\"checkout\",{\"label\":\"Order emails sent\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[{\"label\":\"Order email errors\",\"expression\":\"oereserve_error+oesend_error+oemark_failed_error+oemark_sent_error\",\"yAxis\":\"right\"}],[\"ThailandGiftshop/App\",\"OrderEmail\",\"Outcome\",\"mark_failed_error\",\"Service\",\"checkout\",{\"label\":\"OrderEmail mark_failed_error\",\"id\":\"oemark_failed_error\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"OrderEmail\",\"Outcome\",\"mark_sent_error\",\"Service\",\"checkout\",{\"label\":\"OrderEmail mark_sent_error\",\"id\":\"oemark_sent_error\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"OrderEmail\",\"Outcome\",\"reserve_error\",\"Service\",\"checkout\",{\"label\":\"OrderEmail reserve_error\",\"id\":\"oereserve_error\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"OrderEmail\",\"Outcome\",\"send_error\",\"Service\",\"checkout\",{\"label\":\"OrderEmail send_error\",\"id\":\"oesend_error\",\"visible\":false,\"stat\":\"Sum\"}]],\"yAxis\":{}}},{\"type\":\"metric\",\"width\":12,\"height\":6,\"x\":12,\"y\":20,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Stripe webhooks and stock adjustments\",\"region\":\"",
               {
                 "Ref": "AWS::Region"
               },
-              "\",\"metrics\":[[\"ThailandGiftshop/App\",\"StripeWebhook\",\"Outcome\",\"processed\",\"Service\",\"ssr\",{\"label\":\"Stripe webhook processed\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"StripeWebhook\",\"Outcome\",\"ignored\",\"Service\",\"ssr\",{\"label\":\"Stripe webhook ignored\",\"stat\":\"Sum\"}],[{\"label\":\"Stripe webhook errors\",\"expression\":\"swinvalid_signature+swamount_mismatch+swrefund_mismatch+swpaid_after_terminal+swerror\"}],[\"ThailandGiftshop/App\",\"StripeWebhook\",\"Outcome\",\"amount_mismatch\",\"Service\",\"ssr\",{\"label\":\"StripeWebhook amount_mismatch\",\"id\":\"swamount_mismatch\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"StripeWebhook\",\"Outcome\",\"error\",\"Service\",\"ssr\",{\"label\":\"StripeWebhook error\",\"id\":\"swerror\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"StripeWebhook\",\"Outcome\",\"invalid_signature\",\"Service\",\"ssr\",{\"label\":\"StripeWebhook invalid_signature\",\"id\":\"swinvalid_signature\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"StripeWebhook\",\"Outcome\",\"paid_after_terminal\",\"Service\",\"ssr\",{\"label\":\"StripeWebhook paid_after_terminal\",\"id\":\"swpaid_after_terminal\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"StripeWebhook\",\"Outcome\",\"refund_mismatch\",\"Service\",\"ssr\",{\"label\":\"StripeWebhook refund_mismatch\",\"id\":\"swrefund_mismatch\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"StockAdjust\",\"Outcome\",\"reserve\",\"Service\",\"catalog\",{\"label\":\"Stock reservations\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[\"ThailandGiftshop/App\",\"StockAdjust\",\"Outcome\",\"release\",\"Service\",\"catalog\",{\"label\":\"Stock releases\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[\"ThailandGiftshop/App\",\"StockAdjust\",\"Outcome\",\"conflict\",\"Service\",\"catalog\",{\"label\":\"Stock adjust conflicts\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[\"ThailandGiftshop/App\",\"StockAdjust\",\"Outcome\",\"rollback_error\",\"Service\",\"catalog\",{\"label\":\"Stock adjust rollback errors\",\"stat\":\"Sum\",\"yAxis\":\"right\"}]],\"yAxis\":{}}},{\"type\":\"metric\",\"width\":12,\"height\":6,\"x\":0,\"y\":26,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Commerce table and order activity\",\"region\":\"",
+              "\",\"metrics\":[[\"ThailandGiftshop/App\",\"StripeWebhook\",\"Outcome\",\"processed\",\"Service\",\"ssr\",{\"label\":\"Stripe webhook processed\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"StripeWebhook\",\"Outcome\",\"ignored\",\"Service\",\"ssr\",{\"label\":\"Stripe webhook ignored\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"StripeWebhook\",\"Outcome\",\"invalid_signature\",\"Service\",\"ssr\",{\"label\":\"Stripe webhook invalid signatures\",\"stat\":\"Sum\"}],[{\"label\":\"Stripe webhook critical errors\",\"expression\":\"swamount_mismatch+swrefund_mismatch+swpaid_after_terminal+swerror\"}],[\"ThailandGiftshop/App\",\"StripeWebhook\",\"Outcome\",\"amount_mismatch\",\"Service\",\"ssr\",{\"label\":\"StripeWebhook amount_mismatch\",\"id\":\"swamount_mismatch\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"StripeWebhook\",\"Outcome\",\"error\",\"Service\",\"ssr\",{\"label\":\"StripeWebhook error\",\"id\":\"swerror\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"StripeWebhook\",\"Outcome\",\"paid_after_terminal\",\"Service\",\"ssr\",{\"label\":\"StripeWebhook paid_after_terminal\",\"id\":\"swpaid_after_terminal\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"StripeWebhook\",\"Outcome\",\"refund_mismatch\",\"Service\",\"ssr\",{\"label\":\"StripeWebhook refund_mismatch\",\"id\":\"swrefund_mismatch\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"StockAdjust\",\"Outcome\",\"reserve\",\"Service\",\"catalog\",{\"label\":\"Stock reservations\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[\"ThailandGiftshop/App\",\"StockAdjust\",\"Outcome\",\"release\",\"Service\",\"catalog\",{\"label\":\"Stock releases\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[\"ThailandGiftshop/App\",\"StockAdjust\",\"Outcome\",\"conflict\",\"Service\",\"catalog\",{\"label\":\"Stock adjust conflicts\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[\"ThailandGiftshop/App\",\"StockAdjust\",\"Outcome\",\"rollback_error\",\"Service\",\"catalog\",{\"label\":\"Stock adjust rollback errors\",\"stat\":\"Sum\",\"yAxis\":\"right\"}]],\"yAxis\":{}}},{\"type\":\"metric\",\"width\":12,\"height\":6,\"x\":0,\"y\":26,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Commerce table and order activity\",\"region\":\"",
               {
                 "Ref": "AWS::Region"
               },
@@ -3759,7 +4254,63 @@
               {
                 "Ref": "CatalogTableF8EA09BD"
               },
-              "\",{\"label\":\"UpdateItem\",\"id\":\"csupdate\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/WAFV2\",\"BlockedRequests\",\"Region\",\"Global\",\"Rule\",\"ALL\",\"WebACL\",\"ThailandGiftshopAdminCloudFront\",{\"label\":\"WAF blocked requests\",\"region\":\"us-east-1\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"AdminOriginRejected\",\"Operation\",\"origin\",\"Outcome\",\"rejected\",\"Service\",\"admin\",{\"label\":\"Admin origin rejected\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"AdminLoginAttempt\",\"Operation\",\"login\",\"Outcome\",\"invalid\",\"Service\",\"admin\",{\"label\":\"Admin login invalid\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"AdminLoginAttempt\",\"Operation\",\"login\",\"Outcome\",\"throttled\",\"Service\",\"admin\",{\"label\":\"Admin login throttled\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"CatalogWrite\",\"Outcome\",\"error\",\"Service\",\"admin\",{\"label\":\"Catalog write errors\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"ProductImageUpload\",\"Outcome\",\"error\",\"Service\",\"admin\",{\"label\":\"Image upload errors\",\"stat\":\"Sum\"}],[{\"label\":\"Admin login throttle table throttles\",\"expression\":\"altget+altupdate+altdelete\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"DeleteItem\",\"TableName\",\"",
+              "\",{\"label\":\"UpdateItem\",\"id\":\"csupdate\",\"visible\":false,\"stat\":\"Sum\"}],[{\"label\":\"Commerce throttles\",\"expression\":\"cmtget+cmtquery+cmtput+cmtdelete+cmtupdate+cmtbatchwrite+cmttransactwrite\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"BatchWriteItem\",\"TableName\",\"",
+              {
+                "Ref": "CommerceTable6CC80189"
+              },
+              "\",{\"label\":\"BatchWriteItem\",\"id\":\"cmtbatchwrite\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"DeleteItem\",\"TableName\",\"",
+              {
+                "Ref": "CommerceTable6CC80189"
+              },
+              "\",{\"label\":\"DeleteItem\",\"id\":\"cmtdelete\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"GetItem\",\"TableName\",\"",
+              {
+                "Ref": "CommerceTable6CC80189"
+              },
+              "\",{\"label\":\"GetItem\",\"id\":\"cmtget\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"PutItem\",\"TableName\",\"",
+              {
+                "Ref": "CommerceTable6CC80189"
+              },
+              "\",{\"label\":\"PutItem\",\"id\":\"cmtput\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"Query\",\"TableName\",\"",
+              {
+                "Ref": "CommerceTable6CC80189"
+              },
+              "\",{\"label\":\"Query\",\"id\":\"cmtquery\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"TransactWriteItems\",\"TableName\",\"",
+              {
+                "Ref": "CommerceTable6CC80189"
+              },
+              "\",{\"label\":\"TransactWriteItems\",\"id\":\"cmttransactwrite\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"UpdateItem\",\"TableName\",\"",
+              {
+                "Ref": "CommerceTable6CC80189"
+              },
+              "\",{\"label\":\"UpdateItem\",\"id\":\"cmtupdate\",\"visible\":false,\"stat\":\"Sum\"}],[{\"label\":\"Commerce system errors\",\"expression\":\"cmeget+cmequery+cmeput+cmedelete+cmeupdate+cmebatchwrite+cmetransactwrite\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"BatchWriteItem\",\"TableName\",\"",
+              {
+                "Ref": "CommerceTable6CC80189"
+              },
+              "\",{\"label\":\"BatchWriteItem\",\"id\":\"cmebatchwrite\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"DeleteItem\",\"TableName\",\"",
+              {
+                "Ref": "CommerceTable6CC80189"
+              },
+              "\",{\"label\":\"DeleteItem\",\"id\":\"cmedelete\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"GetItem\",\"TableName\",\"",
+              {
+                "Ref": "CommerceTable6CC80189"
+              },
+              "\",{\"label\":\"GetItem\",\"id\":\"cmeget\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"PutItem\",\"TableName\",\"",
+              {
+                "Ref": "CommerceTable6CC80189"
+              },
+              "\",{\"label\":\"PutItem\",\"id\":\"cmeput\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"Query\",\"TableName\",\"",
+              {
+                "Ref": "CommerceTable6CC80189"
+              },
+              "\",{\"label\":\"Query\",\"id\":\"cmequery\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"TransactWriteItems\",\"TableName\",\"",
+              {
+                "Ref": "CommerceTable6CC80189"
+              },
+              "\",{\"label\":\"TransactWriteItems\",\"id\":\"cmetransactwrite\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"UpdateItem\",\"TableName\",\"",
+              {
+                "Ref": "CommerceTable6CC80189"
+              },
+              "\",{\"label\":\"UpdateItem\",\"id\":\"cmeupdate\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/WAFV2\",\"BlockedRequests\",\"Region\",\"Global\",\"Rule\",\"ALL\",\"WebACL\",\"ThailandGiftshopAdminCloudFront\",{\"label\":\"WAF blocked requests\",\"region\":\"us-east-1\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"AdminOriginRejected\",\"Operation\",\"origin\",\"Outcome\",\"rejected\",\"Service\",\"admin\",{\"label\":\"Admin origin rejected\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"AdminLoginAttempt\",\"Operation\",\"login\",\"Outcome\",\"invalid\",\"Service\",\"admin\",{\"label\":\"Admin login invalid\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"AdminLoginAttempt\",\"Operation\",\"login\",\"Outcome\",\"throttled\",\"Service\",\"admin\",{\"label\":\"Admin login throttled\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"CatalogWrite\",\"Outcome\",\"error\",\"Service\",\"admin\",{\"label\":\"Catalog write errors\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"ProductImageUpload\",\"Outcome\",\"error\",\"Service\",\"admin\",{\"label\":\"Image upload errors\",\"stat\":\"Sum\"}],[{\"label\":\"Admin login throttle table throttles\",\"expression\":\"altget+altupdate+altdelete\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"DeleteItem\",\"TableName\",\"",
               {
                 "Ref": "AdminLoginAttemptsTable0319FCD7"
               },
@@ -3771,7 +4322,7 @@
               {
                 "Ref": "AdminLoginAttemptsTable0319FCD7"
               },
-              "\",{\"label\":\"UpdateItem\",\"id\":\"altupdate\",\"visible\":false,\"stat\":\"Sum\"}],[{\"label\":\"Stripe webhook errors\",\"expression\":\"swinvalid_signature+swamount_mismatch+swrefund_mismatch+swpaid_after_terminal+swerror\"}],[\"ThailandGiftshop/App\",\"StripeWebhook\",\"Outcome\",\"amount_mismatch\",\"Service\",\"ssr\",{\"label\":\"StripeWebhook amount_mismatch\",\"id\":\"swamount_mismatch\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"StripeWebhook\",\"Outcome\",\"error\",\"Service\",\"ssr\",{\"label\":\"StripeWebhook error\",\"id\":\"swerror\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"StripeWebhook\",\"Outcome\",\"invalid_signature\",\"Service\",\"ssr\",{\"label\":\"StripeWebhook invalid_signature\",\"id\":\"swinvalid_signature\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"StripeWebhook\",\"Outcome\",\"paid_after_terminal\",\"Service\",\"ssr\",{\"label\":\"StripeWebhook paid_after_terminal\",\"id\":\"swpaid_after_terminal\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"StripeWebhook\",\"Outcome\",\"refund_mismatch\",\"Service\",\"ssr\",{\"label\":\"StripeWebhook refund_mismatch\",\"id\":\"swrefund_mismatch\",\"visible\":false,\"stat\":\"Sum\"}],[{\"label\":\"Checkout payment errors\",\"expression\":\"cpprovider_error+cperror\"}],[\"ThailandGiftshop/App\",\"CheckoutPayment\",\"Outcome\",\"error\",\"Service\",\"checkout\",{\"label\":\"CheckoutPayment error\",\"id\":\"cperror\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"CheckoutPayment\",\"Outcome\",\"provider_error\",\"Service\",\"checkout\",{\"label\":\"CheckoutPayment provider_error\",\"id\":\"cpprovider_error\",\"visible\":false,\"stat\":\"Sum\"}],[{\"label\":\"Checkout refund errors\",\"expression\":\"crffailed+crfprovider_error+crferror\"}],[\"ThailandGiftshop/App\",\"CheckoutRefund\",\"Outcome\",\"error\",\"Service\",\"checkout\",{\"label\":\"CheckoutRefund error\",\"id\":\"crferror\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"CheckoutRefund\",\"Outcome\",\"failed\",\"Service\",\"checkout\",{\"label\":\"CheckoutRefund failed\",\"id\":\"crffailed\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"CheckoutRefund\",\"Outcome\",\"provider_error\",\"Service\",\"checkout\",{\"label\":\"CheckoutRefund provider_error\",\"id\":\"crfprovider_error\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"StockAdjust\",\"Outcome\",\"rollback_error\",\"Service\",\"catalog\",{\"label\":\"Stock adjust rollback errors\",\"stat\":\"Sum\"}]]}}]}"
+              "\",{\"label\":\"UpdateItem\",\"id\":\"altupdate\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"CustomerAuth\",\"Outcome\",\"error\",\"Service\",\"ssr\",{\"label\":\"Customer auth errors\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"AddressValidation\",\"Outcome\",\"unavailable\",\"Service\",\"ssr\",{\"label\":\"Address validation unavailable\",\"stat\":\"Sum\"}],[{\"label\":\"Order email errors\",\"expression\":\"oereserve_error+oesend_error+oemark_failed_error+oemark_sent_error\"}],[\"ThailandGiftshop/App\",\"OrderEmail\",\"Outcome\",\"mark_failed_error\",\"Service\",\"checkout\",{\"label\":\"OrderEmail mark_failed_error\",\"id\":\"oemark_failed_error\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"OrderEmail\",\"Outcome\",\"mark_sent_error\",\"Service\",\"checkout\",{\"label\":\"OrderEmail mark_sent_error\",\"id\":\"oemark_sent_error\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"OrderEmail\",\"Outcome\",\"reserve_error\",\"Service\",\"checkout\",{\"label\":\"OrderEmail reserve_error\",\"id\":\"oereserve_error\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"OrderEmail\",\"Outcome\",\"send_error\",\"Service\",\"checkout\",{\"label\":\"OrderEmail send_error\",\"id\":\"oesend_error\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"StripeWebhook\",\"Outcome\",\"invalid_signature\",\"Service\",\"ssr\",{\"label\":\"Stripe webhook invalid signatures\",\"stat\":\"Sum\"}],[{\"label\":\"Stripe webhook critical errors\",\"expression\":\"swamount_mismatch+swrefund_mismatch+swpaid_after_terminal+swerror\"}],[\"ThailandGiftshop/App\",\"StripeWebhook\",\"Outcome\",\"amount_mismatch\",\"Service\",\"ssr\",{\"label\":\"StripeWebhook amount_mismatch\",\"id\":\"swamount_mismatch\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"StripeWebhook\",\"Outcome\",\"error\",\"Service\",\"ssr\",{\"label\":\"StripeWebhook error\",\"id\":\"swerror\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"StripeWebhook\",\"Outcome\",\"paid_after_terminal\",\"Service\",\"ssr\",{\"label\":\"StripeWebhook paid_after_terminal\",\"id\":\"swpaid_after_terminal\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"StripeWebhook\",\"Outcome\",\"refund_mismatch\",\"Service\",\"ssr\",{\"label\":\"StripeWebhook refund_mismatch\",\"id\":\"swrefund_mismatch\",\"visible\":false,\"stat\":\"Sum\"}],[{\"label\":\"Checkout payment errors\",\"expression\":\"cpprovider_error+cperror\"}],[\"ThailandGiftshop/App\",\"CheckoutPayment\",\"Outcome\",\"error\",\"Service\",\"checkout\",{\"label\":\"CheckoutPayment error\",\"id\":\"cperror\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"CheckoutPayment\",\"Outcome\",\"provider_error\",\"Service\",\"checkout\",{\"label\":\"CheckoutPayment provider_error\",\"id\":\"cpprovider_error\",\"visible\":false,\"stat\":\"Sum\"}],[{\"label\":\"Checkout refund errors\",\"expression\":\"crffailed+crfprovider_error+crferror\"}],[\"ThailandGiftshop/App\",\"CheckoutRefund\",\"Outcome\",\"error\",\"Service\",\"checkout\",{\"label\":\"CheckoutRefund error\",\"id\":\"crferror\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"CheckoutRefund\",\"Outcome\",\"failed\",\"Service\",\"checkout\",{\"label\":\"CheckoutRefund failed\",\"id\":\"crffailed\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"CheckoutRefund\",\"Outcome\",\"provider_error\",\"Service\",\"checkout\",{\"label\":\"CheckoutRefund provider_error\",\"id\":\"crfprovider_error\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"StockAdjust\",\"Outcome\",\"rollback_error\",\"Service\",\"catalog\",{\"label\":\"Stock adjust rollback errors\",\"stat\":\"Sum\"}]]}}]}"
             ]
           ]
         },
@@ -3788,6 +4339,132 @@
         ]
       },
       "Type": "AWS::CloudWatch::Dashboard"
+    },
+    "OrderEmailErrorsAlarm94221984": {
+      "Properties": {
+        "ActionsEnabled": false,
+        "AlarmDescription": "Order lifecycle email send or tracking errors occurred.",
+        "AlarmName": "ThailandGiftshop-OrderEmail-Errors",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "Metrics": [
+          {
+            "Expression": "oereserve_error+oesend_error+oemark_failed_error+oemark_sent_error",
+            "Id": "expr_1",
+            "Label": "Order email errors",
+            "ReturnData": true
+          },
+          {
+            "Id": "oemark_failed_error",
+            "Label": "OrderEmail mark_failed_error",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Outcome",
+                    "Value": "mark_failed_error"
+                  },
+                  {
+                    "Name": "Service",
+                    "Value": "checkout"
+                  }
+                ],
+                "MetricName": "OrderEmail",
+                "Namespace": "ThailandGiftshop/App"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "oemark_sent_error",
+            "Label": "OrderEmail mark_sent_error",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Outcome",
+                    "Value": "mark_sent_error"
+                  },
+                  {
+                    "Name": "Service",
+                    "Value": "checkout"
+                  }
+                ],
+                "MetricName": "OrderEmail",
+                "Namespace": "ThailandGiftshop/App"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "oereserve_error",
+            "Label": "OrderEmail reserve_error",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Outcome",
+                    "Value": "reserve_error"
+                  },
+                  {
+                    "Name": "Service",
+                    "Value": "checkout"
+                  }
+                ],
+                "MetricName": "OrderEmail",
+                "Namespace": "ThailandGiftshop/App"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "oesend_error",
+            "Label": "OrderEmail send_error",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Outcome",
+                    "Value": "send_error"
+                  },
+                  {
+                    "Name": "Service",
+                    "Value": "checkout"
+                  }
+                ],
+                "MetricName": "OrderEmail",
+                "Namespace": "ThailandGiftshop/App"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
     },
     "ProductImagesBucket03BDA4C8": {
       "DeletionPolicy": "Retain",
@@ -4742,12 +5419,7 @@
     },
     "SsrLambdaDurationMaxNearTimeoutAlarm66293608": {
       "Properties": {
-        "ActionsEnabled": true,
-        "AlarmActions": [
-          {
-            "Ref": "OperationsAlarmTopic741F169B"
-          }
-        ],
+        "ActionsEnabled": false,
         "AlarmDescription": "SSR Lambda max duration is above 8 seconds and close to the 10 second timeout.",
         "AlarmName": "ThailandGiftshop-SsrLambda-DurationMax-NearTimeout",
         "ComparisonOperator": "GreaterThanThreshold",
@@ -4881,12 +5553,7 @@
     },
     "SsrLambdaMemoryUsedHighAlarm75C9CE02": {
       "Properties": {
-        "ActionsEnabled": true,
-        "AlarmActions": [
-          {
-            "Ref": "OperationsAlarmTopic741F169B"
-          }
-        ],
+        "ActionsEnabled": false,
         "AlarmDescription": "SSR Lambda max memory used is above 100 MB after the 128 MB memory cutover.",
         "AlarmName": "ThailandGiftshop-SsrLambda-MemoryUsed-High",
         "ComparisonOperator": "GreaterThanThreshold",
@@ -5545,15 +6212,15 @@
             "Ref": "OperationsAlarmTopic741F169B"
           }
         ],
-        "AlarmDescription": "Stripe webhook signature failures, amount or refund mismatches, payments captured for terminal orders (auto-refund already issued — verify its legitimacy and settlement in Stripe), or processing errors occurred.",
+        "AlarmDescription": "Stripe webhook amount or refund mismatches, payments captured for terminal orders with auto-refund issued, or processing errors occurred.",
         "AlarmName": "ThailandGiftshop-StripeWebhook-Errors",
         "ComparisonOperator": "GreaterThanThreshold",
         "EvaluationPeriods": 1,
         "Metrics": [
           {
-            "Expression": "swinvalid_signature+swamount_mismatch+swrefund_mismatch+swpaid_after_terminal+swerror",
+            "Expression": "swamount_mismatch+swrefund_mismatch+swpaid_after_terminal+swerror",
             "Id": "expr_1",
-            "Label": "Stripe webhook errors",
+            "Label": "Stripe webhook critical errors",
             "ReturnData": true
           },
           {
@@ -5589,30 +6256,6 @@
                   {
                     "Name": "Outcome",
                     "Value": "error"
-                  },
-                  {
-                    "Name": "Service",
-                    "Value": "ssr"
-                  }
-                ],
-                "MetricName": "StripeWebhook",
-                "Namespace": "ThailandGiftshop/App"
-              },
-              "Period": 300,
-              "Stat": "Sum",
-              "Unit": "Count"
-            },
-            "ReturnData": false
-          },
-          {
-            "Id": "swinvalid_signature",
-            "Label": "StripeWebhook invalid_signature",
-            "MetricStat": {
-              "Metric": {
-                "Dimensions": [
-                  {
-                    "Name": "Outcome",
-                    "Value": "invalid_signature"
                   },
                   {
                     "Name": "Service",
@@ -5688,6 +6331,54 @@
           }
         ],
         "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "StripeWebhookInvalidSignaturesAlarm33E27CE0": {
+      "Properties": {
+        "ActionsEnabled": false,
+        "AlarmDescription": "Stripe webhook invalid signatures exceeded the normal operating threshold.",
+        "AlarmName": "ThailandGiftshop-StripeWebhook-InvalidSignatures",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "Metrics": [
+          {
+            "Id": "m1",
+            "Label": "Stripe webhook invalid signatures",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Outcome",
+                    "Value": "invalid_signature"
+                  },
+                  {
+                    "Name": "Service",
+                    "Value": "ssr"
+                  }
+                ],
+                "MetricName": "StripeWebhook",
+                "Namespace": "ThailandGiftshop/App"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": true
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "Threshold": 5,
         "TreatMissingData": "notBreaching"
       },
       "Type": "AWS::CloudWatch::Alarm"

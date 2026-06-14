@@ -85,15 +85,15 @@ func addObservability(stack awscdk.Stack, resources observabilityResources) {
 	imageUploadSuccess := appMetric(appobservability.MetricProductImageUpload, "Image upload success", period5m, map[string]*string{"Service": jsii.String("admin"), "Outcome": jsii.String("success")})
 	imageUploadErrors := appMetric(appobservability.MetricProductImageUpload, "Image upload errors", period5m, map[string]*string{"Service": jsii.String("admin"), "Outcome": jsii.String("error")})
 
-	// Customer auth, checkout, webhook, and stock metrics query the EMF
+	// Customer auth, checkout, webhook, order email, and stock metrics query the EMF
 	// {Service, Outcome} rollup dimension set. Service values are part of the
 	// emitting packages' contract: customer auth and webhook handling record
-	// Service=ssr; checkout.Service and its stock adjustments record
-	// Service=checkout.
+	// Service=ssr; checkout.Service records checkout and order email outcomes.
 	customerAuthSuccess := appMetric(appobservability.MetricCustomerAuth, "Customer auth success", period5m, map[string]*string{"Service": jsii.String(metricServiceSsr), "Outcome": jsii.String("success")})
 	customerAuthInvalid := appMetric(appobservability.MetricCustomerAuth, "Customer auth invalid", period5m, map[string]*string{"Service": jsii.String(metricServiceSsr), "Outcome": jsii.String("invalid")})
 	customerAuthThrottled := appMetric(appobservability.MetricCustomerAuth, "Customer auth throttled", period5m, map[string]*string{"Service": jsii.String(metricServiceSsr), "Outcome": jsii.String("throttled")})
 	customerAuthError := appMetric(appobservability.MetricCustomerAuth, "Customer auth errors", period5m, map[string]*string{"Service": jsii.String(metricServiceSsr), "Outcome": jsii.String("error")})
+	addressValidationUnavailable := appMetric(appobservability.MetricAddressValidation, "Address validation unavailable", period5m, map[string]*string{"Service": jsii.String(metricServiceSsr), "Outcome": jsii.String("unavailable")})
 	checkoutPaymentSuccess := appMetric(appobservability.MetricCheckoutPayment, "Checkout payment success", period5m, map[string]*string{"Service": jsii.String(metricServiceCheckout), "Outcome": jsii.String("success")})
 	checkoutPaymentInsufficientStock := appMetric(appobservability.MetricCheckoutPayment, "Checkout insufficient stock", period5m, map[string]*string{"Service": jsii.String(metricServiceCheckout), "Outcome": jsii.String("insufficient_stock")})
 	checkoutPaymentProviderError := appMetric(appobservability.MetricCheckoutPayment, "Checkout provider errors", period5m, map[string]*string{"Service": jsii.String(metricServiceCheckout), "Outcome": jsii.String("provider_error")})
@@ -103,9 +103,12 @@ func addObservability(stack awscdk.Stack, resources observabilityResources) {
 	checkoutRefundIssuedAuto := appMetric(appobservability.MetricCheckoutRefund, "Refunds auto-issued", period5m, map[string]*string{"Service": jsii.String(metricServiceCheckout), "Outcome": jsii.String("issued_auto")})
 	checkoutRefundSettled := appMetric(appobservability.MetricCheckoutRefund, "Refunds settled", period5m, map[string]*string{"Service": jsii.String(metricServiceCheckout), "Outcome": jsii.String("settled")})
 	checkoutRefundErrors := appOutcomeSumMetric(appobservability.MetricCheckoutRefund, "Checkout refund errors", period5m, metricServiceCheckout, "crf", []string{"failed", "provider_error", "error"})
+	orderEmailSent := appMetric(appobservability.MetricOrderEmail, "Order emails sent", period5m, map[string]*string{"Service": jsii.String(metricServiceCheckout), "Outcome": jsii.String("sent")})
+	orderEmailErrors := appOutcomeSumMetric(appobservability.MetricOrderEmail, "Order email errors", period5m, metricServiceCheckout, "oe", []string{"reserve_error", "send_error", "mark_failed_error", "mark_sent_error"})
 	stripeWebhookProcessed := appMetric(appobservability.MetricStripeWebhook, "Stripe webhook processed", period5m, map[string]*string{"Service": jsii.String(metricServiceSsr), "Outcome": jsii.String("processed")})
 	stripeWebhookIgnored := appMetric(appobservability.MetricStripeWebhook, "Stripe webhook ignored", period5m, map[string]*string{"Service": jsii.String(metricServiceSsr), "Outcome": jsii.String("ignored")})
-	stripeWebhookErrors := appOutcomeSumMetric(appobservability.MetricStripeWebhook, "Stripe webhook errors", period5m, metricServiceSsr, "sw", []string{"invalid_signature", "amount_mismatch", "refund_mismatch", "paid_after_terminal", "error"})
+	stripeWebhookInvalidSignatures := appMetric(appobservability.MetricStripeWebhook, "Stripe webhook invalid signatures", period5m, map[string]*string{"Service": jsii.String(metricServiceSsr), "Outcome": jsii.String("invalid_signature")})
+	stripeWebhookErrors := appOutcomeSumMetric(appobservability.MetricStripeWebhook, "Stripe webhook critical errors", period5m, metricServiceSsr, "sw", []string{"amount_mismatch", "refund_mismatch", "paid_after_terminal", "error"})
 	// StockAdjust is emitted by internal/catalog's AdjustStock (Service=catalog)
 	// regardless of which Lambda triggered the adjustment.
 	stockAdjustReserve := appMetric(appobservability.MetricStockAdjust, "Stock reservations", period5m, map[string]*string{"Service": jsii.String(metricServiceCatalog), "Outcome": jsii.String("reserve")})
@@ -128,25 +131,31 @@ func addObservability(stack awscdk.Stack, resources observabilityResources) {
 		addAlarm(stack, "HttpApiLatencyAlarm", "ThailandGiftshop-HttpApi-LatencyP95-High", apiLatencyP95, 3000, 3, "HTTP API p95 latency is above 3 seconds."),
 		addCriticalAlarm(stack, operationsAlarmTopic, "SsrLambdaErrorsAlarm", "ThailandGiftshop-SsrLambda-Errors", ssrErrors, 0, 2, "SSR Lambda has errors."),
 		addCriticalAlarm(stack, operationsAlarmTopic, "AdminLambdaErrorsAlarm", "ThailandGiftshop-AdminLambda-Errors", adminErrors, 0, 2, "Admin Lambda has errors."),
-		addCriticalAlarm(stack, operationsAlarmTopic, "SsrLambdaMemoryUsedHighAlarm", "ThailandGiftshop-SsrLambda-MemoryUsed-High", ssrMemoryUsedMax, lambdaHighMemoryUsedMB, 1, "SSR Lambda max memory used is above 100 MB after the 128 MB memory cutover."),
-		addCriticalAlarm(stack, operationsAlarmTopic, "AdminLambdaMemoryUsedHighAlarm", "ThailandGiftshop-AdminLambda-MemoryUsed-High", adminMemoryUsedMax, lambdaHighMemoryUsedMB, 1, "Admin Lambda max memory used is above 100 MB after the 128 MB memory cutover."),
-		addCriticalAlarm(stack, operationsAlarmTopic, "SsrLambdaDurationMaxNearTimeoutAlarm", "ThailandGiftshop-SsrLambda-DurationMax-NearTimeout", ssrDurationMax, lambdaNearTimeoutDurationMs, 1, "SSR Lambda max duration is above 8 seconds and close to the 10 second timeout."),
-		addCriticalAlarm(stack, operationsAlarmTopic, "AdminLambdaDurationMaxNearTimeoutAlarm", "ThailandGiftshop-AdminLambda-DurationMax-NearTimeout", adminDurationMax, lambdaNearTimeoutDurationMs, 1, "Admin Lambda max duration is above 8 seconds and close to the 10 second timeout."),
+		addAlarm(stack, "SsrLambdaMemoryUsedHighAlarm", "ThailandGiftshop-SsrLambda-MemoryUsed-High", ssrMemoryUsedMax, lambdaHighMemoryUsedMB, 1, "SSR Lambda max memory used is above 100 MB after the 128 MB memory cutover."),
+		addAlarm(stack, "AdminLambdaMemoryUsedHighAlarm", "ThailandGiftshop-AdminLambda-MemoryUsed-High", adminMemoryUsedMax, lambdaHighMemoryUsedMB, 1, "Admin Lambda max memory used is above 100 MB after the 128 MB memory cutover."),
+		addAlarm(stack, "SsrLambdaDurationMaxNearTimeoutAlarm", "ThailandGiftshop-SsrLambda-DurationMax-NearTimeout", ssrDurationMax, lambdaNearTimeoutDurationMs, 1, "SSR Lambda max duration is above 8 seconds and close to the 10 second timeout."),
+		addAlarm(stack, "AdminLambdaDurationMaxNearTimeoutAlarm", "ThailandGiftshop-AdminLambda-DurationMax-NearTimeout", adminDurationMax, lambdaNearTimeoutDurationMs, 1, "Admin Lambda max duration is above 8 seconds and close to the 10 second timeout."),
 		addAlarm(stack, "SsrLambdaThrottlesAlarm", "ThailandGiftshop-SsrLambda-Throttles", ssrThrottles, 0, 1, "SSR Lambda is throttling."),
 		addAlarm(stack, "AdminLambdaThrottlesAlarm", "ThailandGiftshop-AdminLambda-Throttles", adminThrottles, 0, 1, "Admin Lambda is throttling."),
 		addAlarm(stack, "CatalogThrottlesAlarm", "ThailandGiftshop-CatalogTable-Throttles", catalogThrottles, 0, 1, "Catalog DynamoDB table is throttling."),
 		addAlarm(stack, "CatalogSystemErrorsAlarm", "ThailandGiftshop-CatalogTable-SystemErrors", catalogSystemErrors, 0, 1, "Catalog DynamoDB table has system errors."),
+		addAlarm(stack, "CommerceThrottlesAlarm", "ThailandGiftshop-CommerceTable-Throttles", commerceThrottles, 0, 1, "Commerce DynamoDB table is throttling."),
+		addAlarm(stack, "CommerceSystemErrorsAlarm", "ThailandGiftshop-CommerceTable-SystemErrors", commerceSystemErrors, 0, 1, "Commerce DynamoDB table has system errors."),
 		// The alarm ID and name predate the customer-auth rate rule; both are
 		// kept stable so the alarm resource is not replaced on deploy. The
 		// Rule=ALL metric covers every edge rule in the web ACL.
 		addAlarm(stack, "WafAdminBlocksAlarm", "ThailandGiftshop-WAF-AdminBlocks", wafBlocked, 10, 1, "WAF blocked requests across all edge rules (admin login, admin path, and customer auth) exceeded the normal operating threshold."),
-		addCriticalAlarm(stack, operationsAlarmTopic, "AdminOriginRejectedAlarm", "ThailandGiftshop-Admin-OriginRejected", adminOriginRejected, 0, 1, "Admin origin header rejections were observed."),
+		addAlarm(stack, "AdminOriginRejectedAlarm", "ThailandGiftshop-Admin-OriginRejected", adminOriginRejected, 0, 1, "Admin origin header rejections were observed."),
 		addAlarm(stack, "AdminLoginInvalidAlarm", "ThailandGiftshop-Admin-InvalidLogins", adminLoginInvalid, 10, 1, "Admin invalid login attempts exceeded the normal operating threshold."),
 		addAlarm(stack, "AdminLoginThrottledAlarm", "ThailandGiftshop-Admin-ThrottledLogins", adminLoginThrottled, 0, 1, "Admin login throttling occurred."),
-		addCriticalAlarm(stack, operationsAlarmTopic, "CatalogWriteErrorsAlarm", "ThailandGiftshop-CatalogWrite-Errors", catalogWriteErrors, 0, 1, "Admin catalog write errors occurred."),
-		addCriticalAlarm(stack, operationsAlarmTopic, "ImageUploadErrorsAlarm", "ThailandGiftshop-ProductImageUpload-Errors", imageUploadErrors, 0, 1, "Product image upload errors occurred."),
+		addAlarm(stack, "CatalogWriteErrorsAlarm", "ThailandGiftshop-CatalogWrite-Errors", catalogWriteErrors, 0, 1, "Admin catalog write errors occurred."),
+		addAlarm(stack, "ImageUploadErrorsAlarm", "ThailandGiftshop-ProductImageUpload-Errors", imageUploadErrors, 0, 1, "Product image upload errors occurred."),
 		addAlarm(stack, "AdminLoginThrottleTableThrottlesAlarm", "ThailandGiftshop-AdminLoginThrottleTable-Throttles", adminLoginThrottleTableThrottles, 0, 1, "Admin login throttle DynamoDB table is throttling."),
-		addCriticalAlarm(stack, operationsAlarmTopic, "StripeWebhookErrorsAlarm", "ThailandGiftshop-StripeWebhook-Errors", stripeWebhookErrors, 0, 1, "Stripe webhook signature failures, amount or refund mismatches, payments captured for terminal orders (auto-refund already issued — verify its legitimacy and settlement in Stripe), or processing errors occurred."),
+		addAlarm(stack, "CustomerAuthErrorsAlarm", "ThailandGiftshop-CustomerAuth-Errors", customerAuthError, 0, 1, "Customer account authentication flow errors occurred."),
+		addAlarm(stack, "AddressValidationUnavailableAlarm", "ThailandGiftshop-AddressValidation-Unavailable", addressValidationUnavailable, 0, 1, "Address validation was unavailable and failed open."),
+		addAlarm(stack, "OrderEmailErrorsAlarm", "ThailandGiftshop-OrderEmail-Errors", orderEmailErrors, 0, 1, "Order lifecycle email send or tracking errors occurred."),
+		addAlarm(stack, "StripeWebhookInvalidSignaturesAlarm", "ThailandGiftshop-StripeWebhook-InvalidSignatures", stripeWebhookInvalidSignatures, 5, 1, "Stripe webhook invalid signatures exceeded the normal operating threshold."),
+		addCriticalAlarm(stack, operationsAlarmTopic, "StripeWebhookErrorsAlarm", "ThailandGiftshop-StripeWebhook-Errors", stripeWebhookErrors, 0, 1, "Stripe webhook amount or refund mismatches, payments captured for terminal orders with auto-refund issued, or processing errors occurred."),
 		addCriticalAlarm(stack, operationsAlarmTopic, "CheckoutPaymentErrorsAlarm", "ThailandGiftshop-CheckoutPayment-Errors", checkoutPaymentErrors, 0, 1, "Checkout payment provider or processing errors occurred."),
 		addCriticalAlarm(stack, operationsAlarmTopic, "CheckoutRefundErrorsAlarm", "ThailandGiftshop-CheckoutRefund-Errors", checkoutRefundErrors, 0, 1, "A Stripe refund failed, could not be issued, or hit a processing error; the affected order page in /admin/orders names the refund and failure reason."),
 		addCriticalAlarm(stack, operationsAlarmTopic, "StockAdjustRollbackErrorsAlarm", "ThailandGiftshop-StockAdjust-RollbackErrors", stockAdjustRollbackErrors, 0, 1, "A stock reservation rollback failed; product stock may need manual correction."),
@@ -206,13 +215,13 @@ func addObservability(stack awscdk.Stack, resources observabilityResources) {
 		awscloudwatch.NewGraphWidget(&awscloudwatch.GraphWidgetProps{
 			Title: jsii.String("Customer accounts and checkout"),
 			Width: jsii.Number(12),
-			Left:  cwMetrics(customerAuthSuccess, customerAuthInvalid, customerAuthThrottled, customerAuthError),
-			Right: cwMetrics(checkoutPaymentSuccess, checkoutPaymentInsufficientStock, checkoutPaymentProviderError, checkoutPaymentError, checkoutRefundIssued, checkoutRefundIssuedAuto, checkoutRefundSettled, checkoutRefundErrors),
+			Left:  cwMetrics(customerAuthSuccess, customerAuthInvalid, customerAuthThrottled, customerAuthError, addressValidationUnavailable),
+			Right: cwMetrics(checkoutPaymentSuccess, checkoutPaymentInsufficientStock, checkoutPaymentProviderError, checkoutPaymentError, checkoutRefundIssued, checkoutRefundIssuedAuto, checkoutRefundSettled, checkoutRefundErrors, orderEmailSent, orderEmailErrors),
 		}),
 		awscloudwatch.NewGraphWidget(&awscloudwatch.GraphWidgetProps{
 			Title: jsii.String("Stripe webhooks and stock adjustments"),
 			Width: jsii.Number(12),
-			Left:  cwMetrics(stripeWebhookProcessed, stripeWebhookIgnored, stripeWebhookErrors),
+			Left:  cwMetrics(stripeWebhookProcessed, stripeWebhookIgnored, stripeWebhookInvalidSignatures, stripeWebhookErrors),
 			Right: cwMetrics(stockAdjustReserve, stockAdjustRelease, stockAdjustConflict, stockAdjustRollbackErrors),
 		}),
 	)

@@ -30,6 +30,67 @@ func TestThailandGiftshopStackTemplateSnapshot(t *testing.T) {
 	assertJSONSnapshot(t, "thailandgiftshop-stack.template.json", normalizeTemplate(t, template.ToJSON()))
 }
 
+func TestOnlyCriticalOperationsAlarmsNotify(t *testing.T) {
+	defer jsii.Close()
+
+	app := awscdk.NewApp(nil)
+	stack := NewThailandGiftshopStack(app, "TestStack", nil)
+	template := assertions.Template_FromStack(stack, nil)
+	normalized := normalizeTemplate(t, template.ToJSON())
+	resources, ok := normalized["Resources"].(map[string]any)
+	if !ok {
+		t.Fatal("template Resources is missing or has an unexpected shape")
+	}
+
+	criticalAlarmNames := map[string]bool{
+		"ThailandGiftshop-CloudFront-5xxRate-High":    true,
+		"ThailandGiftshop-HttpApi-5xx-High":           true,
+		"ThailandGiftshop-SsrLambda-Errors":           true,
+		"ThailandGiftshop-AdminLambda-Errors":         true,
+		"ThailandGiftshop-StripeWebhook-Errors":       true,
+		"ThailandGiftshop-CheckoutPayment-Errors":     true,
+		"ThailandGiftshop-CheckoutRefund-Errors":      true,
+		"ThailandGiftshop-StockAdjust-RollbackErrors": true,
+	}
+	seenCriticalAlarmNames := map[string]bool{}
+
+	for logicalID, resourceValue := range resources {
+		resource, ok := resourceValue.(map[string]any)
+		if !ok || resource["Type"] != "AWS::CloudWatch::Alarm" {
+			continue
+		}
+		properties, ok := resource["Properties"].(map[string]any)
+		if !ok {
+			t.Fatalf("alarm %s has missing or invalid Properties", logicalID)
+		}
+		alarmName, ok := properties["AlarmName"].(string)
+		if !ok || alarmName == "" {
+			t.Fatalf("alarm %s has missing or invalid AlarmName", logicalID)
+		}
+
+		actionsEnabled, _ := properties["ActionsEnabled"].(bool)
+		alarmActions, _ := properties["AlarmActions"].([]any)
+		hasAlarmActions := len(alarmActions) > 0
+		if criticalAlarmNames[alarmName] {
+			seenCriticalAlarmNames[alarmName] = true
+			if !actionsEnabled || !hasAlarmActions {
+				t.Errorf("critical alarm %s actionsEnabled=%t alarmActions=%d, want notifications enabled", alarmName, actionsEnabled, len(alarmActions))
+			}
+			continue
+		}
+
+		if actionsEnabled || hasAlarmActions {
+			t.Errorf("watchlist alarm %s actionsEnabled=%t alarmActions=%d, want dashboard-only", alarmName, actionsEnabled, len(alarmActions))
+		}
+	}
+
+	for alarmName := range criticalAlarmNames {
+		if !seenCriticalAlarmNames[alarmName] {
+			t.Errorf("critical alarm %s was not synthesized", alarmName)
+		}
+	}
+}
+
 func TestLambdaBuildCommandSnapshot(t *testing.T) {
 	assertSnapshot(t, "lambda-build-commands.txt", []byte(strings.Join([]string{
 		"ssr: " + ssrLambdaBuildCommand,

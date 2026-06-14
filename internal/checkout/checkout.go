@@ -135,6 +135,15 @@ const (
 	outcomeWebhookError             = "error"
 )
 
+// OrderEmail metric outcomes.
+const (
+	outcomeOrderEmailSent            = "sent"
+	outcomeOrderEmailReserveError    = "reserve_error"
+	outcomeOrderEmailSendError       = "send_error"
+	outcomeOrderEmailMarkFailedError = "mark_failed_error"
+	outcomeOrderEmailMarkSentError   = "mark_sent_error"
+)
+
 // checkoutLogger writes structured JSON lines to stdout, where the Lambda
 // runtime forwards them to CloudWatch Logs alongside the EMF metric records.
 var checkoutLogger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -1453,6 +1462,7 @@ func (s *Service) sendOrderLifecycleEmail(ctx context.Context, order commerce.Or
 		CreatedAt:    now,
 	})
 	if err != nil {
+		s.recordOrderEmail(message.Kind, outcomeOrderEmailReserveError)
 		checkoutLogger.Error("checkout could not reserve the order email event",
 			slog.String("order_id", order.ID),
 			slog.String("email_event_key", key),
@@ -1467,6 +1477,7 @@ func (s *Service) sendOrderLifecycleEmail(ctx context.Context, order commerce.Or
 
 	sent, err := s.EmailSender.Send(ctx, message)
 	if err != nil {
+		s.recordOrderEmail(message.Kind, outcomeOrderEmailSendError)
 		checkoutLogger.Error("checkout could not send the order lifecycle email",
 			slog.String("order_id", order.ID),
 			slog.String("email_event_key", key),
@@ -1474,6 +1485,7 @@ func (s *Service) sendOrderLifecycleEmail(ctx context.Context, order commerce.Or
 			slog.String("error", err.Error()),
 		)
 		if markErr := s.Commerce.MarkEmailEventFailed(ctx, order.ID, key, s.now(), err.Error()); markErr != nil {
+			s.recordOrderEmail(message.Kind, outcomeOrderEmailMarkFailedError)
 			checkoutLogger.Error("checkout could not mark the order email event failed",
 				slog.String("order_id", order.ID),
 				slog.String("email_event_key", key),
@@ -1486,7 +1498,9 @@ func (s *Service) sendOrderLifecycleEmail(ctx context.Context, order commerce.Or
 	if !sent.CreatedAt.IsZero() {
 		now = sent.CreatedAt
 	}
+	s.recordOrderEmail(message.Kind, outcomeOrderEmailSent)
 	if err := s.Commerce.MarkEmailEventSent(ctx, order.ID, key, now); err != nil {
+		s.recordOrderEmail(message.Kind, outcomeOrderEmailMarkSentError)
 		checkoutLogger.Error("checkout could not mark the order email event sent",
 			slog.String("order_id", order.ID),
 			slog.String("email_event_key", key),
@@ -1735,6 +1749,18 @@ func (s *Service) recordStripeWebhook(outcome string) {
 	s.Metrics.Record(observability.Count(
 		observability.MetricStripeWebhook,
 		observability.Dim("Service", "ssr"),
+		observability.Dim("Outcome", outcome),
+	))
+}
+
+func (s *Service) recordOrderEmail(kind string, outcome string) {
+	if s.Metrics == nil {
+		return
+	}
+	s.Metrics.Record(observability.Count(
+		observability.MetricOrderEmail,
+		observability.Dim("Service", "checkout"),
+		observability.Dim("Kind", kind),
 		observability.Dim("Outcome", outcome),
 	))
 }

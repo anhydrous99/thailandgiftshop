@@ -21,6 +21,7 @@ const (
 	MetricCommerceOperation   = "CommerceOperation"
 	MetricCommerceOperationMs = "CommerceOperationMs"
 	MetricCustomerAuth        = "CustomerAuth"
+	MetricOrderEmail          = "OrderEmail"
 	MetricOrderTransition     = "OrderTransition"
 	MetricProductImageUpload  = "ProductImageUpload"
 	MetricRouteColdStart      = "RouteColdStart"

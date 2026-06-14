@@ -851,6 +851,9 @@ func TestOrderEmailFailureDoesNotRollbackState(t *testing.T) {
 	if messages := env.emailSender.Messages(); len(messages) != 0 {
 		t.Fatalf("fake sender messages = %#v, want none after replacing sender with failing sender", messages)
 	}
+	if got := env.metrics.count(observability.MetricOrderEmail, outcomeOrderEmailSendError); got != 1 {
+		t.Fatalf("order email send-error metrics = %d, want 1", got)
+	}
 }
 
 func TestPlaceOrderCreatesPendingOrderAndSession(t *testing.T) {
