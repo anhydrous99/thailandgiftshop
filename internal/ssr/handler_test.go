@@ -716,6 +716,39 @@ func TestCartMutationsPostCartItemsSetsCookieAndRedirectsToCart(t *testing.T) {
 	}
 }
 
+func TestCartMutationRejectsForeignOrigin(t *testing.T) {
+	t.Setenv(cart.EnvCookieSecret, ssrTestCartSecret)
+	handler := NewHandler(cartRouteStore())
+	request := formPostRequest("/cart/items", "slug=mango-sticky-rice-kit&quantity=1")
+	request.Headers["origin"] = "https://evil.example.com"
+
+	response, err := handler.Handle(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusForbidden {
+		t.Fatalf("status code = %d, want %d for a cross-site cart mutation", response.StatusCode, http.StatusForbidden)
+	}
+	if len(response.Cookies) != 0 {
+		t.Fatalf("response cookies = %#v, want none on a rejected mutation", response.Cookies)
+	}
+}
+
+func TestCartMutationAllowsSiteOrigin(t *testing.T) {
+	t.Setenv(cart.EnvCookieSecret, ssrTestCartSecret)
+	handler := NewHandler(cartRouteStore())
+	request := formPostRequest("/cart/items", "slug=mango-sticky-rice-kit&quantity=1")
+	request.Headers["origin"] = "https://thailandgiftshop.com"
+
+	response, err := handler.Handle(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusSeeOther {
+		t.Fatalf("status code = %d, want %d for a same-site cart mutation", response.StatusCode, http.StatusSeeOther)
+	}
+}
+
 func TestCartMutationVariantProductRequiresSelectedActiveVariant(t *testing.T) {
 	handler := NewHandler(cartRouteStore())
 

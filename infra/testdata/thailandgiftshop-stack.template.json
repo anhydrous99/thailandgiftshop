@@ -5950,7 +5950,9 @@
               "Content-Type",
               "HX-Request",
               "X-CSRF-Token",
-              "Stripe-Signature"
+              "Stripe-Signature",
+              "Origin",
+              "Referer"
             ]
           },
           "Name": "thailandgiftshop-ssr-origin",

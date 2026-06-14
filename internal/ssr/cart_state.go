@@ -27,9 +27,47 @@ type cartLineView struct {
 	UnavailableMessage string
 }
 
+// allowedCartMutationHosts is the set of hosts a cart-mutation POST may
+// originate from. Add-to-cart submits from edge-cached pages that cannot carry
+// a per-session CSRF token, so cart mutations are protected by an Origin /
+// Referer host check instead (plus the SameSite=Lax, POST-only baseline).
+var allowedCartMutationHosts = map[string]struct{}{
+	"thailandgiftshop.com":     {},
+	"www.thailandgiftshop.com": {},
+	"localhost":                {},
+	"127.0.0.1":                {},
+}
+
+// validCartMutationOrigin rejects cross-site cart mutations. It checks the
+// Origin header (then Referer) host against the site's own hosts. A present
+// but foreign host is rejected; absent headers fall back to the SameSite=Lax +
+// POST-only baseline (a forged cross-site request carries neither cookie).
+func validCartMutationOrigin(request events.APIGatewayV2HTTPRequest) bool {
+	if origin := strings.TrimSpace(httpapi.HeaderValue(request.Headers, "Origin")); origin != "" {
+		return cartMutationHostAllowed(origin)
+	}
+	if referer := strings.TrimSpace(httpapi.HeaderValue(request.Headers, "Referer")); referer != "" {
+		return cartMutationHostAllowed(referer)
+	}
+	return true
+}
+
+func cartMutationHostAllowed(rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+	_, ok := allowedCartMutationHosts[strings.ToLower(parsed.Hostname())]
+	return ok
+}
+
 func (h *Handler) handleCartMutation(ctx context.Context, request events.APIGatewayV2HTTPRequest, route pageRoute) events.APIGatewayV2HTTPResponse {
 	method := httpapi.Method(request)
 	path := httpapi.Path(request)
+	if !validCartMutationOrigin(request) {
+		// Cross-site request forgery guard for the tokenless cart endpoints.
+		return httpapi.HTMLResponse(http.StatusForbidden, "Forbidden", nil)
+	}
 	form, err := httpapi.FormValues(request)
 	if err != nil {
 		return httpapi.HTMLResponse(http.StatusBadRequest, "Bad request", nil)

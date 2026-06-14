@@ -28,6 +28,11 @@ func ssrOriginRequestPolicy(stack awscdk.Stack) awscloudfront.OriginRequestPolic
 			jsii.String("HX-Request"),
 			jsii.String("X-CSRF-Token"),
 			jsii.String("Stripe-Signature"),
+			// Origin and Referer back the cart-mutation CSRF host check; they
+			// are forwarded to the origin only (not in the cache key), so they
+			// never fragment the shared public edge cache.
+			jsii.String("Origin"),
+			jsii.String("Referer"),
 		),
 	})
 }
