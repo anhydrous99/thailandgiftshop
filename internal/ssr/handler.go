@@ -30,6 +30,18 @@ const textContentType = httpapi.TextContentType
 const xmlContentType = httpapi.XMLContentType
 const helloFragmentBody = "HTMX refreshed this greeting from the server"
 const latestProductLimit = 8
+
+// maxListingProducts bounds the products read for the full /products and
+// /categories/{slug} pages so a single edge-cache-miss render can never scan
+// the entire active catalog. Cursor pagination is deferred scope; this caps
+// the worst-case read and HTML size until it lands.
+const maxListingProducts = 96
+
+// maxSitemapProducts bounds the sitemap product read. The cap keeps the read
+// finite (well under the 50,000-URL sitemap limit); a larger catalog would
+// need a paginated sitemap index.
+const maxSitemapProducts = 5000
+
 const minimumProductionSigningSecretLength = 32
 
 type Handler struct {
@@ -441,7 +453,7 @@ func (h *Handler) renderHome(ctx context.Context, headerCartLabel string) (strin
 func (h *Handler) renderProductListing(ctx context.Context, headerCartLabel string) (string, error) {
 	products, categories, productsErr, categoriesErr := parallelCatalogReads(ctx,
 		func(ctx context.Context) ([]catalog.Product, error) {
-			return h.catalogStore.ListActiveProducts(ctx, 0)
+			return h.catalogStore.ListActiveProducts(ctx, maxListingProducts)
 		},
 		func(ctx context.Context) ([]catalog.Category, error) {
 			return h.loadActiveCategories(ctx)
@@ -584,7 +596,7 @@ func (h *Handler) renderCategoryDetail(ctx context.Context, slug string, headerC
 			return h.loadActiveCategories(ctx)
 		},
 		func(ctx context.Context) ([]catalog.Product, error) {
-			return h.catalogStore.ListActiveProductsByCategory(ctx, slug, 0)
+			return h.catalogStore.ListActiveProductsByCategory(ctx, slug, maxListingProducts)
 		},
 	)
 	if categoriesErr != nil {
@@ -638,7 +650,7 @@ func (h *Handler) renderStory(ctx context.Context, headerCartLabel string) (stri
 func (h *Handler) handleSitemap(ctx context.Context, method string) events.APIGatewayV2HTTPResponse {
 	products, categories, productsErr, categoriesErr := parallelCatalogReads(ctx,
 		func(ctx context.Context) ([]catalog.Product, error) {
-			return h.catalogStore.ListActiveProducts(ctx, 0)
+			return h.catalogStore.ListActiveProducts(ctx, maxSitemapProducts)
 		},
 		func(ctx context.Context) ([]catalog.Category, error) {
 			return h.loadActiveCategories(ctx)

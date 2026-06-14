@@ -1082,6 +1082,30 @@ func TestCartPageOmitsAdjustedNoticeWhenCartUnchanged(t *testing.T) {
 	assertBodyOmits(t, response.Body, []string{`data-testid="cart-adjusted-notice"`})
 }
 
+func TestProductListingCapsProductsAtMaxListing(t *testing.T) {
+	products := make([]catalog.Product, 0, maxListingProducts+5)
+	for i := 0; i < maxListingProducts+5; i++ {
+		products = append(products, catalog.Product{
+			ID:            "prod_" + strconv.Itoa(i),
+			Slug:          "product-" + strconv.Itoa(i),
+			Name:          "Product " + strconv.Itoa(i),
+			PriceCents:    100,
+			Status:        catalog.StatusActive,
+			StockQuantity: 5,
+			SortOrder:     i,
+		})
+	}
+	handler := NewHandler(catalog.NewMemoryStore(products, nil))
+
+	response, err := handler.Handle(context.Background(), pageRequest(http.MethodGet, "/products"))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if got := strings.Count(response.Body, `data-testid="product-card"`); got != maxListingProducts {
+		t.Fatalf("product cards = %d, want the read capped at %d", got, maxListingProducts)
+	}
+}
+
 func TestCheckoutPageExcludesDroppedStaleItems(t *testing.T) {
 	// Stale server-cart lines (draft, sold out, deleted) are normalized away
 	// before the signed-in checkout renders, and the repaired cart is written
@@ -2413,8 +2437,8 @@ func TestProductListingRendersActiveProductsAndCategoryLinks(t *testing.T) {
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
 	}
-	if len(store.activeProductLimits) != 1 || store.activeProductLimits[0] != 0 {
-		t.Fatalf("ListActiveProducts limits = %v, want [0]", store.activeProductLimits)
+	if len(store.activeProductLimits) != 1 || store.activeProductLimits[0] != maxListingProducts {
+		t.Fatalf("ListActiveProducts limits = %v, want [%d]", store.activeProductLimits, maxListingProducts)
 	}
 	assertBodyContains(t, response.Body, []string{
 		`<h1 class="mt-3 font-display text-5xl font-bold leading-none tracking-tight text-flag-blue sm:text-6xl">Products</h1>`,
@@ -3013,8 +3037,8 @@ func TestCategoryDetailRendersCategoryAndActiveProducts(t *testing.T) {
 	if len(store.categoryProductLookups) != 1 || store.categoryProductLookups[0] != "thai-snacks" {
 		t.Fatalf("ListActiveProductsByCategory lookups = %v, want [thai-snacks]", store.categoryProductLookups)
 	}
-	if len(store.categoryProductLimits) != 1 || store.categoryProductLimits[0] != 0 {
-		t.Fatalf("ListActiveProductsByCategory limits = %v, want [0]", store.categoryProductLimits)
+	if len(store.categoryProductLimits) != 1 || store.categoryProductLimits[0] != maxListingProducts {
+		t.Fatalf("ListActiveProductsByCategory limits = %v, want [%d]", store.categoryProductLimits, maxListingProducts)
 	}
 	assertBodyContains(t, response.Body, []string{
 		`href="/categories"`,
