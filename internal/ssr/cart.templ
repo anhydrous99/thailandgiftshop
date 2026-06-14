@@ -92,7 +92,7 @@ templ cartPage(vm cartPageViewModel) {
 											<a href="/checkout" class="inline-flex h-12 items-center justify-center bg-flag-red px-6 text-sm font-bold text-white transition hover:bg-flag-red-deep focus-visible:outline-white">Check out</a>
 										}
 										<a href="/products" class="inline-flex h-12 items-center justify-center border-2 border-white/60 px-6 text-sm font-bold text-white transition hover:bg-white hover:text-flag-blue focus-visible:outline-white">Continue shopping</a>
-										<form method="post" action="/cart/clear">
+										<form method="post" action="/cart/clear" data-confirm="Remove all items from your cart? This can't be undone." data-confirm-title="Clear cart?" data-confirm-label="Clear cart">
 											<button type="submit" class="inline-flex h-12 w-full items-center justify-center border border-flag-red/60 bg-flag-red/20 px-6 text-sm font-bold text-white transition hover:bg-flag-red focus-visible:outline-white">Clear cart</button>
 										</form>
 									</div>
@@ -103,6 +103,7 @@ templ cartPage(vm cartPageViewModel) {
 				</section>
 			</main>
 			@siteFooter(vm.HeaderCartLabel)
+			@confirmDialog()
 		</body>
 	</html>
 }

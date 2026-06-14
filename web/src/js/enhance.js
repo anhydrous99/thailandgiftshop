@@ -136,6 +136,128 @@
 		});
 	}
 
+	// Confirmation gate for destructive actions (clear cart, remove address /
+	// card). A form opts in with data-confirm="message" (and optional
+	// data-confirm-title / data-confirm-label). We hold the first submit, ask
+	// for confirmation through the shared <dialog>, and only let the real POST
+	// through once accepted. With no JS - or no <dialog> support - the form
+	// posts exactly as before, so this is an additive guardrail, never a gate;
+	// the server-side origin/CSRF checks remain the real protection.
+	function wireDestructiveConfirms() {
+		var dialog = document.querySelector("dialog[data-confirm-dialog]");
+		var supportsDialog = !!dialog && typeof dialog.showModal === "function";
+		var titleEl = supportsDialog ? dialog.querySelector("[data-confirm-dialog-title]") : null;
+		var messageEl = supportsDialog ? dialog.querySelector("[data-confirm-dialog-message]") : null;
+		var acceptEl = supportsDialog ? dialog.querySelector("[data-confirm-accept]") : null;
+		var cancelEl = supportsDialog ? dialog.querySelector("[data-confirm-cancel]") : null;
+		// pending holds the submit we are deferring: { form, submitter }.
+		var pending = null;
+
+		function submitConfirmed(form, submitter) {
+			form.setAttribute("data-confirmed", "true");
+			try {
+				if (typeof form.requestSubmit === "function") {
+					if (submitter && submitter.type === "submit" && submitter.form === form) {
+						form.requestSubmit(submitter);
+					} else {
+						form.requestSubmit();
+					}
+					return;
+				}
+			} catch (err) {
+				// Fall through to the plain submit below.
+			}
+			form.submit();
+		}
+
+		if (supportsDialog) {
+			if (acceptEl) {
+				acceptEl.addEventListener("click", function () {
+					var current = pending;
+					pending = null; // Prevent the close handler treating this as a cancel.
+					dialog.close();
+					if (current) {
+						submitConfirmed(current.form, current.submitter);
+					}
+				});
+			}
+			if (cancelEl) {
+				cancelEl.addEventListener("click", function () {
+					dialog.close();
+				});
+			}
+			// Esc, the Cancel button, or a backdrop click all fire "close"; treat
+			// any close with a pending submit as a cancellation and restore focus
+			// to the trigger.
+			dialog.addEventListener("close", function () {
+				if (!pending) {
+					return;
+				}
+				var trigger = pending.submitter;
+				pending = null;
+				if (trigger && typeof trigger.focus === "function") {
+					trigger.focus();
+				}
+			});
+			// A click on the dialog element itself (not its contents) is the
+			// backdrop; dismiss like Cancel.
+			dialog.addEventListener("click", function (event) {
+				if (event.target === dialog && dialog.open) {
+					dialog.close();
+				}
+			});
+		}
+
+		document.addEventListener("submit", function (event) {
+			var form = event.target;
+			if (!form || form.nodeName !== "FORM") {
+				return;
+			}
+			var message = form.getAttribute("data-confirm");
+			if (message === null) {
+				return;
+			}
+			// Second pass: confirmation already granted, let the POST proceed and
+			// let the other submit enhancers (spinner) run normally.
+			if (form.getAttribute("data-confirmed") === "true") {
+				form.removeAttribute("data-confirmed");
+				return;
+			}
+
+			var submitter = event.submitter;
+			if (!submitter || submitter.nodeName !== "BUTTON") {
+				submitter = form.querySelector('button[type="submit"], button:not([type])');
+			}
+
+			// No modal available: fall back to the native confirm() so a click
+			// still gets a yes/no step.
+			if (!supportsDialog) {
+				if (!window.confirm(message)) {
+					event.preventDefault();
+					event.stopImmediatePropagation();
+				}
+				return;
+			}
+
+			event.preventDefault();
+			event.stopImmediatePropagation();
+			pending = { form: form, submitter: submitter };
+			if (titleEl) {
+				titleEl.textContent = form.getAttribute("data-confirm-title") || "Are you sure?";
+			}
+			if (messageEl) {
+				messageEl.textContent = message;
+			}
+			if (acceptEl) {
+				acceptEl.textContent = form.getAttribute("data-confirm-label") || "Confirm";
+			}
+			dialog.showModal();
+			if (cancelEl && typeof cancelEl.focus === "function") {
+				cancelEl.focus();
+			}
+		});
+	}
+
 	// Restoring a page from the back/forward cache replays the old DOM, which
 	// could include a stale busy button. Clear it so the page looks idle.
 	window.addEventListener("pageshow", function () {
@@ -145,6 +267,10 @@
 		});
 	});
 
+	// Register the confirmation gate first so its submit listener runs before
+	// the password validator and the busy-spinner affordance: holding a submit
+	// here keeps those from firing on a deferred or cancelled action.
+	wireDestructiveConfirms();
 	wireVariantPickers();
 	wirePasswordByteLimits();
 	wireSubmitFeedback();

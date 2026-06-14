@@ -39,7 +39,7 @@ templ paymentMethodsPage(vm paymentMethodsPageData) {
 											<p class="mt-1 text-sm leading-6 text-muted">Expires { method.Expiry }</p>
 										}
 									</div>
-									<form method="post" action={ "/account/payment-methods/" + method.ID + "/remove" }>
+									<form method="post" action={ "/account/payment-methods/" + method.ID + "/remove" } data-confirm="Remove this card? You can add it again later." data-confirm-title="Remove card?" data-confirm-label="Remove card">
 										<input type="hidden" name="csrf_token" value={ vm.CSRFToken }/>
 										<button type="submit" class="text-sm font-bold text-flag-red transition hover:text-flag-red-deep hover:underline hover:underline-offset-4">Remove</button>
 									</form>
@@ -61,6 +61,7 @@ templ paymentMethodsPage(vm paymentMethodsPageData) {
 				</section>
 			</main>
 			@siteFooter(vm.HeaderCartLabel)
+			@confirmDialog()
 		</body>
 	</html>
 }

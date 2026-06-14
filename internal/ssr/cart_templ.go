@@ -333,7 +333,7 @@ func cartPage(vm cartPageViewModel) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "<a href=\"/products\" class=\"inline-flex h-12 items-center justify-center border-2 border-white/60 px-6 text-sm font-bold text-white transition hover:bg-white hover:text-flag-blue focus-visible:outline-white\">Continue shopping</a><form method=\"post\" action=\"/cart/clear\"><button type=\"submit\" class=\"inline-flex h-12 w-full items-center justify-center border border-flag-red/60 bg-flag-red/20 px-6 text-sm font-bold text-white transition hover:bg-flag-red focus-visible:outline-white\">Clear cart</button></form></div></div></aside></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "<a href=\"/products\" class=\"inline-flex h-12 items-center justify-center border-2 border-white/60 px-6 text-sm font-bold text-white transition hover:bg-white hover:text-flag-blue focus-visible:outline-white\">Continue shopping</a><form method=\"post\" action=\"/cart/clear\" data-confirm=\"Remove all items from your cart? This can't be undone.\" data-confirm-title=\"Clear cart?\" data-confirm-label=\"Clear cart\"><button type=\"submit\" class=\"inline-flex h-12 w-full items-center justify-center border border-flag-red/60 bg-flag-red/20 px-6 text-sm font-bold text-white transition hover:bg-flag-red focus-visible:outline-white\">Clear cart</button></form></div></div></aside></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -343,6 +343,10 @@ func cartPage(vm cartPageViewModel) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		templ_7745c5c3_Err = siteFooter(vm.HeaderCartLabel).Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = confirmDialog().Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -739,4 +739,48 @@ func siteFooter(cartLabel string) templ.Component {
 	})
 }
 
+// confirmDialog renders one reusable confirmation modal for destructive actions
+// (clear cart, remove address/card). It stays hidden until enhance.js opens it
+// with <dialog>.showModal() in response to a form carrying data-confirm, then
+// fills the title/message/accept label from that form's data-* attributes. With
+// no JS the dialog never shows and the form posts directly, so it is an additive
+// guardrail only. Markup lives here (not in JS) so Tailwind's @source scan keeps
+// these utility classes.
+func confirmDialog() templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var36 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var36 == nil {
+			templ_7745c5c3_Var36 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "<dialog data-confirm-dialog aria-labelledby=\"confirm-dialog-title\" aria-describedby=\"confirm-dialog-message\" class=\"m-auto w-[calc(100%-2rem)] max-w-md border-2 border-ink bg-paper p-0 text-ink shadow-lift backdrop:bg-ink/60\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = flagBand("h-1.5").Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 59, "<div class=\"p-6\"><h2 id=\"confirm-dialog-title\" data-confirm-dialog-title class=\"font-display text-2xl font-bold tracking-tight text-flag-blue\">Are you sure?</h2><p id=\"confirm-dialog-message\" data-confirm-dialog-message class=\"mt-3 text-sm leading-6 text-muted\"></p><div class=\"mt-6 grid gap-3 sm:grid-cols-2\"><button type=\"button\" data-confirm-cancel autofocus class=\"inline-flex h-12 items-center justify-center border-2 border-ink bg-paper px-6 text-sm font-bold text-ink transition hover:border-flag-blue hover:text-flag-blue focus-visible:outline-flag-blue\">Cancel</button> <button type=\"button\" data-confirm-accept class=\"inline-flex h-12 items-center justify-center bg-flag-red px-6 text-sm font-bold text-white transition hover:bg-flag-red-deep focus-visible:outline-flag-red\">Confirm</button></div></div></dialog>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
 var _ = templruntime.GeneratedTemplate

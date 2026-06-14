@@ -213,7 +213,7 @@ templ addressesPage(vm addressesPageData) {
 											<button type="submit" class="inline-flex h-11 w-full items-center justify-center bg-flag-blue px-4 text-sm font-bold text-white transition hover:bg-ink">Make default</button>
 										</form>
 									}
-									<form method="post" action={ "/account/addresses/" + address.ID + "/remove" }>
+									<form method="post" action={ "/account/addresses/" + address.ID + "/remove" } data-confirm="Remove this address? This can't be undone." data-confirm-title="Remove address?" data-confirm-label="Remove address">
 										<input type="hidden" name="csrf_token" value={ vm.CSRFToken }/>
 										<button type="submit" class="text-sm font-bold text-flag-red transition hover:text-flag-red-deep hover:underline hover:underline-offset-4">Remove</button>
 									</form>
@@ -245,6 +245,7 @@ templ addressesPage(vm addressesPageData) {
 				</section>
 			</main>
 			@siteFooter(vm.HeaderCartLabel)
+			@confirmDialog()
 		</body>
 	</html>
 }

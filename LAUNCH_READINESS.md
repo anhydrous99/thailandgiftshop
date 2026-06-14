@@ -111,7 +111,11 @@ KMS key adds ~$1/mo.
 - [x] `formatPrice` has no thousands separator (`internal/ssr/handler.go`).
 - [x] No "continue shopping" link on the placed-order view
   (`internal/ssr/order_detail.templ:30-44`).
-- [ ] Destructive actions (clear cart, remove address/card) have no confirm.
+- [x] Destructive actions (clear cart, remove address/card) have no confirm.
+  Added a JS confirmation gate: the three forms carry `data-confirm` and
+  `enhance.js` opens a shared branded `<dialog>` before the POST (native
+  `confirm()` fallback; no-JS posts directly). `internal/ssr/layout.templ`
+  (`confirmDialog`), `web/src/js/enhance.js`, `web/tests/destructive-confirm.spec.ts`.
 - [x] Password `maxlength="72"` not enforced client-side.
 - [x] Reset-token hash compared with `==` (not constant-time) on the validate
   path (`internal/commerce/dynamo.go:1659`).

@@ -923,7 +923,7 @@ func TestCartPageRenders(t *testing.T) {
 		if response.StatusCode != http.StatusOK {
 			t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
 		}
-		assertBodyContains(t, response.Body, []string{`Cart (2)`, `data-testid="cart-line-item"`, `src="/images/products/mango-sticky-rice-kit.jpg"`, `alt="Mango Sticky Rice Treats"`, `href="/products/mango-sticky-rice-kit"`, `Mango Sticky Rice Treats`, `$28.99`, `$57.98`, `action="/cart/items/mango-sticky-rice-kit/quantity"`, `name="quantity"`, `value="2"`, `max="5"`, `action="/cart/items/mango-sticky-rice-kit/remove"`, `action="/cart/clear"`, `href="/checkout"`, `Check out`, `Continue shopping`, `Clear cart`})
+		assertBodyContains(t, response.Body, []string{`Cart (2)`, `data-testid="cart-line-item"`, `src="/images/products/mango-sticky-rice-kit.jpg"`, `alt="Mango Sticky Rice Treats"`, `href="/products/mango-sticky-rice-kit"`, `Mango Sticky Rice Treats`, `$28.99`, `$57.98`, `action="/cart/items/mango-sticky-rice-kit/quantity"`, `name="quantity"`, `value="2"`, `max="5"`, `action="/cart/items/mango-sticky-rice-kit/remove"`, `action="/cart/clear"`, `href="/checkout"`, `Check out`, `Continue shopping`, `Clear cart`, `data-confirm="Remove all items from your cart? This can't be undone."`, `<dialog data-confirm-dialog`})
 	})
 }
 
@@ -5961,7 +5961,7 @@ func TestAddressLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Handle default list returned error: %v", err)
 	}
-	assertBodyContains(t, defaultList.Body, []string{">Default</span>"})
+	assertBodyContains(t, defaultList.Body, []string{">Default</span>", `data-confirm="Remove this address? This can't be undone."`, `<dialog data-confirm-dialog`})
 	overview, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, "/account", jar))
 	if err != nil {
 		t.Fatalf("Handle overview returned error: %v", err)
@@ -6145,6 +6145,8 @@ func TestPaymentMethodsLifecycle(t *testing.T) {
 		"Visa •••• 4242",
 		"Expires 12/2034",
 		`action="/account/payment-methods/pm_fake_visa_4242/remove"`,
+		`data-confirm="Remove this card? You can add it again later."`,
+		`<dialog data-confirm-dialog`,
 	})
 
 	removeResponse, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/payment-methods/pm_fake_visa_4242/remove", url.Values{
