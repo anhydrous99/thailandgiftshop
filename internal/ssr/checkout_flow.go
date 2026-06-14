@@ -448,6 +448,18 @@ func (h *Handler) handleGuestPlaceOrder(ctx context.Context, request events.APIG
 		return h.renderGuestCheckoutPage(ctx, request, state, render, guestToken, http.StatusBadRequest)
 	}
 
+	switch decision := h.resolveAddressValidation(ctx, form, address); decision.kind {
+	case addressReject:
+		render.ErrorMessage = unverifiableAddressError
+		return h.renderGuestCheckoutPage(ctx, request, state, render, guestToken, http.StatusBadRequest)
+	case addressConfirm:
+		render.GuestAddressForm.Confirming = true
+		render.GuestAddressForm.Suggestion = decision.suggestion
+		return h.renderGuestCheckoutPage(ctx, request, state, render, guestToken, http.StatusOK)
+	default:
+		address = decision.address
+	}
+
 	pendingID, pendingFingerprint, _ := h.guestOrderPointer(request)
 
 	orderAddress := orderAddressFromAddress(address)

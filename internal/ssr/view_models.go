@@ -205,6 +205,25 @@ type addressFormData struct {
 	PostalCode   string
 	Phone        string
 	ErrorMessage string
+	// Confirming and Suggestion drive the address-validation "suggest &
+	// confirm" panel: when Confirming is true the form re-renders with the
+	// standardized Suggestion alongside the shopper's entry so they can pick
+	// which one to use.
+	Confirming bool
+	Suggestion *addressSuggestionView
+}
+
+// addressSuggestionView is the standardized address Amazon Location Service
+// proposed for a corrected entry. Label is the one-line display form; the
+// component fields are echoed as hidden inputs so accepting the suggestion
+// needs no second geocode call.
+type addressSuggestionView struct {
+	Label      string
+	Line1      string
+	Line2      string
+	City       string
+	Region     string
+	PostalCode string
 }
 
 type addressesPageData struct {

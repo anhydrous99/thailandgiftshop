@@ -1,6 +1,25 @@
 package ssr
 
 templ addressFormFields(form addressFormData) {
+	if form.Confirming && form.Suggestion != nil {
+		<div data-testid="address-suggestion" role="group" aria-label="Confirm your address" class="grid gap-3 border-2 border-flag-blue bg-flag-white p-4">
+			<p class="text-sm font-bold text-flag-blue">We adjusted your address to match a deliverable location. Which should we use?</p>
+			<label class="grid cursor-pointer grid-cols-[auto_1fr] items-start gap-3 text-sm leading-6 text-muted">
+				<input type="radio" name="address_choice" value="suggested" checked data-testid="address-choice-suggested" class="mt-1 h-4 w-4 accent-flag-red"/>
+				<span><span class="block font-semibold text-flag-blue">Use suggested</span>{ form.Suggestion.Label }</span>
+			</label>
+			<label class="grid cursor-pointer grid-cols-[auto_1fr] items-start gap-3 text-sm leading-6 text-muted">
+				<input type="radio" name="address_choice" value="entered" data-testid="address-choice-entered" class="mt-1 h-4 w-4 accent-flag-red"/>
+				<span><span class="block font-semibold text-flag-blue">Use what I entered</span>{ enteredAddressLabel(form) }</span>
+			</label>
+		</div>
+		<input type="hidden" name="address_confirmed" value="1"/>
+		<input type="hidden" name="standardized_line1" value={ form.Suggestion.Line1 }/>
+		<input type="hidden" name="standardized_line2" value={ form.Suggestion.Line2 }/>
+		<input type="hidden" name="standardized_city" value={ form.Suggestion.City }/>
+		<input type="hidden" name="standardized_region" value={ form.Suggestion.Region }/>
+		<input type="hidden" name="standardized_postal_code" value={ form.Suggestion.PostalCode }/>
+	}
 	<label class="grid gap-2 text-xs font-medium text-muted">
 		Full name
 		<input type="text" name="full_name" value={ form.FullName } autocomplete="name" required class="field-input h-12 text-base"/>

@@ -141,6 +141,24 @@ func addressRowView(address commerce.Address, defaultAddressID string) addressVi
 	}
 }
 
+// returnToFromRequest reads the post-action redirect target from the query
+// string (GET renders) or the form body (POST re-renders). Re-rendering the
+// address book after a validation round-trip is a POST with no query string,
+// so without the body fallback the ?next=/checkout handoff would be lost and
+// the shopper would land on /account/addresses instead of returning to
+// checkout.
+func returnToFromRequest(request events.APIGatewayV2HTTPRequest) string {
+	if next := strings.TrimSpace(request.QueryStringParameters["next"]); next != "" {
+		return next
+	}
+	if httpapi.Method(request) == http.MethodPost {
+		if form, err := httpapi.FormValues(request); err == nil {
+			return strings.TrimSpace(form.Get("next"))
+		}
+	}
+	return ""
+}
+
 func (h *Handler) renderAddressesPage(ctx context.Context, request events.APIGatewayV2HTTPRequest, session commerce.Session, customer commerce.Customer, form addressFormData, statusCode int) events.APIGatewayV2HTTPResponse {
 	csrfToken, cookies, err := h.customerCSRFForResponse(request, session)
 	if err != nil {
@@ -165,7 +183,7 @@ func (h *Handler) renderAddressesPage(ctx context.Context, request events.APIGat
 		Addresses:       rows,
 		Form:            form,
 		AtLimit:         len(addresses) >= commerce.MaxAddressesPerCustomer,
-		Next:            sanitizedReturnTo(request.QueryStringParameters["next"], ""),
+		Next:            sanitizedReturnTo(returnToFromRequest(request), ""),
 	}
 
 	var body bytes.Buffer
@@ -186,6 +204,18 @@ func (h *Handler) handleAddressCreate(ctx context.Context, request events.APIGat
 	if !valid {
 		formData.ErrorMessage = invalidAddressError
 		return h.renderAddressesPage(ctx, request, session, customer, formData, http.StatusBadRequest)
+	}
+
+	switch decision := h.resolveAddressValidation(ctx, form, address); decision.kind {
+	case addressReject:
+		formData.ErrorMessage = unverifiableAddressError
+		return h.renderAddressesPage(ctx, request, session, customer, formData, http.StatusBadRequest)
+	case addressConfirm:
+		formData.Confirming = true
+		formData.Suggestion = decision.suggestion
+		return h.renderAddressesPage(ctx, request, session, customer, formData, http.StatusOK)
+	default:
+		address = decision.address
 	}
 
 	address.CustomerID = customer.ID
@@ -261,6 +291,18 @@ func (h *Handler) handleAddressUpdate(ctx context.Context, request events.APIGat
 	if !valid {
 		formData.ErrorMessage = invalidAddressError
 		return h.renderAddressEditPage(ctx, request, session, addressID, version, formData, http.StatusBadRequest)
+	}
+
+	switch decision := h.resolveAddressValidation(ctx, form, address); decision.kind {
+	case addressReject:
+		formData.ErrorMessage = unverifiableAddressError
+		return h.renderAddressEditPage(ctx, request, session, addressID, version, formData, http.StatusBadRequest)
+	case addressConfirm:
+		formData.Confirming = true
+		formData.Suggestion = decision.suggestion
+		return h.renderAddressEditPage(ctx, request, session, addressID, version, formData, http.StatusOK)
+	default:
+		address = decision.address
 	}
 
 	address.CustomerID = customer.ID

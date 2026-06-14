@@ -7,6 +7,7 @@ import (
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
 	"github.com/anhydrous99/thailandgiftshop/internal/commerce"
 	"github.com/anhydrous99/thailandgiftshop/internal/email"
+	"github.com/anhydrous99/thailandgiftshop/internal/location"
 	"github.com/anhydrous99/thailandgiftshop/internal/payments"
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsapigatewayv2"
@@ -65,6 +66,7 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable a
 			email.EnvSenderMode:                          jsii.String(email.SenderKindSES),
 			email.EnvFromAddress:                         jsii.String(email.DefaultFromAddress),
 			email.EnvSESRegion:                           jsii.String(productionRegion),
+			location.EnvValidatorMode:                    jsii.String(location.ModeALS),
 		},
 		FunctionName: jsii.String("thailandgiftshop-ssr"),
 		Handler:      jsii.String("bootstrap"),
@@ -89,6 +91,7 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable a
 	commerceTable.GrantReadWriteData(ssrFunction)
 	stripeSecret.GrantRead(ssrFunction, nil)
 	grantEmailSend(ssrFunction, emailIdentity)
+	grantAddressValidation(ssrFunction)
 	ssrFunction.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
 		Actions: &[]*string{
 			jsii.String("dynamodb:TransactWriteItems"),

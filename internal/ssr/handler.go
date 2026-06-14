@@ -19,6 +19,7 @@ import (
 	"github.com/anhydrous99/thailandgiftshop/internal/commerce"
 	"github.com/anhydrous99/thailandgiftshop/internal/email"
 	"github.com/anhydrous99/thailandgiftshop/internal/httpapi"
+	"github.com/anhydrous99/thailandgiftshop/internal/location"
 	"github.com/anhydrous99/thailandgiftshop/internal/observability"
 	"github.com/anhydrous99/thailandgiftshop/internal/payments"
 	"github.com/aws/aws-lambda-go/events"
@@ -40,6 +41,7 @@ type Handler struct {
 	payments                   payments.Provider
 	checkout                   *checkout.Service
 	emailSender                email.Sender
+	addressValidator           location.Validator
 	passwordResetBaseURL       string
 	stock                      catalog.StockStore
 	customerSessionSecret      string
@@ -97,6 +99,15 @@ func NewHandlerFromEnvironment(ctx context.Context) (*Handler, error) {
 		return nil, err
 	}
 	handler.emailSender = emailSender
+	// Address validation is fail-open: a construction error degrades to the
+	// off validator (every address accepted) rather than blocking the
+	// storefront from booting.
+	if validator, validatorErr := location.NewValidatorFromEnvironment(ctx); validatorErr != nil {
+		logAccountError("address validation: validator unavailable", validatorErr)
+		handler.addressValidator = location.OffValidator{}
+	} else {
+		handler.addressValidator = validator
+	}
 	handler.passwordResetBaseURL = passwordResetPublicBaseURLFromEnvironment()
 	// The production catalog DynamoStore implements StockStore; the
 	// EmptyStore fallback (no CATALOG_TABLE_NAME outside production) does
@@ -153,6 +164,7 @@ func NewLocalDemoHandlerWithEmailSender(catalogStore *catalog.MemoryStore, comme
 	handler := NewHandler(catalogStore)
 	handler.commerce = commerceStore
 	handler.emailSender = emailSender
+	handler.addressValidator = location.NewFakeValidator()
 	handler.passwordResetBaseURL = localDemoBaseURL()
 	handler.payments = provider
 	handler.stock = catalogStore

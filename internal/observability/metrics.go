@@ -10,6 +10,7 @@ import (
 const Namespace = "ThailandGiftshop/App"
 
 const (
+	MetricAddressValidation   = "AddressValidation"
 	MetricAdminLoginAttempt   = "AdminLoginAttempt"
 	MetricAdminOriginRejected = "AdminOriginRejected"
 	MetricCatalogOperation    = "CatalogOperation"

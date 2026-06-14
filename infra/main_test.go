@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anhydrous99/thailandgiftshop/internal/location"
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/assertions"
 	"github.com/aws/jsii-runtime-go"
@@ -86,6 +87,40 @@ func TestSSRHttpIntegrationInvokesProvisionedAlias(t *testing.T) {
 	functionName := resourceProperties(t, permission)["FunctionName"]
 	if !containsStringFragment(functionName, ":"+ssrLambdaAliasName) && !containsStringFragment(functionName, ssrLambdaAliasName) {
 		t.Fatalf("%s FunctionName does not reference SSR alias %q: %#v", permissionID, ssrLambdaAliasName, functionName)
+	}
+}
+
+func TestSSRAddressValidationWiring(t *testing.T) {
+	defer jsii.Close()
+
+	template := synthesizedNormalizedTemplate(t)
+
+	ssrEnvFound := false
+	for _, fn := range resourcesOfType(t, template, "AWS::Lambda::Function") {
+		props := resourceProperties(t, fn)
+		if props["FunctionName"] != "thailandgiftshop-ssr" {
+			continue
+		}
+		env := requireMap(t, props["Environment"], "ssr lambda environment")
+		vars := requireMap(t, env["Variables"], "ssr lambda environment variables")
+		if got := vars[location.EnvValidatorMode]; got != location.ModeALS {
+			t.Fatalf("SSR %s = %v, want %q", location.EnvValidatorMode, got, location.ModeALS)
+		}
+		ssrEnvFound = true
+	}
+	if !ssrEnvFound {
+		t.Fatal("SSR Lambda (thailandgiftshop-ssr) not found in synthesized template")
+	}
+
+	geocodeGranted := false
+	for _, policy := range resourcesOfType(t, template, "AWS::IAM::Policy") {
+		if containsStringFragment(policy, "geo-places:Geocode") {
+			geocodeGranted = true
+			break
+		}
+	}
+	if !geocodeGranted {
+		t.Fatal("no IAM policy grants geo-places:Geocode for address validation")
 	}
 }
 
