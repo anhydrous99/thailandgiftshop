@@ -5,6 +5,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/anhydrous99/thailandgiftshop/internal/staticassets"
 )
 
 func TestDefaultSiteHeadAvoidsInlineStylesAndGlobalScripts(t *testing.T) {
@@ -14,7 +16,7 @@ func TestDefaultSiteHeadAvoidsInlineStylesAndGlobalScripts(t *testing.T) {
 	}
 
 	body := buffer.String()
-	for _, unwanted := range []string{"<style", "/static/vendor/htmx.min.js", "/static/js/enhance.js"} {
+	for _, unwanted := range []string{"<style", "/static/vendor/htmx.min.js", staticassets.EnhanceJSPath} {
 		if strings.Contains(body, unwanted) {
 			t.Fatalf("rendered head unexpectedly contains %q: %q", unwanted, body)
 		}

@@ -4,7 +4,7 @@
 @source "../../../internal/ssr/**/*.templ";
 @source "../../../internal/ssr/**/*.go";
 
-/* Self-hosted webfonts (OFL) — files in web/static/fonts/, see OFL.txt */
+/* Self-hosted webfonts (OFL) - source files in web/src/fonts/, see OFL.txt */
 @font-face {
 	font-family: "Space Grotesk";
 	font-style: normal;

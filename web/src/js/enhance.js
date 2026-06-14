@@ -6,7 +6,7 @@
 (function () {
 	"use strict";
 
-	// Variant picker — reflect the selected size's stock into the quantity
+	// Variant picker - reflect the selected size's stock into the quantity
 	// input's max and a live "N left" hint. The server still enforces the real
 	// per-variant stock on add-to-cart; this is just a faster signal.
 	function wireVariantPickers() {
@@ -48,8 +48,8 @@
 		});
 	}
 
-	// Submit affordance — mark the activated submit control busy so the styled
-	// spinner shows during the POST→redirect round trip. Cleared on the next
+	// Submit affordance - mark the activated submit control busy so the styled
+	// spinner shows during the POST -> redirect round trip. Cleared on the next
 	// page load (and on bfcache restore below). We never preventDefault, so the
 	// submission proceeds exactly as it would without JS.
 	function wireSubmitFeedback() {

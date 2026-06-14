@@ -40,8 +40,9 @@ templ home(vm homePageViewModel) {
 						</div>
 						<div class="relative hidden lg:block">
 							<picture>
-								<source srcset="/static/home-hero.webp" type="image/webp"/>
-								<img class="absolute inset-0 h-full w-full object-cover" src="/static/home-hero.jpg" alt="" aria-hidden="true" width="1600" height="900" fetchpriority="high"/>
+								<source media="(min-width: 1024px)" srcset="/static/home-hero.webp" type="image/webp"/>
+								<source media="(min-width: 1024px)" srcset="/static/home-hero.jpg" type="image/jpeg"/>
+								<img class="absolute inset-0 h-full w-full object-cover" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" alt="" aria-hidden="true" width="1600" height="900" fetchpriority="high"/>
 							</picture>
 							<div class="absolute inset-y-0 left-0">
 								@flagEdge("w-3")
@@ -69,8 +70,8 @@ templ home(vm homePageViewModel) {
 						</section>
 					} else {
 						<section aria-label="Latest added products" class="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-							for index, product := range vm.Products {
-								@productCard(product, vm.ProductImagePlaceholderURL, index < 4)
+							for _, product := range vm.Products {
+								@productCard(product, vm.ProductImagePlaceholderURL, false)
 							}
 						</section>
 					}

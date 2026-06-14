@@ -1,6 +1,10 @@
 package ssr
 
-import "strconv"
+import (
+	"strconv"
+
+	"github.com/anhydrous99/thailandgiftshop/internal/staticassets"
+)
 
 templ checkoutPage(vm checkoutPageViewModel) {
 	<!DOCTYPE html>
@@ -234,7 +238,7 @@ templ checkoutProcessingPage(vm checkoutProcessingPageData) {
 			<meta name="description" content={ vm.Metadata.Description }/>
 			<meta name="robots" content="noindex, follow"/>
 			<link rel="icon" href="/static/favicon.ico" sizes="any"/>
-			<link rel="stylesheet" href="/static/assets/app.css"/>
+			<link rel="stylesheet" href={ staticassets.AppCSSPath }/>
 		</head>
 		<body class="min-h-screen bg-paper text-ink antialiased">
 			@siteHeader("page", vm.HeaderCartLabel)

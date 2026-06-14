@@ -37,6 +37,15 @@ async function expectSkipLinkBox(page: Page, maxWidth: number, maxHeight: number
   expect(box?.height).toBeLessThanOrEqual(maxHeight);
 }
 
+async function expectStylesheetLoads(page: Page) {
+  const stylesheetHref = await page.locator('link[rel="stylesheet"]').first().getAttribute('href');
+
+  expect(stylesheetHref).toMatch(/^\/static\/assets\/app\.[a-f0-9]{12}\.css$/);
+  const cssResponse = await page.request.get(stylesheetHref ?? '');
+  expect(cssResponse.status()).toBe(200);
+  expect(cssResponse.headers()['content-type']).toContain('text/css');
+}
+
 test('home page assets, nav anchors, cart link, and aisle category route work end-to-end', async ({ page }) => {
   const requestedURLs: string[] = [];
 
@@ -45,11 +54,9 @@ test('home page assets, nav anchors, cart link, and aisle category route work en
   await page.goto('/');
 
   expect(requestedURLs.some((url) => url.endsWith('/static/vendor/htmx.min.js'))).toBe(false);
-  expect(requestedURLs.some((url) => url.endsWith('/static/js/enhance.js'))).toBe(false);
+  expect(requestedURLs.some((url) => /\/static\/js\/enhance\.[a-f0-9]{12}\.js$/.test(url))).toBe(false);
 
-  const cssResponse = await page.request.get('/static/assets/app.css');
-  expect(cssResponse.status()).toBe(200);
-  expect(cssResponse.headers()['content-type']).toContain('text/css');
+  await expectStylesheetLoads(page);
 
   const imageResponse = await page.request.get('/images/placeholder-product.jpg');
   expect(imageResponse.status()).toBe(200);
@@ -104,9 +111,7 @@ test.describe('without JavaScript', () => {
   test('home page renders without JavaScript', async ({ page }) => {
     await page.goto('/');
 
-    const cssResponse = await page.request.get('/static/assets/app.css');
-    expect(cssResponse.status()).toBe(200);
-    expect(cssResponse.headers()['content-type']).toContain('text/css');
+    await expectStylesheetLoads(page);
 
     await expect(page.getByRole('navigation', { name: 'Main navigation' })).toBeVisible();
     await expectHomeBuildingBannerVisible(page);

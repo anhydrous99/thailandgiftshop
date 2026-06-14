@@ -8,7 +8,11 @@ package ssr
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-import "strconv"
+import (
+	"strconv"
+
+	"github.com/anhydrous99/thailandgiftshop/internal/staticassets"
+)
 
 func checkoutPage(vm checkoutPageViewModel) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
@@ -81,7 +85,7 @@ func checkoutPage(vm checkoutPageViewModel) templ.Component {
 			var templ_7745c5c3_Var2 string
 			templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(vm.ErrorMessage)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 27, Col: 93}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 31, Col: 93}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 			if templ_7745c5c3_Err != nil {
@@ -100,7 +104,7 @@ func checkoutPage(vm checkoutPageViewModel) templ.Component {
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.ResolveAttributeValue(vm.CSRFToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 31, Col: 72}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 35, Col: 72}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var3)
 			if templ_7745c5c3_Err != nil {
@@ -121,7 +125,7 @@ func checkoutPage(vm checkoutPageViewModel) templ.Component {
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.ResolveAttributeValue(vm.GuestEmail)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 42, Col: 66}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 46, Col: 66}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4)
 			if templ_7745c5c3_Err != nil {
@@ -179,7 +183,7 @@ func checkoutPage(vm checkoutPageViewModel) templ.Component {
 			var templ_7745c5c3_Var5 string
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue(vm.CSRFToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 73, Col: 70}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 77, Col: 70}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5)
 			if templ_7745c5c3_Err != nil {
@@ -221,7 +225,7 @@ func checkoutPage(vm checkoutPageViewModel) templ.Component {
 			var templ_7745c5c3_Var6 string
 			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.ResolveAttributeValue(vm.CSRFToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 86, Col: 66}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 90, Col: 66}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var6)
 			if templ_7745c5c3_Err != nil {
@@ -244,7 +248,7 @@ func checkoutPage(vm checkoutPageViewModel) templ.Component {
 					var templ_7745c5c3_Var7 string
 					templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(address.ID)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 101, Col: 70}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 105, Col: 70}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
 					if templ_7745c5c3_Err != nil {
@@ -262,7 +266,7 @@ func checkoutPage(vm checkoutPageViewModel) templ.Component {
 					var templ_7745c5c3_Var8 string
 					templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.ResolveAttributeValue(address.ID)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 103, Col: 70}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 107, Col: 70}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var8)
 					if templ_7745c5c3_Err != nil {
@@ -280,7 +284,7 @@ func checkoutPage(vm checkoutPageViewModel) templ.Component {
 				var templ_7745c5c3_Var9 string
 				templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(address.FullName)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 107, Col: 33}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 111, Col: 33}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 				if templ_7745c5c3_Err != nil {
@@ -303,7 +307,7 @@ func checkoutPage(vm checkoutPageViewModel) templ.Component {
 				var templ_7745c5c3_Var10 string
 				templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(address.Line1)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 112, Col: 49}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 116, Col: 49}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 				if templ_7745c5c3_Err != nil {
@@ -321,7 +325,7 @@ func checkoutPage(vm checkoutPageViewModel) templ.Component {
 					var templ_7745c5c3_Var11 string
 					templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(address.Line2)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 114, Col: 50}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 118, Col: 50}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 					if templ_7745c5c3_Err != nil {
@@ -339,7 +343,7 @@ func checkoutPage(vm checkoutPageViewModel) templ.Component {
 				var templ_7745c5c3_Var12 string
 				templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(address.City)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 116, Col: 48}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 120, Col: 48}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 				if templ_7745c5c3_Err != nil {
@@ -352,7 +356,7 @@ func checkoutPage(vm checkoutPageViewModel) templ.Component {
 				var templ_7745c5c3_Var13 string
 				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(address.Region)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 116, Col: 68}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 120, Col: 68}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 				if templ_7745c5c3_Err != nil {
@@ -365,7 +369,7 @@ func checkoutPage(vm checkoutPageViewModel) templ.Component {
 				var templ_7745c5c3_Var14 string
 				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(address.PostalCode)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 116, Col: 91}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 120, Col: 91}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 				if templ_7745c5c3_Err != nil {
@@ -448,7 +452,7 @@ func checkoutItemsSection(vm checkoutPageViewModel) templ.Component {
 			var templ_7745c5c3_Var16 string
 			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.ResolveAttributeValue(line.ImageURL)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 149, Col: 78}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 153, Col: 78}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var16)
 			if templ_7745c5c3_Err != nil {
@@ -461,7 +465,7 @@ func checkoutItemsSection(vm checkoutPageViewModel) templ.Component {
 			var templ_7745c5c3_Var17 string
 			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.ResolveAttributeValue(line.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 149, Col: 96}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 153, Col: 96}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var17)
 			if templ_7745c5c3_Err != nil {
@@ -474,7 +478,7 @@ func checkoutItemsSection(vm checkoutPageViewModel) templ.Component {
 			var templ_7745c5c3_Var18 string
 			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(line.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 151, Col: 87}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 155, Col: 87}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 			if templ_7745c5c3_Err != nil {
@@ -492,7 +496,7 @@ func checkoutItemsSection(vm checkoutPageViewModel) templ.Component {
 				var templ_7745c5c3_Var19 string
 				templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(line.VariantLabel)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 153, Col: 123}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 157, Col: 123}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 				if templ_7745c5c3_Err != nil {
@@ -511,7 +515,7 @@ func checkoutItemsSection(vm checkoutPageViewModel) templ.Component {
 				var templ_7745c5c3_Var20 string
 				templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(line.Notice)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 156, Col: 83}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 160, Col: 83}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 				if templ_7745c5c3_Err != nil {
@@ -529,7 +533,7 @@ func checkoutItemsSection(vm checkoutPageViewModel) templ.Component {
 			var templ_7745c5c3_Var21 string
 			templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(line.Quantity))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 158, Col: 89}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 162, Col: 89}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 			if templ_7745c5c3_Err != nil {
@@ -542,7 +546,7 @@ func checkoutItemsSection(vm checkoutPageViewModel) templ.Component {
 			var templ_7745c5c3_Var22 string
 			templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(line.UnitPrice)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 158, Col: 162}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 162, Col: 162}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 			if templ_7745c5c3_Err != nil {
@@ -555,7 +559,7 @@ func checkoutItemsSection(vm checkoutPageViewModel) templ.Component {
 			var templ_7745c5c3_Var23 string
 			templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(line.LineTotal)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 159, Col: 95}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 163, Col: 95}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 			if templ_7745c5c3_Err != nil {
@@ -612,7 +616,7 @@ func checkoutSummaryAside(vm checkoutPageViewModel, showPlaceOrder bool) templ.C
 		var templ_7745c5c3_Var25 string
 		templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(vm.Subtotal)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 175, Col: 119}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 179, Col: 119}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 		if templ_7745c5c3_Err != nil {
@@ -625,7 +629,7 @@ func checkoutSummaryAside(vm checkoutPageViewModel, showPlaceOrder bool) templ.C
 		var templ_7745c5c3_Var26 string
 		templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(vm.Total)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 181, Col: 81}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 185, Col: 81}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 		if templ_7745c5c3_Err != nil {
@@ -710,7 +714,7 @@ func checkoutPaymentReceivedPage(vm checkoutProcessingPageData) templ.Component 
 		var templ_7745c5c3_Var28 string
 		templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(vm.OrderID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 213, Col: 507}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 217, Col: 507}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 		if templ_7745c5c3_Err != nil {
@@ -762,7 +766,7 @@ func checkoutProcessingPage(vm checkoutProcessingPageData) templ.Component {
 		var templ_7745c5c3_Var30 string
 		templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(vm.Metadata.Title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 233, Col: 29}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 237, Col: 29}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 		if templ_7745c5c3_Err != nil {
@@ -775,13 +779,26 @@ func checkoutProcessingPage(vm checkoutProcessingPageData) templ.Component {
 		var templ_7745c5c3_Var31 string
 		templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.ResolveAttributeValue(vm.Metadata.Description)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 234, Col: 61}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 238, Col: 61}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var31)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "\"><meta name=\"robots\" content=\"noindex, follow\"><link rel=\"icon\" href=\"/static/favicon.ico\" sizes=\"any\"><link rel=\"stylesheet\" href=\"/static/assets/app.css\"></head><body class=\"min-h-screen bg-paper text-ink antialiased\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "\"><meta name=\"robots\" content=\"noindex, follow\"><link rel=\"icon\" href=\"/static/favicon.ico\" sizes=\"any\"><link rel=\"stylesheet\" href=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var32 templ.SafeURL
+		templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinURLErrs(staticassets.AppCSSPath)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 241, Col: 56}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "\"></head><body class=\"min-h-screen bg-paper text-ink antialiased\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -789,7 +806,7 @@ func checkoutProcessingPage(vm checkoutProcessingPageData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "<main id=\"main-content\" tabindex=\"-1\"><section class=\"mx-auto w-full max-w-7xl px-5 py-16 sm:px-8\"><div data-testid=\"checkout-processing\" class=\"mx-auto max-w-xl border-2 border-ink bg-paper\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 77, "<main id=\"main-content\" tabindex=\"-1\"><section class=\"mx-auto w-full max-w-7xl px-5 py-16 sm:px-8\"><div data-testid=\"checkout-processing\" class=\"mx-auto max-w-xl border-2 border-ink bg-paper\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -797,30 +814,30 @@ func checkoutProcessingPage(vm checkoutProcessingPageData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 77, "<div class=\"p-8 text-center\"><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Checkout</p><h1 class=\"mt-3 font-display text-3xl font-bold tracking-tight text-flag-blue\">Payment processing</h1><p class=\"mt-4 text-sm leading-6 text-muted\">Stripe is confirming your payment. This page refreshes on its own — leave it open and your order appears as soon as the payment settles.</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, "<div class=\"p-8 text-center\"><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Checkout</p><h1 class=\"mt-3 font-display text-3xl font-bold tracking-tight text-flag-blue\">Payment processing</h1><p class=\"mt-4 text-sm leading-6 text-muted\">Stripe is confirming your payment. This page refreshes on its own — leave it open and your order appears as soon as the payment settles.</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if vm.OrderID != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, "<p class=\"mt-4 text-sm leading-6 text-muted\">You can also check <a href=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "<p class=\"mt-4 text-sm leading-6 text-muted\">You can also check <a href=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var32 templ.SafeURL
-			templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinURLErrs("/orders/" + vm.OrderID)
+			var templ_7745c5c3_Var33 templ.SafeURL
+			templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinURLErrs("/orders/" + vm.OrderID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 250, Col: 105}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/checkout.templ`, Line: 254, Col: 105}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "\" class=\"font-bold text-flag-red transition hover:text-flag-red-deep hover:underline hover:underline-offset-4\">your order page</a> directly.</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "\" class=\"font-bold text-flag-red transition hover:text-flag-red-deep hover:underline hover:underline-offset-4\">your order page</a> directly.</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "</div></div></section></main>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, "</div></div></section></main>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -828,7 +845,7 @@ func checkoutProcessingPage(vm checkoutProcessingPageData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, "</body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, "</body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

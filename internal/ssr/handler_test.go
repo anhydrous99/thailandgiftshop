@@ -23,6 +23,7 @@ import (
 	"github.com/anhydrous99/thailandgiftshop/internal/httpapi"
 	"github.com/anhydrous99/thailandgiftshop/internal/observability"
 	"github.com/anhydrous99/thailandgiftshop/internal/payments"
+	"github.com/anhydrous99/thailandgiftshop/internal/staticassets"
 	"github.com/aws/aws-lambda-go/events"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -42,9 +43,9 @@ var expectedHomeContent = []string{
 	`<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">`,
 	`<link rel="apple-touch-icon" href="/static/apple-touch-icon.png" sizes="180x180">`,
 	`<link rel="manifest" href="/static/site.webmanifest">`,
-	`/static/assets/app.css`,
+	staticassets.AppCSSPath,
 	`src="/static/logo.svg"`,
-	`src="/static/home-hero.jpg"`,
+	`srcset="/static/home-hero.jpg"`,
 	`aria-label="Main navigation"`,
 	`href="/products"`,
 	`href="#latest"`,
@@ -1546,7 +1547,7 @@ func TestHomeIncludesFrontendAssets(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		`/static/assets/app.css`,
+		staticassets.AppCSSPath,
 		`/static/logo.svg`,
 		`/static/home-hero.jpg`,
 		`Bangkok gift shop online`,
@@ -1589,7 +1590,7 @@ func TestEnhancementScriptIsScopedToInteractivePages(t *testing.T) {
 				t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
 			}
 
-			hasScript := strings.Contains(response.Body, `/static/js/enhance.js`)
+			hasScript := strings.Contains(response.Body, staticassets.EnhanceJSPath)
 			if hasScript != test.wantScript {
 				t.Fatalf("enhance script presence = %t, want %t in body: %q", hasScript, test.wantScript, response.Body)
 			}
@@ -1865,7 +1866,7 @@ func TestHomeRendersDataDrivenAisleLinks(t *testing.T) {
 	})
 }
 
-func TestHeaderRendersCartLinkLabelFromSignedCookieWithoutCatalogLookupsOrCookies(t *testing.T) {
+func TestPublicHeaderRendersSharedCartLabelWithoutCatalogLookupsOrCookies(t *testing.T) {
 	t.Setenv(cart.EnvCookieSecret, ssrTestCartSecret)
 	request := pageRequest(http.MethodGet, "/products")
 	request.Cookies = []string{cart.CookieName + "=" + encodedTestCart(t, []cart.Line{{Slug: "mango-sticky-rice-kit", Quantity: 2}})}
@@ -1885,14 +1886,14 @@ func TestHeaderRendersCartLinkLabelFromSignedCookieWithoutCatalogLookupsOrCookie
 		t.Fatalf("GetProductBySlug lookups for mango-sticky-rice-kit = %d, want 0 for the header label", got)
 	}
 	assertBodyContains(t, response.Body, []string{
-		`href="/cart">Cart (2)</a>`,
+		`href="/cart">Cart</a>`,
 		`Products</a>`,
 		`Categories</a>`,
 		`Story</a>`,
 	})
 }
 
-func TestHeaderCartLinkLabelCountsCookieLinesWithoutValidatingProducts(t *testing.T) {
+func TestPublicHeaderCartLinkLabelIgnoresCookieLinesWithoutValidatingProducts(t *testing.T) {
 	t.Setenv(cart.EnvCookieSecret, ssrTestCartSecret)
 	request := pageRequest(http.MethodGet, "/products")
 	request.Cookies = []string{cart.CookieName + "=" + encodedTestCart(t, []cart.Line{{Slug: "missing-product", Quantity: 3}})}
@@ -1911,9 +1912,9 @@ func TestHeaderCartLinkLabelCountsCookieLinesWithoutValidatingProducts(t *testin
 	if got := store.productLookupCount("missing-product"); got != 0 {
 		t.Fatalf("GetProductBySlug lookups for missing-product = %d, want 0 for the header label", got)
 	}
-	// The badge counts signed cookie lines as-is; /cart and mutations are the
+	// Public catalog pages keep a shared cache key; /cart and mutations are the
 	// routes that drop unavailable products and repair the cookie.
-	assertBodyContains(t, response.Body, []string{`href="/cart">Cart (3)</a>`})
+	assertBodyContains(t, response.Body, []string{`href="/cart">Cart</a>`})
 }
 
 func TestCartBearingPagesReuseNormalizedRequestCart(t *testing.T) {
@@ -3172,7 +3173,7 @@ func TestStoryReturnsStaticPageWithoutCatalogQuery(t *testing.T) {
 		t.Fatalf("Content-Type = %q, want %q", got, htmlContentType)
 	}
 	assertBodyContains(t, response.Body, []string{
-		`href="/cart">Cart (2)</a>`,
+		`href="/cart">Cart</a>`,
 		`<!doctype html>`,
 		`<html lang="en" class="scroll-smooth">`,
 		`<title>Our Story | Thailand Gift Shop</title>`,
@@ -5232,7 +5233,7 @@ func TestMergeOnLoginUsesMaxQuantityAndRewritesMirror(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Handle /products returned error: %v", err)
 	}
-	assertBodyContains(t, headerResponse.Body, []string{`href="/cart">Cart (4)</a>`})
+	assertBodyContains(t, headerResponse.Body, []string{`href="/cart">Cart</a>`})
 
 	// Replaying the merged cookie through another login is idempotent: max
 	// semantics keep the quantities stable.

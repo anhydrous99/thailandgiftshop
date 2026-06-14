@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "build:css": "tailwindcss -i ./src/styles/app.css -o ./static/assets/app.css --minify",
-    "build": "npm run build:css",
+    "fingerprint": "node ./scripts/fingerprint-assets.mjs",
+    "build": "npm run build:css && npm run fingerprint",
     "test": "npm run build && playwright test",
     "test:install": "playwright install chromium"
   },

@@ -447,3 +447,11 @@ func seoHeadersForRoute(kind pageKind) map[string]string {
 	}
 	return nil
 }
+
+func usesSharedPublicPageCache(kind pageKind) bool {
+	switch kind {
+	case pageHome, pageProducts, pageProductDetail, pageCategories, pageCategoryDetail, pageStory:
+		return true
+	}
+	return false
+}

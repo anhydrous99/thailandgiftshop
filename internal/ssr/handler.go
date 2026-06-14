@@ -289,6 +289,8 @@ func (h *Handler) handle(ctx context.Context, request events.APIGatewayV2HTTPReq
 		pageCartState = &currentCart
 		headerCartLabel = cartNavigationLabel(currentCart.cart.TotalItemCount())
 		cookies = currentCart.cookies
+	} else if usesSharedPublicPageCache(route.kind) {
+		headerCartLabel = cartNavigationLabel(0)
 	} else {
 		headerCartLabel = h.cartNavigation(request)
 	}

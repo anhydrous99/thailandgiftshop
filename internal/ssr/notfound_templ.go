@@ -8,6 +8,8 @@ package ssr
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
+import "github.com/anhydrous99/thailandgiftshop/internal/staticassets"
+
 func notFoundHead() templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -29,7 +31,46 @@ func notFoundHead() templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Not found | Thailand Gift Shop</title><meta name=\"robots\" content=\"noindex, follow\"><link rel=\"icon\" href=\"/static/favicon.ico\" sizes=\"any\"><link rel=\"icon\" href=\"/static/favicon.svg\" type=\"image/svg+xml\"><link rel=\"apple-touch-icon\" href=\"/static/apple-touch-icon.png\" sizes=\"180x180\"><link rel=\"manifest\" href=\"/static/site.webmanifest\"><link rel=\"preload\" href=\"/static/fonts/space-grotesk-latin-700.woff2\" as=\"font\" type=\"font/woff2\" crossorigin><link rel=\"preload\" href=\"/static/fonts/inter-latin-400.woff2\" as=\"font\" type=\"font/woff2\" crossorigin><link rel=\"stylesheet\" href=\"/static/assets/app.css\"></head>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Not found | Thailand Gift Shop</title><meta name=\"robots\" content=\"noindex, follow\"><link rel=\"icon\" href=\"/static/favicon.ico\" sizes=\"any\"><link rel=\"icon\" href=\"/static/favicon.svg\" type=\"image/svg+xml\"><link rel=\"apple-touch-icon\" href=\"/static/apple-touch-icon.png\" sizes=\"180x180\"><link rel=\"manifest\" href=\"/static/site.webmanifest\"><link rel=\"preload\" href=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var2 templ.SafeURL
+		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinURLErrs(staticassets.SpaceGrotesk700FontPath)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/notfound.templ`, Line: 15, Col: 65}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" as=\"font\" type=\"font/woff2\" crossorigin><link rel=\"preload\" href=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var3 templ.SafeURL
+		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinURLErrs(staticassets.Inter400FontPath)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/notfound.templ`, Line: 16, Col: 58}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\" as=\"font\" type=\"font/woff2\" crossorigin><link rel=\"stylesheet\" href=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var4 templ.SafeURL
+		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinURLErrs(staticassets.AppCSSPath)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/notfound.templ`, Line: 17, Col: 55}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\"></head>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -53,12 +94,12 @@ func notFoundPage(headerCartLabel string) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var2 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var2 == nil {
-			templ_7745c5c3_Var2 = templ.NopComponent
+		templ_7745c5c3_Var5 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var5 == nil {
+			templ_7745c5c3_Var5 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<!doctype html><html lang=\"en\" class=\"scroll-smooth\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<!doctype html><html lang=\"en\" class=\"scroll-smooth\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -66,7 +107,7 @@ func notFoundPage(headerCartLabel string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<body class=\"min-h-screen bg-paper text-ink antialiased\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<body class=\"min-h-screen bg-paper text-ink antialiased\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -74,7 +115,7 @@ func notFoundPage(headerCartLabel string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<main id=\"main-content\" tabindex=\"-1\"><section class=\"bg-flag-blue text-white\"><div class=\"mx-auto w-full max-w-7xl px-5 py-20 sm:px-8 lg:py-28\"><p class=\"font-display text-7xl font-bold leading-none tracking-tight text-white/25 sm:text-8xl\">404</p><h1 class=\"mt-4 font-display text-5xl font-bold leading-none tracking-tight text-white sm:text-6xl\">Not found</h1><p class=\"mt-5 max-w-2xl text-lg leading-8 text-white/85\">This aisle does not exist. Browse the latest Thai gift-shop finds instead.</p><div class=\"mt-8 flex flex-wrap gap-3\"><a href=\"/products\" class=\"inline-flex h-12 items-center justify-center bg-flag-red px-6 text-sm font-bold text-white transition hover:bg-flag-red-deep focus-visible:outline-white\">Continue shopping</a> <a href=\"/\" class=\"inline-flex h-12 items-center justify-center border-2 border-white/60 px-6 text-sm font-bold text-white transition hover:bg-white hover:text-flag-blue focus-visible:outline-white\">Back to home</a></div></div></section></main>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<main id=\"main-content\" tabindex=\"-1\"><section class=\"bg-flag-blue text-white\"><div class=\"mx-auto w-full max-w-7xl px-5 py-20 sm:px-8 lg:py-28\"><p class=\"font-display text-7xl font-bold leading-none tracking-tight text-white/25 sm:text-8xl\">404</p><h1 class=\"mt-4 font-display text-5xl font-bold leading-none tracking-tight text-white sm:text-6xl\">Not found</h1><p class=\"mt-5 max-w-2xl text-lg leading-8 text-white/85\">This aisle does not exist. Browse the latest Thai gift-shop finds instead.</p><div class=\"mt-8 flex flex-wrap gap-3\"><a href=\"/products\" class=\"inline-flex h-12 items-center justify-center bg-flag-red px-6 text-sm font-bold text-white transition hover:bg-flag-red-deep focus-visible:outline-white\">Continue shopping</a> <a href=\"/\" class=\"inline-flex h-12 items-center justify-center border-2 border-white/60 px-6 text-sm font-bold text-white transition hover:bg-white hover:text-flag-blue focus-visible:outline-white\">Back to home</a></div></div></section></main>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -82,7 +123,7 @@ func notFoundPage(headerCartLabel string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

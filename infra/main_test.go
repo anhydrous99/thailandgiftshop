@@ -1416,14 +1416,10 @@ func TestStackIncludesStaticAssetsDistribution(t *testing.T) {
 			"MaxTTL":     float64(86400),
 			"ParametersInCacheKeyAndForwardedToOrigin": map[string]any{
 				"CookiesConfig": map[string]any{
-					"CookieBehavior": "whitelist",
-					"Cookies": assertions.Match_ArrayEquals(&[]any{
-						cartsession.CookieName,
-						commerce.SessionCookieName,
-					}),
+					"CookieBehavior": "none",
 				},
 				"QueryStringsConfig": map[string]any{
-					"QueryStringBehavior": "all",
+					"QueryStringBehavior": "none",
 				},
 				"HeadersConfig": map[string]any{
 					"HeaderBehavior": "none",
@@ -1457,9 +1453,30 @@ func TestStackIncludesStaticAssetsDistribution(t *testing.T) {
 		"DistributionPaths": assertions.Match_ArrayWith(&[]any{
 			"/static/*",
 		}),
-		"Prune": true,
+		"Prune": false,
 		"SystemMetadata": map[string]any{
 			"cache-control": "max-age=3600",
+		},
+	})
+	template.HasResourceProperties(jsii.String("Custom::CDKBucketDeployment"), map[string]any{
+		"DestinationBucketKeyPrefix": "static/assets",
+		"Prune":                      false,
+		"SystemMetadata": map[string]any{
+			"cache-control": assertions.Match_StringLikeRegexp(jsii.String("max-age=31536000.*immutable")),
+		},
+	})
+	template.HasResourceProperties(jsii.String("Custom::CDKBucketDeployment"), map[string]any{
+		"DestinationBucketKeyPrefix": "static/js",
+		"Prune":                      false,
+		"SystemMetadata": map[string]any{
+			"cache-control": assertions.Match_StringLikeRegexp(jsii.String("max-age=31536000.*immutable")),
+		},
+	})
+	template.HasResourceProperties(jsii.String("Custom::CDKBucketDeployment"), map[string]any{
+		"DestinationBucketKeyPrefix": "static/fonts",
+		"Prune":                      false,
+		"SystemMetadata": map[string]any{
+			"cache-control": assertions.Match_StringLikeRegexp(jsii.String("max-age=31536000.*immutable")),
 		},
 	})
 
@@ -1482,7 +1499,7 @@ func TestStackIncludesProductImagesBucketAndDeployment(t *testing.T) {
 
 	template.ResourceCountIs(jsii.String("AWS::S3::Bucket"), jsii.Number(2))
 	template.ResourceCountIs(jsii.String("AWS::CloudFront::OriginAccessControl"), jsii.Number(2))
-	template.ResourceCountIs(jsii.String("Custom::CDKBucketDeployment"), jsii.Number(2))
+	template.ResourceCountIs(jsii.String("Custom::CDKBucketDeployment"), jsii.Number(5))
 
 	template.HasResourceProperties(jsii.String("AWS::CloudFront::Distribution"), map[string]any{
 		"DistributionConfig": map[string]any{

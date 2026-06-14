@@ -786,17 +786,16 @@ func ssrOriginRequestPolicy(stack awscdk.Stack) awscloudfront.OriginRequestPolic
 }
 
 // ssrCachePolicy caches only responses that opt in with an explicit cacheable
-// Cache-Control header (DefaultTtl is zero), keyed on the cart cookie so a
-// signed-in cart's "Cart (N)" header never serves to another visitor. Cart,
-// checkout, account, and admin responses send no-store and stay uncached; the
-// customer session cookie joins the cache key as defense-in-depth so an authed
-// response could never serve to another visitor even if a page mis-opted in.
+// Cache-Control header (DefaultTtl is zero). Cart, checkout, account, and admin
+// responses send no-store and stay uncached; origin forwarding still carries
+// cookies and query strings for those private routes, but public cache keys stay
+// shared so tracking parameters and cart/session cookies do not fragment them.
 func ssrCachePolicy(stack awscdk.Stack) awscloudfront.CachePolicy {
 	return awscloudfront.NewCachePolicy(stack, jsii.String("SsrCachePolicy"), &awscloudfront.CachePolicyProps{
 		CachePolicyName:            jsii.String(ssrCachePolicyName),
-		Comment:                    jsii.String("Cache opt-in SSR responses for thailandgiftshop.com keyed on the cart cookie"),
-		CookieBehavior:             awscloudfront.CacheCookieBehavior_AllowList(jsii.String(cartsession.CookieName), jsii.String(commerce.SessionCookieName)),
-		QueryStringBehavior:        awscloudfront.CacheQueryStringBehavior_All(),
+		Comment:                    jsii.String("Cache opt-in SSR responses for thailandgiftshop.com with shared public cache keys"),
+		CookieBehavior:             awscloudfront.CacheCookieBehavior_None(),
+		QueryStringBehavior:        awscloudfront.CacheQueryStringBehavior_None(),
 		HeaderBehavior:             awscloudfront.CacheHeaderBehavior_None(),
 		MinTtl:                     awscdk.Duration_Seconds(jsii.Number(0)),
 		DefaultTtl:                 awscdk.Duration_Seconds(jsii.Number(0)),
@@ -982,7 +981,7 @@ func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi, productImagesB
 
 	addSiteAliasRecords(stack, hostedZone, distribution)
 
-	awss3deployment.NewBucketDeployment(stack, jsii.String("StaticAssetsDeployment"), &awss3deployment.BucketDeploymentProps{
+	staticAssetsDeployment := awss3deployment.NewBucketDeployment(stack, jsii.String("StaticAssetsDeployment"), &awss3deployment.BucketDeploymentProps{
 		CacheControl: &[]awss3deployment.CacheControl{
 			awss3deployment.CacheControl_MaxAge(awscdk.Duration_Hours(jsii.Number(1))),
 		},
@@ -993,11 +992,53 @@ func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi, productImagesB
 			jsii.String("/static/*"),
 		},
 		LogGroup: staticAssetsDeploymentLogGroup,
-		Prune:    jsii.Bool(true),
+		Prune:    jsii.Bool(false),
 		Sources: &[]awss3deployment.ISource{
 			awss3deployment.Source_Asset(jsii.String("../web/static"), nil),
 		},
 	})
+	immutableStaticAssetsDeployment := awss3deployment.NewBucketDeployment(stack, jsii.String("ImmutableStaticAssetsDeployment"), &awss3deployment.BucketDeploymentProps{
+		CacheControl: &[]awss3deployment.CacheControl{
+			awss3deployment.CacheControl_MaxAge(awscdk.Duration_Days(jsii.Number(365))),
+			awss3deployment.CacheControl_Immutable(),
+		},
+		DestinationBucket:    staticBucket,
+		DestinationKeyPrefix: jsii.String(staticAssetsKeyPrefix + "/assets"),
+		LogGroup:             staticAssetsDeploymentLogGroup,
+		Prune:                jsii.Bool(false),
+		Sources: &[]awss3deployment.ISource{
+			awss3deployment.Source_Asset(jsii.String("../web/static/assets"), nil),
+		},
+	})
+	immutableStaticAssetsDeployment.Node().AddDependency(staticAssetsDeployment)
+	immutableStaticScriptsDeployment := awss3deployment.NewBucketDeployment(stack, jsii.String("ImmutableStaticScriptsDeployment"), &awss3deployment.BucketDeploymentProps{
+		CacheControl: &[]awss3deployment.CacheControl{
+			awss3deployment.CacheControl_MaxAge(awscdk.Duration_Days(jsii.Number(365))),
+			awss3deployment.CacheControl_Immutable(),
+		},
+		DestinationBucket:    staticBucket,
+		DestinationKeyPrefix: jsii.String(staticAssetsKeyPrefix + "/js"),
+		LogGroup:             staticAssetsDeploymentLogGroup,
+		Prune:                jsii.Bool(false),
+		Sources: &[]awss3deployment.ISource{
+			awss3deployment.Source_Asset(jsii.String("../web/static/js"), nil),
+		},
+	})
+	immutableStaticScriptsDeployment.Node().AddDependency(staticAssetsDeployment)
+	immutableStaticFontsDeployment := awss3deployment.NewBucketDeployment(stack, jsii.String("ImmutableStaticFontsDeployment"), &awss3deployment.BucketDeploymentProps{
+		CacheControl: &[]awss3deployment.CacheControl{
+			awss3deployment.CacheControl_MaxAge(awscdk.Duration_Days(jsii.Number(365))),
+			awss3deployment.CacheControl_Immutable(),
+		},
+		DestinationBucket:    staticBucket,
+		DestinationKeyPrefix: jsii.String(staticAssetsKeyPrefix + "/fonts"),
+		LogGroup:             staticAssetsDeploymentLogGroup,
+		Prune:                jsii.Bool(false),
+		Sources: &[]awss3deployment.ISource{
+			awss3deployment.Source_Asset(jsii.String("../web/static/fonts"), nil),
+		},
+	})
+	immutableStaticFontsDeployment.Node().AddDependency(staticAssetsDeployment)
 	awss3deployment.NewBucketDeployment(stack, jsii.String("ProductImagesDeployment"), &awss3deployment.BucketDeploymentProps{
 		CacheControl: &[]awss3deployment.CacheControl{
 			awss3deployment.CacheControl_MaxAge(awscdk.Duration_Hours(jsii.Number(1))),

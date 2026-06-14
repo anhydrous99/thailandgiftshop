@@ -1,7 +1,11 @@
 package ssr
 
 
-import "strconv"
+import (
+	"strconv"
+
+	"github.com/anhydrous99/thailandgiftshop/internal/staticassets"
+)
 
 type siteHeadOptions struct {
 	Enhance bool
@@ -39,11 +43,11 @@ templ siteHeadWithOptions(metadata seoMetadata, options siteHeadOptions) {
 		<link rel="icon" href="/static/favicon.svg" type="image/svg+xml"/>
 		<link rel="apple-touch-icon" href="/static/apple-touch-icon.png" sizes="180x180"/>
 		<link rel="manifest" href="/static/site.webmanifest"/>
-		<link rel="preload" href="/static/fonts/space-grotesk-latin-700.woff2" as="font" type="font/woff2" crossorigin/>
-		<link rel="preload" href="/static/fonts/inter-latin-400.woff2" as="font" type="font/woff2" crossorigin/>
-		<link rel="stylesheet" href="/static/assets/app.css"/>
+		<link rel="preload" href={ staticassets.SpaceGrotesk700FontPath } as="font" type="font/woff2" crossorigin/>
+		<link rel="preload" href={ staticassets.Inter400FontPath } as="font" type="font/woff2" crossorigin/>
+		<link rel="stylesheet" href={ staticassets.AppCSSPath }/>
 		if options.Enhance {
-			<script src="/static/js/enhance.js" defer></script>
+			<script src={ staticassets.EnhanceJSPath } defer></script>
 		}
 		for index, jsonLD := range metadata.JSONLD {
 			@templ.JSONScript("structured-data-" + strconv.Itoa(index), jsonLD).WithType("application/ld+json")
