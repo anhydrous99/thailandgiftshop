@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -398,7 +399,7 @@ func (vm adminProductFormViewModel) withProduct(product catalog.Product, imageTo
 }
 
 func newConfirmedProductImageToken(imageURL string, session adminSession, secret string, now time.Time) (string, error) {
-	if !strings.HasPrefix(imageURL, "/images/products/uploads/") || session.Nonce == "" || secret == "" {
+	if !validConfirmedProductImageURL(imageURL) || session.Nonce == "" || secret == "" {
 		return "", errInvalidProductImageUpload
 	}
 	return encodeSignedValue(confirmedProductImagePayload{
@@ -417,10 +418,27 @@ func validConfirmedProductImageToken(value string, imageURL string, session admi
 	if payload.Version != signedValueVersion || payload.URL != imageURL || payload.SessionNonce != session.Nonce || payload.ExpiresAt == 0 {
 		return false
 	}
-	if !strings.HasPrefix(payload.URL, "/images/products/uploads/") {
+	if !validConfirmedProductImageURL(payload.URL) {
 		return false
 	}
 	return now.UTC().Before(time.Unix(payload.ExpiresAt, 0).UTC()) && now.UTC().Before(session.ExpiresAt)
+}
+
+func validConfirmedProductImageURL(imageURL string) bool {
+	if !strings.HasPrefix(imageURL, "/images/products/uploads/") {
+		return false
+	}
+	key := strings.TrimPrefix(imageURL, "/")
+	extension := strings.TrimPrefix(strings.ToLower(path.Ext(key)), ".")
+	contentType, ok := extensionProductImageTypes[extension]
+	if !ok {
+		return false
+	}
+	expectedExtension, ok := allowedProductImageTypes[contentType]
+	if !ok {
+		return false
+	}
+	return validateProductImageUploadKey(defaultProductImagesKeyPrefix, key, expectedExtension) == nil
 }
 
 func defaultVariantRows() []catalog.ProductVariant {
@@ -544,7 +562,7 @@ func (localProductImageUploads) Presign(ctx context.Context, request productImag
 	if err != nil {
 		return productImagePresignResponse{}, err
 	}
-	return productImagePresignResponse{URL: "/admin/uploads/product-image/local", Fields: map[string]string{"Content-Type": contentType}, Key: key, ExpiresAt: now.UTC().Add(productImageUploadPresignTTL), MaxSizeBytes: maxProductImageUploadBytes, ContentType: contentType}, nil
+	return productImagePresignResponse{URL: "/admin/uploads/product-image/local", Fields: map[string]string{"Content-Type": contentType}, Key: key, ExpiresAt: now.UTC().Add(productImageUploadPresignTTL), MaxSizeBytes: maxProductImageUploadBytes, ContentType: contentType, Variants: localProductImageUploadVariants(key)}, nil
 }
 
 func (localProductImageUploads) Confirm(ctx context.Context, request productImageConfirmRequest) (string, error) {
@@ -555,5 +573,30 @@ func (localProductImageUploads) Confirm(ctx context.Context, request productImag
 	if err := validateProductImageUploadKey(defaultProductImagesKeyPrefix, request.Key, extension); err != nil {
 		return "", err
 	}
+	if err := validateProductImageConfirmVariants(request.Key, request.Variants); err != nil {
+		return "", err
+	}
 	return "/" + request.Key, nil
+}
+
+func localProductImageUploadVariants(originalKey string) []productImagePresignVariant {
+	variants := make([]productImagePresignVariant, 0, len(productImageUploadVariantWidths)*2)
+	for _, width := range productImageUploadVariantWidths {
+		for _, format := range []struct {
+			contentType string
+			extension   string
+		}{
+			{contentType: "image/webp", extension: "webp"},
+			{contentType: "image/jpeg", extension: "jpg"},
+		} {
+			variants = append(variants, productImagePresignVariant{
+				URL:         "/admin/uploads/product-image/local",
+				Fields:      map[string]string{"Content-Type": format.contentType},
+				Key:         productImageVariantUploadKey(originalKey, width, format.extension),
+				Width:       width,
+				ContentType: format.contentType,
+			})
+		}
+	}
+	return variants
 }

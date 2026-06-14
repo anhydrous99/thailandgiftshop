@@ -1831,6 +1831,11 @@ func TestHomeRendersProductImageURLsFromCatalog(t *testing.T) {
 			t.Fatalf("body does not contain %q: %q", want, response.Body)
 		}
 	}
+	assertBodyContains(t, response.Body, []string{
+		`<source type="image/webp" srcset="` + productImageWebPSrcset("/images/products/mango-sticky-rice-kit.jpg") + `"`,
+		`<source type="image/jpeg" srcset="` + productImageFallbackSrcset("/images/products/mango-sticky-rice-kit.jpg") + `"`,
+		`<source type="image/webp" srcset="` + productImageWebPSrcset("/images/placeholder-product.jpg") + `"`,
+	})
 }
 
 func TestHomeRendersCategoryCardsFromCatalog(t *testing.T) {

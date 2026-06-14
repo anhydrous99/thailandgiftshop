@@ -3,15 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "build:images": "node ./scripts/build-product-images.mjs",
     "build:css": "tailwindcss -i ./src/styles/app.css -o ./static/assets/app.css --minify",
     "fingerprint": "node ./scripts/fingerprint-assets.mjs",
-    "build": "npm run build:css && npm run fingerprint",
+    "build": "npm run build:images && npm run build:css && npm run fingerprint",
     "test": "npm run build && playwright test",
     "test:install": "playwright install chromium"
   },
   "devDependencies": {
     "@playwright/test": "^1.53.0",
     "@tailwindcss/cli": "^4.1.8",
+    "sharp": "^0.35.1",
     "tailwindcss": "^4.1.8"
   }
 }

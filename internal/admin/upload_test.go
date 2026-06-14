@@ -19,6 +19,44 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
+const testUploadUUID = "11111111-1111-4111-8111-111111111111"
+const testUploadOriginalJPG = "images/products/uploads/2026/06/" + testUploadUUID + "/original.jpg"
+const testUploadOriginalPNG = "images/products/uploads/2026/06/" + testUploadUUID + "/original.png"
+const testUploadOriginalWebP = "images/products/uploads/2026/06/" + testUploadUUID + "/original.webp"
+
+var (
+	testJPEGBytes = []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00, 0x01, 0x01, 0x00, 0x00, 0x48}
+	testPNGBytes  = []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 'I', 'H', 'D', 'R'}
+	testWebPBytes = []byte{'R', 'I', 'F', 'F', 0x24, 0x00, 0x00, 0x00, 'W', 'E', 'B', 'P', 'V', 'P', '8', ' '}
+)
+
+func productImageConfirmVariantsForTest(originalKey string) []productImageConfirmVariant {
+	variants := make([]productImageConfirmVariant, 0, len(productImageUploadVariantWidths)*2)
+	for _, width := range productImageUploadVariantWidths {
+		variants = append(variants,
+			productImageConfirmVariant{Key: productImageVariantUploadKey(originalKey, width, "webp"), ContentType: "image/webp", SizeBytes: 1024, Width: width},
+			productImageConfirmVariant{Key: productImageVariantUploadKey(originalKey, width, "jpg"), ContentType: "image/jpeg", SizeBytes: 1024, Width: width},
+		)
+	}
+	return variants
+}
+
+func recordingImageSetObjectClient(originalKey string, originalContentType string, originalBody []byte) *recordingObjectClient {
+	outputs := map[string]*s3.HeadObjectOutput{
+		originalKey: &s3.HeadObjectOutput{ContentType: aws.String(originalContentType), ContentLength: aws.Int64(1024)},
+	}
+	bodies := map[string][]byte{originalKey: originalBody}
+	for _, variant := range productImageConfirmVariantsForTest(originalKey) {
+		outputs[variant.Key] = &s3.HeadObjectOutput{ContentType: aws.String(variant.ContentType), ContentLength: aws.Int64(variant.SizeBytes)}
+		if variant.ContentType == "image/webp" {
+			bodies[variant.Key] = testWebPBytes
+		} else {
+			bodies[variant.Key] = testJPEGBytes
+		}
+	}
+	return &recordingObjectClient{outputs: outputs, bodies: bodies}
+}
+
 func TestUploadPresignRequiresAuthenticatedSessionBeforeProducingPolicy(t *testing.T) {
 	handler, _ := newAuthTestHandler(t)
 	uploads := &fakeProductImageUploads{}
@@ -49,7 +87,7 @@ func TestUploadConfirmRequiresAuthenticatedSessionBeforeHeadObject(t *testing.T)
 	handler.uploads = uploads
 
 	response, err := handler.Handle(context.Background(), adminJSONRequest(http.MethodPost, productImageConfirmPath, map[string]any{
-		"key":          "images/products/uploads/2026/06/11111111-1111-4111-8111-111111111111.jpg",
+		"key":          testUploadOriginalJPG,
 		"content_type": "image/jpeg",
 		"size_bytes":   1024,
 	}))
@@ -107,7 +145,7 @@ func TestUploadConfirmRequiresValidCSRFBeforeHeadObject(t *testing.T) {
 	handler.uploads = uploads
 
 	request := authenticatedUploadRequest(t, handler, productImageConfirmPath, map[string]any{
-		"key":          "images/products/uploads/2026/06/11111111-1111-4111-8111-111111111111.jpg",
+		"key":          testUploadOriginalWebP,
 		"content_type": "image/webp",
 		"size_bytes":   1024,
 	}, "")
@@ -130,7 +168,7 @@ func TestUploadPresignAllowsJPEGPNGAndWebPOnly(t *testing.T) {
 			uploads := &fakeProductImageUploads{presignResponse: productImagePresignResponse{
 				URL:       "https://product-images.example.s3.amazonaws.com",
 				Fields:    map[string]string{"policy": "signed-policy", "Content-Type": contentType},
-				Key:       "images/products/uploads/2026/06/11111111-1111-4111-8111-111111111111." + allowedProductImageTypes[contentType],
+				Key:       "images/products/uploads/2026/06/" + testUploadUUID + "/original." + allowedProductImageTypes[contentType],
 				ExpiresAt: time.Date(2026, 6, 7, 12, 5, 0, 0, time.UTC),
 			}}
 			handler.uploads = uploads
@@ -207,12 +245,18 @@ func TestProductImagePresignGeneratesConstrainedPolicyKeyAndShortExpiry(t *testi
 	if err != nil {
 		t.Fatalf("Presign returned error: %v", err)
 	}
-	if !strings.HasPrefix(response.Key, "images/products/uploads/2026/06/") || !strings.HasSuffix(response.Key, ".webp") {
+	if !strings.HasPrefix(response.Key, "images/products/uploads/2026/06/") || !strings.HasSuffix(response.Key, "/original.webp") {
 		t.Fatalf("key = %q, want generated webp upload key under dated prefix", response.Key)
 	}
-	filename := strings.TrimSuffix(strings.TrimPrefix(response.Key, "images/products/uploads/2026/06/"), ".webp")
-	if !looksLikeUUID(filename) {
-		t.Fatalf("filename = %q, want UUID", filename)
+	uploadID := strings.TrimSuffix(strings.TrimPrefix(response.Key, "images/products/uploads/2026/06/"), "/original.webp")
+	if !looksLikeUUID(uploadID) {
+		t.Fatalf("uploadID = %q, want UUID", uploadID)
+	}
+	if len(response.Variants) != len(productImageUploadVariantWidths)*2 {
+		t.Fatalf("variants = %d, want %d", len(response.Variants), len(productImageUploadVariantWidths)*2)
+	}
+	if response.Variants[0].Key != "images/products/uploads/2026/06/"+uploadID+"/original-320w.webp" || response.Variants[0].Width != 320 || response.Variants[0].ContentType != "image/webp" {
+		t.Fatalf("first variant = %#v, want first 320w webp sibling", response.Variants[0])
 	}
 	if response.ExpiresAt.Sub(now) != productImageUploadPresignTTL {
 		t.Fatalf("expires_at = %s, want exactly %s after now", response.ExpiresAt, productImageUploadPresignTTL)
@@ -259,11 +303,11 @@ func TestProductImagePresignPolicyIncludesExactKeyContentTypeAndSizeLimit(t *tes
 
 func TestUploadConfirmVerifiesHeadObjectAndReturnsSiteRelativeURL(t *testing.T) {
 	handler, _ := newAuthTestHandler(t)
-	uploads := &fakeProductImageUploads{confirmURL: "/images/products/uploads/2026/06/11111111-1111-4111-8111-111111111111.png"}
+	uploads := &fakeProductImageUploads{confirmURL: "/" + testUploadOriginalPNG}
 	handler.uploads = uploads
 
 	request := authenticatedUploadRequest(t, handler, productImageConfirmPath, map[string]any{
-		"key":          "images/products/uploads/2026/06/11111111-1111-4111-8111-111111111111.png",
+		"key":          testUploadOriginalPNG,
 		"content_type": "image/png",
 		"size_bytes":   2048,
 	}, validUploadCSRF)
@@ -279,11 +323,80 @@ func TestUploadConfirmVerifiesHeadObjectAndReturnsSiteRelativeURL(t *testing.T) 
 	}
 	var body map[string]string
 	decodeJSONResponse(t, response, &body)
-	if body["url"] != "/images/products/uploads/2026/06/11111111-1111-4111-8111-111111111111.png" {
+	if body["url"] != "/"+testUploadOriginalPNG {
 		t.Fatalf("url = %q, want site-relative verified upload URL", body["url"])
 	}
 	if strings.HasPrefix(body["url"], "http://") || strings.HasPrefix(body["url"], "https://") {
 		t.Fatalf("url = %q, must not be external", body["url"])
+	}
+}
+
+func TestProductImageConfirmVerifiesOriginalAndResponsiveVariants(t *testing.T) {
+	service := productImageUploadService{
+		bucketName:   "product-images-bucket",
+		keyPrefix:    "images",
+		objectClient: recordingImageSetObjectClient(testUploadOriginalJPG, "image/jpeg", testJPEGBytes),
+	}
+
+	url, err := service.Confirm(context.Background(), productImageConfirmRequest{
+		Key:         testUploadOriginalJPG,
+		ContentType: "image/jpeg",
+		SizeBytes:   1024,
+		Variants:    productImageConfirmVariantsForTest(testUploadOriginalJPG),
+	})
+	if err != nil {
+		t.Fatalf("Confirm returned error: %v", err)
+	}
+	if url != "/"+testUploadOriginalJPG {
+		t.Fatalf("Confirm URL = %q, want %q", url, "/"+testUploadOriginalJPG)
+	}
+}
+
+func TestProductImageConfirmRequiresCompleteResponsiveVariants(t *testing.T) {
+	valid := productImageConfirmVariantsForTest(testUploadOriginalJPG)
+	tests := []struct {
+		name     string
+		variants []productImageConfirmVariant
+	}{
+		{name: "missing", variants: valid[:len(valid)-1]},
+		{name: "duplicate", variants: append(append([]productImageConfirmVariant{}, valid[:len(valid)-1]...), valid[0])},
+		{name: "wrong width", variants: func() []productImageConfirmVariant {
+			got := append([]productImageConfirmVariant{}, valid...)
+			got[0].Width = 321
+			return got
+		}()},
+		{name: "wrong key", variants: func() []productImageConfirmVariant {
+			got := append([]productImageConfirmVariant{}, valid...)
+			got[0].Key = testUploadOriginalJPG
+			return got
+		}()},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := validateProductImageConfirmVariants(testUploadOriginalJPG, tc.variants); !errors.Is(err, errInvalidProductImageUpload) {
+				t.Fatalf("validateProductImageConfirmVariants error = %v, want invalid upload", err)
+			}
+		})
+	}
+}
+
+func TestProductImageConfirmRejectsInvalidResponsiveVariantObject(t *testing.T) {
+	client := recordingImageSetObjectClient(testUploadOriginalJPG, "image/jpeg", testJPEGBytes)
+	client.bodies[productImageVariantUploadKey(testUploadOriginalJPG, 320, "webp")] = []byte("<!doctype html>")
+	service := productImageUploadService{
+		bucketName:   "product-images-bucket",
+		keyPrefix:    "images",
+		objectClient: client,
+	}
+
+	_, err := service.Confirm(context.Background(), productImageConfirmRequest{
+		Key:         testUploadOriginalJPG,
+		ContentType: "image/jpeg",
+		SizeBytes:   1024,
+		Variants:    productImageConfirmVariantsForTest(testUploadOriginalJPG),
+	})
+	if !errors.Is(err, errInvalidProductImageUpload) {
+		t.Fatalf("Confirm error = %v, want invalid upload", err)
 	}
 }
 
@@ -304,9 +417,10 @@ func TestProductImageConfirmRejectsMissingObjectAndMetadataMismatches(t *testing
 				objectClient: &recordingObjectClient{output: tc.head, err: tc.headErr},
 			}
 			_, err := service.Confirm(context.Background(), productImageConfirmRequest{
-				Key:         "images/products/uploads/2026/06/11111111-1111-4111-8111-111111111111.jpg",
+				Key:         testUploadOriginalJPG,
 				ContentType: "image/jpeg",
 				SizeBytes:   1024,
+				Variants:    productImageConfirmVariantsForTest(testUploadOriginalJPG),
 			})
 			if !errors.Is(err, errProductImageObjectNotFound) && !errors.Is(err, errInvalidProductImageUpload) {
 				t.Fatalf("Confirm error = %v, want upload validation error", err)
@@ -353,22 +467,16 @@ func TestProductImageConfirmValidatesMagicBytes(t *testing.T) {
 				objectClient: client,
 			}
 
-			url, err := service.Confirm(context.Background(), productImageConfirmRequest{
-				Key:         "images/products/uploads/2026/06/11111111-1111-4111-8111-111111111111." + tc.extension,
-				ContentType: tc.contentType,
-				SizeBytes:   1024,
-			})
+			key := "images/products/uploads/2026/06/" + testUploadUUID + "/original." + tc.extension
+			err := service.confirmUploadedImageObject(context.Background(), key, tc.contentType, 1024)
 			if tc.wantErr != nil {
 				if !errors.Is(err, tc.wantErr) {
-					t.Fatalf("Confirm error = %v, want %v", err, tc.wantErr)
+					t.Fatalf("confirmUploadedImageObject error = %v, want %v", err, tc.wantErr)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("Confirm returned error: %v", err)
-			}
-			if url == "" {
-				t.Fatal("Confirm returned empty URL")
+				t.Fatalf("confirmUploadedImageObject returned error: %v", err)
 			}
 			if got := aws.ToString(client.getInput.Range); got != "bytes=0-15" {
 				t.Fatalf("GetObject range = %q, want bytes=0-15", got)
@@ -418,7 +526,9 @@ func TestProductImageConfirmRejectsCallerChosenTrustedPaths(t *testing.T) {
 		"/images/products/uploads/2026/06/11111111-1111-4111-8111-111111111111.jpg",
 		"images/products/../../secrets.jpg",
 		"images/products/uploads/2026/06/not-a-uuid.jpg",
-		"images/products/uploads/2026/06/11111111-1111-4111-8111-111111111111.svg",
+		"images/products/uploads/2026/06/11111111-1111-4111-8111-111111111111.jpg",
+		"images/products/uploads/2026/06/11111111-1111-4111-8111-111111111111/not-original.jpg",
+		"images/products/uploads/2026/06/11111111-1111-4111-8111-111111111111/original.svg",
 	} {
 		t.Run(key, func(t *testing.T) {
 			_, err := service.Confirm(context.Background(), productImageConfirmRequest{Key: key, ContentType: "image/jpeg", SizeBytes: 1024})
@@ -453,19 +563,23 @@ func (f *fakeProductImageUploads) Confirm(ctx context.Context, request productIm
 
 type recordingPostPresigner struct {
 	input      *s3.PutObjectInput
+	inputs     []*s3.PutObjectInput
 	expires    time.Duration
 	conditions []any
 }
 
 func (r *recordingPostPresigner) PresignPostObject(ctx context.Context, input *s3.PutObjectInput, optFns ...func(*s3.PresignPostOptions)) (*s3.PresignedPostRequest, error) {
 	_ = ctx
-	r.input = input
 	options := s3.PresignPostOptions{}
 	for _, optFn := range optFns {
 		optFn(&options)
 	}
-	r.expires = options.Expires
-	r.conditions = options.Conditions
+	if r.input == nil {
+		r.input = input
+		r.expires = options.Expires
+		r.conditions = options.Conditions
+	}
+	r.inputs = append(r.inputs, input)
 	return &s3.PresignedPostRequest{
 		URL: "https://product-images-bucket.s3.us-east-1.amazonaws.com",
 		Values: map[string]string{
@@ -477,9 +591,11 @@ func (r *recordingPostPresigner) PresignPostObject(ctx context.Context, input *s
 type recordingObjectClient struct {
 	input    *s3.HeadObjectInput
 	output   *s3.HeadObjectOutput
+	outputs  map[string]*s3.HeadObjectOutput
 	err      error
 	getInput *s3.GetObjectInput
 	body     []byte
+	bodies   map[string][]byte
 	getErr   error
 }
 
@@ -490,6 +606,13 @@ func (r *recordingObjectClient) HeadObject(ctx context.Context, input *s3.HeadOb
 	if r.err != nil {
 		return nil, r.err
 	}
+	if r.outputs != nil {
+		output, ok := r.outputs[aws.ToString(input.Key)]
+		if !ok {
+			return nil, errProductImageObjectNotFound
+		}
+		return output, nil
+	}
 	return r.output, nil
 }
 
@@ -499,6 +622,13 @@ func (r *recordingObjectClient) GetObject(ctx context.Context, input *s3.GetObje
 	r.getInput = input
 	if r.getErr != nil {
 		return nil, r.getErr
+	}
+	if r.bodies != nil {
+		body, ok := r.bodies[aws.ToString(input.Key)]
+		if !ok {
+			return nil, errProductImageObjectNotFound
+		}
+		return &s3.GetObjectOutput{Body: io.NopCloser(bytes.NewReader(body))}, nil
 	}
 	return &s3.GetObjectOutput{Body: io.NopCloser(bytes.NewReader(r.body))}, nil
 }

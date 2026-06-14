@@ -117,4 +117,4 @@ KMS key adds ~$1/mo.
   path (`internal/commerce/dynamo.go:1659`).
 - [ ] `tgs_cart` cookie lacks `__Host-` prefix / conditional `Secure`
   (`internal/ssr/cart_state.go`).
-- [ ] Responsive `srcset`/WebP for product images when real photography lands.
+- [x] Responsive `srcset`/WebP for product images when real photography lands.

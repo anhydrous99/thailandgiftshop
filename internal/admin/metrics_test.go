@@ -119,10 +119,10 @@ func TestAdminMetricsRecordProductImageUploadOutcome(t *testing.T) {
 	handler, _ := newAuthTestHandler(t)
 	recorder := &testMetricRecorder{}
 	handler.metrics = recorder
-	handler.uploads = &fakeProductImageUploads{confirmURL: "/images/products/uploads/2026/06/11111111-1111-4111-8111-111111111111.webp"}
+	handler.uploads = &fakeProductImageUploads{confirmURL: "/images/products/uploads/2026/06/11111111-1111-4111-8111-111111111111/original.webp"}
 
 	request := authenticatedUploadRequest(t, handler, productImageConfirmPath, map[string]any{
-		"key":          "images/products/uploads/2026/06/11111111-1111-4111-8111-111111111111.webp",
+		"key":          "images/products/uploads/2026/06/11111111-1111-4111-8111-111111111111/original.webp",
 		"content_type": "image/webp",
 		"size_bytes":   1024,
 	}, validUploadCSRF)

@@ -8,7 +8,7 @@ The deployed CDK stack ID is `ThailandGiftshopStack`. Production is deployed in 
 
 Static assets belong in `web/static/`. CDK deploys that folder to a private S3 bucket behind the site CloudFront distribution and serves it under `/static/`, so `web/static/logo.svg` is available as `/static/logo.svg`.
 
-Product image seed assets belong in `web/product-images/`. CDK deploys that folder to a separate private retained S3 bucket behind the same CloudFront distribution and serves it under `/images/`, so `web/product-images/products/mango-sticky-rice-kit.jpg` is available as `/images/products/mango-sticky-rice-kit.jpg`. This bucket is intentionally separate from the pruned static asset deployment so future uploaded product images are not removed by site deploys.
+Product image seed assets belong in `web/product-images/`. CDK deploys that folder to a separate private retained S3 bucket behind the same CloudFront distribution and serves it under `/images/`, so `web/product-images/products/mango-sticky-rice-kit.jpg` is available as `/images/products/mango-sticky-rice-kit.jpg`. `npm --prefix web run build` refreshes the generated `-320w` through `-1200w` JPEG/WebP variants used by storefront `srcset` markup. This bucket is intentionally separate from the pruned static asset deployment so future uploaded product images are not removed by site deploys.
 
 ## Prerequisites
 

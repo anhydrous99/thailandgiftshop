@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -27,6 +28,8 @@ const productImageConfirmPath = "/admin/uploads/product-image/confirm"
 const defaultProductImagesKeyPrefix = "images"
 const productImageUploadPresignTTL = 5 * time.Minute
 const maxProductImageUploadBytes int64 = 5 * 1024 * 1024
+
+var productImageUploadVariantWidths = []int{320, 480, 720, 960, 1200}
 
 var allowedProductImageTypes = map[string]string{
 	"image/jpeg": "jpg",
@@ -55,18 +58,35 @@ type productImagePresignRequest struct {
 }
 
 type productImagePresignResponse struct {
-	URL          string            `json:"url"`
-	Fields       map[string]string `json:"fields"`
-	Key          string            `json:"key"`
-	ExpiresAt    time.Time         `json:"expires_at"`
-	MaxSizeBytes int64             `json:"max_size_bytes"`
-	ContentType  string            `json:"content_type"`
+	URL          string                       `json:"url"`
+	Fields       map[string]string            `json:"fields"`
+	Key          string                       `json:"key"`
+	ExpiresAt    time.Time                    `json:"expires_at"`
+	MaxSizeBytes int64                        `json:"max_size_bytes"`
+	ContentType  string                       `json:"content_type"`
+	Variants     []productImagePresignVariant `json:"variants,omitempty"`
+}
+
+type productImagePresignVariant struct {
+	URL         string            `json:"url"`
+	Fields      map[string]string `json:"fields"`
+	Key         string            `json:"key"`
+	Width       int               `json:"width"`
+	ContentType string            `json:"content_type"`
 }
 
 type productImageConfirmRequest struct {
+	Key         string                       `json:"key"`
+	ContentType string                       `json:"content_type"`
+	SizeBytes   int64                        `json:"size_bytes"`
+	Variants    []productImageConfirmVariant `json:"variants"`
+}
+
+type productImageConfirmVariant struct {
 	Key         string `json:"key"`
 	ContentType string `json:"content_type"`
 	SizeBytes   int64  `json:"size_bytes"`
+	Width       int    `json:"width"`
 }
 
 type s3PostPresigner interface {
@@ -115,17 +135,11 @@ func (s productImageUploadService) Presign(ctx context.Context, request productI
 	if err != nil {
 		return productImagePresignResponse{}, err
 	}
-	post, err := s.presigner.PresignPostObject(ctx, &s3.PutObjectInput{
-		Bucket:      aws.String(s.bucketName),
-		Key:         aws.String(key),
-		ContentType: aws.String(contentType),
-	}, func(options *s3.PresignPostOptions) {
-		options.Expires = productImageUploadPresignTTL
-		options.Conditions = []any{
-			map[string]string{"Content-Type": contentType},
-			[]any{"content-length-range", 1, maxProductImageUploadBytes},
-		}
-	})
+	post, err := s.presignPost(ctx, key, contentType)
+	if err != nil {
+		return productImagePresignResponse{}, err
+	}
+	variants, err := s.presignVariants(ctx, key)
 	if err != nil {
 		return productImagePresignResponse{}, err
 	}
@@ -140,7 +154,47 @@ func (s productImageUploadService) Presign(ctx context.Context, request productI
 		ExpiresAt:    now.UTC().Add(productImageUploadPresignTTL),
 		MaxSizeBytes: maxProductImageUploadBytes,
 		ContentType:  contentType,
+		Variants:     variants,
 	}, nil
+}
+
+func (s productImageUploadService) presignPost(ctx context.Context, key string, contentType string) (*s3.PresignedPostRequest, error) {
+	return s.presigner.PresignPostObject(ctx, &s3.PutObjectInput{
+		Bucket:      aws.String(s.bucketName),
+		Key:         aws.String(key),
+		ContentType: aws.String(contentType),
+	}, func(options *s3.PresignPostOptions) {
+		options.Expires = productImageUploadPresignTTL
+		options.Conditions = []any{
+			map[string]string{"Content-Type": contentType},
+			[]any{"content-length-range", 1, maxProductImageUploadBytes},
+		}
+	})
+}
+
+func (s productImageUploadService) presignVariants(ctx context.Context, originalKey string) ([]productImagePresignVariant, error) {
+	variants := make([]productImagePresignVariant, 0, len(productImageUploadVariantWidths)*2)
+	for _, width := range productImageUploadVariantWidths {
+		for _, format := range []struct {
+			contentType string
+			extension   string
+		}{
+			{contentType: "image/webp", extension: "webp"},
+			{contentType: "image/jpeg", extension: "jpg"},
+		} {
+			key := productImageVariantUploadKey(originalKey, width, format.extension)
+			post, err := s.presignPost(ctx, key, format.contentType)
+			if err != nil {
+				return nil, err
+			}
+			fields := map[string]string{"Content-Type": format.contentType}
+			for name, value := range post.Values {
+				fields[name] = value
+			}
+			variants = append(variants, productImagePresignVariant{URL: post.URL, Fields: fields, Key: key, Width: width, ContentType: format.contentType})
+		}
+	}
+	return variants, nil
 }
 
 func (s productImageUploadService) Confirm(ctx context.Context, request productImageConfirmRequest) (string, error) {
@@ -152,22 +206,34 @@ func (s productImageUploadService) Confirm(ctx context.Context, request productI
 	if err := validateProductImageUploadKey(keyPrefix, request.Key, extension); err != nil {
 		return "", err
 	}
-
-	head, err := s.objectClient.HeadObject(ctx, &s3.HeadObjectInput{
-		Bucket: aws.String(s.bucketName),
-		Key:    aws.String(request.Key),
-	})
-	if err != nil {
-		return "", errProductImageObjectNotFound
-	}
-	if head == nil || strings.TrimSpace(aws.ToString(head.ContentType)) != contentType || aws.ToInt64(head.ContentLength) != request.SizeBytes {
-		return "", errInvalidProductImageUpload
-	}
-	if err := s.validateUploadedImageBytes(ctx, request.Key, contentType); err != nil {
+	if err := validateProductImageConfirmVariants(request.Key, request.Variants); err != nil {
 		return "", err
+	}
+	if err := s.confirmUploadedImageObject(ctx, request.Key, contentType, request.SizeBytes); err != nil {
+		return "", err
+	}
+	for _, variant := range request.Variants {
+		variantContentType, _, _ := allowedProductImageType(variant.ContentType)
+		if err := s.confirmUploadedImageObject(ctx, variant.Key, variantContentType, variant.SizeBytes); err != nil {
+			return "", err
+		}
 	}
 
 	return "/" + request.Key, nil
+}
+
+func (s productImageUploadService) confirmUploadedImageObject(ctx context.Context, key string, contentType string, sizeBytes int64) error {
+	head, err := s.objectClient.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(s.bucketName),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return errProductImageObjectNotFound
+	}
+	if head == nil || strings.TrimSpace(aws.ToString(head.ContentType)) != contentType || aws.ToInt64(head.ContentLength) != sizeBytes {
+		return errInvalidProductImageUpload
+	}
+	return s.validateUploadedImageBytes(ctx, key, contentType)
 }
 
 const productImageMagicByteProbeLength = 16
@@ -241,7 +307,7 @@ func generatedProductImageUploadKey(keyPrefix string, extension string, now time
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%s/products/uploads/%04d/%02d/%s.%s", keyPrefix, now.UTC().Year(), int(now.UTC().Month()), uuid, extension), nil
+	return fmt.Sprintf("%s/products/uploads/%04d/%02d/%s/original.%s", keyPrefix, now.UTC().Year(), int(now.UTC().Month()), uuid, extension), nil
 }
 
 func validateProductImageUploadKey(keyPrefix string, key string, expectedExtension string) error {
@@ -253,11 +319,11 @@ func validateProductImageUploadKey(keyPrefix string, key string, expectedExtensi
 		return errInvalidProductImageUpload
 	}
 	parts := strings.Split(strings.TrimPrefix(key, prefix), "/")
-	if len(parts) != 3 || !validYearMonth(parts[0], parts[1]) {
+	if len(parts) != 4 || !validYearMonth(parts[0], parts[1]) || !looksLikeUploadUUID(parts[2]) {
 		return errInvalidProductImageUpload
 	}
-	filename, extension, ok := strings.Cut(parts[2], ".")
-	if !ok || strings.Contains(extension, ".") || !looksLikeUploadUUID(filename) {
+	filename, extension, ok := strings.Cut(parts[3], ".")
+	if !ok || filename != "original" || strings.Contains(extension, ".") {
 		return errInvalidProductImageUpload
 	}
 	contentType, ok := extensionProductImageTypes[extension]
@@ -265,6 +331,38 @@ func validateProductImageUploadKey(keyPrefix string, key string, expectedExtensi
 		return errInvalidProductImageUpload
 	}
 	return nil
+}
+
+func validateProductImageConfirmVariants(originalKey string, variants []productImageConfirmVariant) error {
+	if len(variants) != len(productImageUploadVariantWidths)*2 {
+		return errInvalidProductImageUpload
+	}
+	seen := map[string]bool{}
+	for _, variant := range variants {
+		_, extension, ok := allowedProductImageType(variant.ContentType)
+		if !ok || !validUploadSize(variant.SizeBytes) || !validProductImageVariantWidth(variant.Width) {
+			return errInvalidProductImageUpload
+		}
+		expectedKey := productImageVariantUploadKey(originalKey, variant.Width, extension)
+		if variant.Key != expectedKey || seen[variant.Key] {
+			return errInvalidProductImageUpload
+		}
+		seen[variant.Key] = true
+	}
+	return nil
+}
+
+func productImageVariantUploadKey(originalKey string, width int, extension string) string {
+	return strings.TrimSuffix(originalKey, path.Ext(originalKey)) + fmt.Sprintf("-%dw.%s", width, extension)
+}
+
+func validProductImageVariantWidth(width int) bool {
+	for _, candidate := range productImageUploadVariantWidths {
+		if width == candidate {
+			return true
+		}
+	}
+	return false
 }
 
 func validYearMonth(year string, month string) bool {

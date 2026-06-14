@@ -9,7 +9,7 @@ templ productDetailPage(vm productDetailPageViewModel) {
 			<main id="main-content" tabindex="-1">
 				<section class="mx-auto grid w-full max-w-7xl gap-8 px-5 py-12 sm:px-8 lg:grid-cols-[1fr_0.9fr] lg:py-16">
 					<div class="relative self-start border border-flag-blue/15 bg-paper">
-					<img class="aspect-[4/3] w-full bg-flag-white object-cover" src={ vm.Product.DisplayImageURL(vm.ProductImagePlaceholderURL) } alt={ vm.Product.Name } width="1200" height="900" sizes="(min-width: 1024px) 50vw, 100vw" fetchpriority="high"/>
+						@productImagePicture(vm.Product.DisplayImageURL(vm.ProductImagePlaceholderURL), vm.Product.Name, "aspect-[4/3] w-full bg-flag-white object-cover", "(min-width: 1024px) 50vw, 100vw", "", "high")
 						<div class="absolute inset-y-0 left-0">
 							@flagEdge("w-3")
 						</div>

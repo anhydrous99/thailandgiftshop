@@ -7,9 +7,9 @@ templ productCard(product catalog.Product, productImagePlaceholderURL string, pr
 		<span aria-hidden="true" class="block h-1 w-full bg-flag-red opacity-0 transition group-hover:opacity-100"></span>
 		<span class="block overflow-hidden">
 			if priority {
-				<img class="aspect-[4/3] w-full bg-flag-white object-cover transition duration-300 group-hover:scale-[1.02]" src={ product.DisplayImageURL(productImagePlaceholderURL) } alt={ product.Name } width="1200" height="900" sizes="(min-width: 1024px) 25vw, (min-width: 640px) 50vw, 100vw" loading="eager" fetchpriority="high"/>
+				@productImagePicture(product.DisplayImageURL(productImagePlaceholderURL), product.Name, "aspect-[4/3] w-full bg-flag-white object-cover transition duration-300 group-hover:scale-[1.02]", "(min-width: 1024px) 25vw, (min-width: 640px) 50vw, 100vw", "eager", "high")
 			} else {
-				<img class="aspect-[4/3] w-full bg-flag-white object-cover transition duration-300 group-hover:scale-[1.02]" src={ product.DisplayImageURL(productImagePlaceholderURL) } alt={ product.Name } width="1200" height="900" sizes="(min-width: 1024px) 25vw, (min-width: 640px) 50vw, 100vw" loading="lazy"/>
+				@productImagePicture(product.DisplayImageURL(productImagePlaceholderURL), product.Name, "aspect-[4/3] w-full bg-flag-white object-cover transition duration-300 group-hover:scale-[1.02]", "(min-width: 1024px) 25vw, (min-width: 640px) 50vw, 100vw", "lazy", "")
 			}
 		</span>
 		<div class="flex grow flex-col p-5">

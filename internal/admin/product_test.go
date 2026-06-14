@@ -186,7 +186,7 @@ func TestProductCreateRejectsGeneratedActiveVariantIDCollisionBeforeWrite(t *tes
 func TestProductCreateRejectsForgedSiteRelativeUploadURLWithoutConfirmation(t *testing.T) {
 	handler, store := newProductTestHandler(t)
 	values := validProductForm(t, handler)
-	values.Set("image_url", "/images/products/uploads/2026/06/11111111-1111-4111-8111-111111111111.webp")
+	values.Set("image_url", "/images/products/uploads/2026/06/11111111-1111-4111-8111-111111111111/original.webp")
 	values.Del("image_token")
 
 	response := authenticatedProductPost(t, handler, "/admin/products", values)
@@ -216,7 +216,7 @@ func TestProductCreateSavesConfirmedImageVariantsAndCategories(t *testing.T) {
 	if err != nil || !found {
 		t.Fatalf("created product found=%v err=%v", found, err)
 	}
-	if product.ImageURL != "/images/products/uploads/2026/06/11111111-1111-4111-8111-111111111111.webp" || product.Status != catalog.StatusActive || product.Version != 1 {
+	if product.ImageURL != "/images/products/uploads/2026/06/11111111-1111-4111-8111-111111111111/original.webp" || product.Status != catalog.StatusActive || product.Version != 1 {
 		t.Fatalf("created product = %#v", product)
 	}
 	if len(product.Variants) != 3 || product.Variants[0].Label != "S" || product.Variants[1].StockQuantity != 2 || product.Variants[2].Label != "XL" || product.TotalAvailableStock() != 3 {
@@ -356,7 +356,7 @@ func authenticatedProductPost(t *testing.T, handler *Handler, path string, value
 
 func validProductForm(t *testing.T, handler *Handler) url.Values {
 	t.Helper()
-	imageURL := "/images/products/uploads/2026/06/11111111-1111-4111-8111-111111111111.webp"
+	imageURL := "/images/products/uploads/2026/06/11111111-1111-4111-8111-111111111111/original.webp"
 	_ = handler
 	return url.Values{
 		"name":           {"Test Shirt"},

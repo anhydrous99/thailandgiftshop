@@ -1,0 +1,25 @@
+package ssr
+
+templ productImagePicture(imageURL string, alt string, className string, sizes string, loading string, fetchPriority string) {
+	if productImageWebPSrcset(imageURL) != "" {
+		<picture>
+			<source type="image/webp" srcset={ productImageWebPSrcset(imageURL) } sizes={ sizes }/>
+			<source type="image/jpeg" srcset={ productImageFallbackSrcset(imageURL) } sizes={ sizes }/>
+			@productImageTag(imageURL, alt, className, sizes, loading, fetchPriority)
+		</picture>
+	} else {
+		@productImageTag(imageURL, alt, className, sizes, loading, fetchPriority)
+	}
+}
+
+templ productImageTag(imageURL string, alt string, className string, sizes string, loading string, fetchPriority string) {
+	if loading != "" && fetchPriority != "" {
+		<img class={ className } src={ productImageSrc(imageURL) } alt={ alt } width={ productImageRenderedWidth } height={ productImageRenderedHeight } sizes={ sizes } loading={ loading } fetchpriority={ fetchPriority }/>
+	} else if loading != "" {
+		<img class={ className } src={ productImageSrc(imageURL) } alt={ alt } width={ productImageRenderedWidth } height={ productImageRenderedHeight } sizes={ sizes } loading={ loading }/>
+	} else if fetchPriority != "" {
+		<img class={ className } src={ productImageSrc(imageURL) } alt={ alt } width={ productImageRenderedWidth } height={ productImageRenderedHeight } sizes={ sizes } fetchpriority={ fetchPriority }/>
+	} else {
+		<img class={ className } src={ productImageSrc(imageURL) } alt={ alt } width={ productImageRenderedWidth } height={ productImageRenderedHeight } sizes={ sizes }/>
+	}
+}
