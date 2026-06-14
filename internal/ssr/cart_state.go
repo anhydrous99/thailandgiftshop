@@ -260,6 +260,11 @@ type requestCart struct {
 	cookies  []string
 	signedIn bool
 	record   commerce.CartRecord
+	// session and customer carry the resolved signed-in session and customer
+	// (zero values when anonymous), so callers that already obtained the cart
+	// state do not re-resolve the session with two more GetItem reads.
+	session  commerce.Session
+	customer commerce.Customer
 	// sessionErr reports that a presented session cookie could not be
 	// resolved because of a transient store error; the cart fell back to the
 	// anonymous cookie. Renders tolerate the fallback, mutations must not.
@@ -270,9 +275,17 @@ func (h *Handler) cartStateFromRequest(ctx context.Context, request events.APIGa
 	// Signed-in carts live in the CART row; the tgs_cart cookie is only a
 	// write-through mirror for the header label and the edge cache key, so
 	// it is ignored as a source here and rewritten on the way out.
-	_, customer, signedIn, sessionClearing, sessionErr := h.customerSessionWithStoreError(ctx, request)
+	session, customer, signedIn, sessionClearing, sessionErr := h.customerSessionWithStoreError(ctx, request)
 	if signedIn {
-		return h.serverCartState(ctx, request, customer.ID)
+		state, err := h.serverCartState(ctx, request, customer.ID)
+		if err != nil {
+			return requestCart{}, err
+		}
+		// Carry the already-resolved session/customer so checkout renders do
+		// not resolve the session a second time.
+		state.session = session
+		state.customer = customer
+		return state, nil
 	}
 
 	decodedCart := cart.Empty()

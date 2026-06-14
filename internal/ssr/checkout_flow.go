@@ -120,12 +120,9 @@ func (h *Handler) handleCheckoutPage(ctx context.Context, request events.APIGate
 		return response
 	}
 	if state.signedIn {
-		session, customer, signedIn, clearingCookies := h.customerSession(ctx, request)
-		if !signedIn {
-			// Race: the session died between the cart read and this resolution.
-			return accountSeeOther(signInLocationForReturnTo("/checkout"), pageCheckout, clearingCookies)
-		}
-		return h.renderCheckoutPage(ctx, request, session, customer, state, checkoutRenderState{
+		// cartStateFromRequest already resolved and validated the session
+		// (GetSession + GetCustomerByID); reuse it instead of resolving again.
+		return h.renderCheckoutPage(ctx, request, state.session, state.customer, state, checkoutRenderState{
 			Canceled: request.QueryStringParameters["canceled"] == "1",
 		}, http.StatusOK)
 	}
