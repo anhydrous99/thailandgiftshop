@@ -737,6 +737,7 @@ func (h *Handler) renderCheckoutProcessingPage(ctx context.Context, request even
 		Metadata:        checkoutConfirmMetadata(),
 		HeaderCartLabel: h.cartNavigation(request),
 		OrderID:         orderID,
+		RefreshURL:      confirmReturnTo(request),
 	}).Render(ctx, &body); err != nil {
 		logAccountError("checkout confirm: render processing page", err)
 		return accountHTMLResponse(http.StatusInternalServerError, "Internal server error", pageCheckoutConfirm, nil)

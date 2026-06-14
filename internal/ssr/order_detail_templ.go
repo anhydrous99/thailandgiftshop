@@ -157,7 +157,7 @@ func orderDetailPage(vm orderDetailPageData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<div class=\"grid gap-8 lg:grid-cols-[1fr_22rem] lg:items-start\"><div class=\"grid gap-8\"><section aria-label=\"Order items\" class=\"border border-flag-blue/15 bg-paper p-5 sm:p-6\"><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Items</p><div class=\"mt-3 grid gap-4\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<div class=\"grid gap-8 lg:grid-cols-[1fr_22rem] lg:items-start\"><div class=\"grid gap-8\"><section aria-label=\"Order items\" class=\"border border-flag-blue/15 bg-paper p-5 sm:p-6\"><h2 class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Items</h2><div class=\"mt-3 grid gap-4\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -268,7 +268,7 @@ func orderDetailPage(vm orderDetailPageData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "</div></section><section aria-label=\"Order status history\" class=\"border border-flag-blue/15 bg-paper p-5 sm:p-6\"><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Status timeline</p><ol data-testid=\"order-timeline\" class=\"mt-3 grid gap-2\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "</div></section><section aria-label=\"Order status history\" class=\"border border-flag-blue/15 bg-paper p-5 sm:p-6\"><h2 class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-red\">Status timeline</h2><ol data-testid=\"order-timeline\" class=\"mt-3 grid gap-2\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -312,7 +312,7 @@ func orderDetailPage(vm orderDetailPageData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "<div class=\"p-6\"><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-white\">Order total</p><dl class=\"mt-5 grid gap-2 border-t border-white/15 pt-5 text-sm leading-6 text-white/70\"><div class=\"flex items-center justify-between\"><dt>Subtotal</dt><dd class=\"font-bold tabular-nums text-white\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "<div class=\"p-6\"><h2 class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-white\">Order total</h2><dl class=\"mt-5 grid gap-2 border-t border-white/15 pt-5 text-sm leading-6 text-white/70\"><div class=\"flex items-center justify-between\"><dt>Subtotal</dt><dd class=\"font-bold tabular-nums text-white\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -400,7 +400,7 @@ func orderDetailPage(vm orderDetailPageData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "<div class=\"mt-6 border-t border-white/15 pt-5\"><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-white\">Ships to</p><address class=\"mt-3 text-sm not-italic leading-6 text-white/90\"><p class=\"font-semibold text-white\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "<div class=\"mt-6 border-t border-white/15 pt-5\"><h3 class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-white\">Ships to</h3><address class=\"mt-3 text-sm not-italic leading-6 text-white/90\"><p class=\"font-semibold text-white\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -506,7 +506,7 @@ func orderDetailPage(vm orderDetailPageData) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if vm.TrackingCarrier != "" || vm.TrackingNumber != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "<div class=\"mt-6 border-t border-white/15 pt-5\"><p class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-white\">Tracking</p><p data-testid=\"order-tracking\" class=\"mt-3 break-all text-sm leading-6 text-white\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "<div class=\"mt-6 border-t border-white/15 pt-5\"><h3 class=\"text-xs font-semibold uppercase tracking-eyebrow text-flag-white\">Tracking</h3><p data-testid=\"order-tracking\" class=\"mt-3 break-all text-sm leading-6 text-white\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

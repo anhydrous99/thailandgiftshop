@@ -967,6 +967,8 @@ func TestCheckoutPageRendersAddressesAndPlaceOrder(t *testing.T) {
 		`<title>Checkout | Thailand Gift Shop</title>`,
 		`Payment is processed by Stripe. We never see or store your card number. Shipping is free while we launch; tax is not collected yet.`,
 		`action="/checkout/place-order"`,
+		`<fieldset class="grid gap-3">`,
+		`<legend class="sr-only">Choose a shipping address</legend>`,
 		`data-testid="checkout-address-option"`,
 		`type="radio" name="address_id"`,
 		`Anong Shopper`,
@@ -5831,7 +5833,23 @@ func TestAddressLifecycle(t *testing.T) {
 	if invalidCreate.StatusCode != http.StatusBadRequest {
 		t.Fatalf("invalid create status = %d, want %d", invalidCreate.StatusCode, http.StatusBadRequest)
 	}
-	assertBodyContains(t, invalidCreate.Body, []string{invalidAddressError, `value="Anong Shopper"`})
+	assertBodyContains(t, invalidCreate.Body, []string{invalidAddressError, `value="Anong Shopper"`, `aria-describedby="address-city-error"`, `Enter a city.`})
+
+	invalidRegion, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/addresses", url.Values{
+		customerCSRFFieldName: {token},
+		"full_name":           {"Anong Shopper"},
+		"line1":               {"123 Sukhumvit Rd"},
+		"city":                {"Bangkok"},
+		"region":              {"XX"},
+		"postal_code":         {"10110"},
+	}, jar))
+	if err != nil {
+		t.Fatalf("Handle invalid-region create returned error: %v", err)
+	}
+	if invalidRegion.StatusCode != http.StatusBadRequest {
+		t.Fatalf("invalid-region create status = %d, want %d", invalidRegion.StatusCode, http.StatusBadRequest)
+	}
+	assertBodyContains(t, invalidRegion.Body, []string{invalidAddressError, `aria-describedby="address-region-error"`, `Choose a valid state.`})
 
 	create, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/addresses", url.Values{
 		customerCSRFFieldName: {token},
@@ -5961,6 +5979,35 @@ func TestAddressLifecycle(t *testing.T) {
 	if missingDefault.StatusCode != http.StatusNotFound {
 		t.Fatalf("missing default status = %d, want %d", missingDefault.StatusCode, http.StatusNotFound)
 	}
+}
+
+func TestAddressEditNormalizesLegacyRegionForSelect(t *testing.T) {
+	env := newAccountTestEnv(t)
+	jar := testCookieJar{}
+	signUpTestCustomer(t, env.handler, jar, "shopper@example.com", "orchid-market-99")
+	customerID := accountCustomerID(t, env, "shopper@example.com")
+
+	address, err := env.commerce.CreateAddress(context.Background(), commerce.Address{
+		CustomerID: customerID,
+		FullName:   "Legacy Shopper",
+		Line1:      "123 Legacy Rd",
+		City:       "Los Angeles",
+		Region:     "California",
+		PostalCode: "90001",
+		Country:    addressCountryUS,
+	})
+	if err != nil {
+		t.Fatalf("CreateAddress returned error: %v", err)
+	}
+
+	editPage, err := env.handler.Handle(context.Background(), jarPageRequest(http.MethodGet, "/account/addresses/"+address.ID+"/edit", jar))
+	if err != nil {
+		t.Fatalf("Handle legacy edit page returned error: %v", err)
+	}
+	if editPage.StatusCode != http.StatusOK {
+		t.Fatalf("legacy edit page status = %d, want %d", editPage.StatusCode, http.StatusOK)
+	}
+	assertBodyContains(t, editPage.Body, []string{`name="region"`, `<option value="CA" selected>California</option>`})
 }
 
 func TestAddressCreateEnforcesLimitAndValidatedNext(t *testing.T) {

@@ -150,6 +150,7 @@ func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi, productImagesB
 			jsii.String(siteDomainName),
 			jsii.String(wwwDomainName),
 		},
+		PriceClass: awscloudfront.PriceClass_PRICE_CLASS_200,
 		DefaultBehavior: &awscloudfront.BehaviorOptions{
 			AllowedMethods:        awscloudfront.AllowedMethods_ALLOW_ALL(),
 			CachePolicy:           cachePolicy,
@@ -296,6 +297,20 @@ func siteHostedZone(stack awscdk.Stack) awsroute53.IPublicHostedZone {
 func siteSecurityHeaders(stack awscdk.Stack) awscloudfront.ResponseHeadersPolicy {
 	return awscloudfront.NewResponseHeadersPolicy(stack, jsii.String("SiteSecurityHeadersPolicy"), &awscloudfront.ResponseHeadersPolicyProps{
 		Comment: jsii.String("Security headers for thailandgiftshop.com"),
+		CustomHeadersBehavior: &awscloudfront.ResponseCustomHeadersBehavior{
+			CustomHeaders: &[]*awscloudfront.ResponseCustomHeader{
+				{
+					Header:   jsii.String("Cross-Origin-Opener-Policy"),
+					Value:    jsii.String("same-origin"),
+					Override: jsii.Bool(true),
+				},
+				{
+					Header:   jsii.String("Permissions-Policy"),
+					Value:    jsii.String("accelerometer=(), autoplay=(), camera=(), clipboard-read=(), clipboard-write=(), display-capture=(), document-domain=(), encrypted-media=(), fullscreen=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), publickey-credentials-get=(), screen-wake-lock=(), usb=(), web-share=(), xr-spatial-tracking=()"),
+					Override: jsii.Bool(true),
+				},
+			},
+		},
 		SecurityHeadersBehavior: &awscloudfront.ResponseSecurityHeadersBehavior{
 			ContentSecurityPolicy: &awscloudfront.ResponseHeadersContentSecurityPolicy{
 				ContentSecurityPolicy: jsii.String("default-src 'self'; base-uri 'self'; connect-src 'self' https://*.s3.amazonaws.com https://*.s3.us-east-1.amazonaws.com; frame-ancestors 'none'; form-action 'self' https://*.s3.amazonaws.com https://*.s3.us-east-1.amazonaws.com https://checkout.stripe.com; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self' " + skipLinkStyleCSPHash + "; manifest-src 'self'"),

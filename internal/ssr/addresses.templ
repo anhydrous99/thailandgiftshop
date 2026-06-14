@@ -22,33 +22,140 @@ templ addressFormFields(form addressFormData) {
 	}
 	<label class="grid gap-2 text-xs font-medium text-muted">
 		Full name
-		<input type="text" name="full_name" value={ form.FullName } autocomplete="name" required class="field-input h-12 text-base"/>
+		<input
+			type="text"
+			name="full_name"
+			value={ form.FullName }
+			autocomplete="name"
+			required
+			if form.FieldError(addressFieldFullName) != "" {
+				aria-invalid="true"
+				aria-describedby="address-full-name-error"
+			}
+			class="field-input h-12 text-base"
+		/>
+		if form.FieldError(addressFieldFullName) != "" {
+			<p id="address-full-name-error" role="alert" class="field-error">{ form.FieldError(addressFieldFullName) }</p>
+		}
 	</label>
 	<label class="grid gap-2 text-xs font-medium text-muted">
 		Address line 1
-		<input type="text" name="line1" value={ form.Line1 } autocomplete="address-line1" required class="field-input h-12 text-base"/>
+		<input
+			type="text"
+			name="line1"
+			value={ form.Line1 }
+			autocomplete="address-line1"
+			required
+			if form.FieldError(addressFieldLine1) != "" {
+				aria-invalid="true"
+				aria-describedby="address-line1-error"
+			}
+			class="field-input h-12 text-base"
+		/>
+		if form.FieldError(addressFieldLine1) != "" {
+			<p id="address-line1-error" role="alert" class="field-error">{ form.FieldError(addressFieldLine1) }</p>
+		}
 	</label>
 	<label class="grid gap-2 text-xs font-medium text-muted">
 		Address line 2 (optional)
-		<input type="text" name="line2" value={ form.Line2 } autocomplete="address-line2" class="field-input h-12 text-base"/>
+		<input
+			type="text"
+			name="line2"
+			value={ form.Line2 }
+			autocomplete="address-line2"
+			if form.FieldError(addressFieldLine2) != "" {
+				aria-invalid="true"
+				aria-describedby="address-line2-error"
+			}
+			class="field-input h-12 text-base"
+		/>
+		if form.FieldError(addressFieldLine2) != "" {
+			<p id="address-line2-error" role="alert" class="field-error">{ form.FieldError(addressFieldLine2) }</p>
+		}
 	</label>
 	<div class="grid gap-4 sm:grid-cols-3">
 		<label class="grid gap-2 text-xs font-medium text-muted">
 			City
-			<input type="text" name="city" value={ form.City } autocomplete="address-level2" required class="field-input h-12 text-base"/>
+			<input
+				type="text"
+				name="city"
+				value={ form.City }
+				autocomplete="address-level2"
+				required
+				if form.FieldError(addressFieldCity) != "" {
+					aria-invalid="true"
+					aria-describedby="address-city-error"
+				}
+				class="field-input h-12 text-base"
+			/>
+			if form.FieldError(addressFieldCity) != "" {
+				<p id="address-city-error" role="alert" class="field-error">{ form.FieldError(addressFieldCity) }</p>
+			}
 		</label>
 		<label class="grid gap-2 text-xs font-medium text-muted">
 			State
-			<input type="text" name="region" value={ form.Region } autocomplete="address-level1" required class="field-input h-12 text-base"/>
+			<select
+				name="region"
+				autocomplete="address-level1"
+				required
+				if form.FieldError(addressFieldRegion) != "" {
+					aria-invalid="true"
+					aria-describedby="address-region-error"
+				}
+				class="field-input h-12 text-base"
+			>
+				if form.Region == "" {
+					<option value="" disabled selected>Choose a state</option>
+				} else {
+					<option value="" disabled>Choose a state</option>
+				}
+				for _, option := range addressRegionOptions {
+					if option.Code == form.Region {
+						<option value={ option.Code } selected>{ option.Label }</option>
+					} else {
+						<option value={ option.Code }>{ option.Label }</option>
+					}
+				}
+			</select>
+			if form.FieldError(addressFieldRegion) != "" {
+				<p id="address-region-error" role="alert" class="field-error">{ form.FieldError(addressFieldRegion) }</p>
+			}
 		</label>
 		<label class="grid gap-2 text-xs font-medium text-muted">
 			ZIP code
-			<input type="text" name="postal_code" value={ form.PostalCode } autocomplete="postal-code" required class="field-input h-12 text-base"/>
+			<input
+				type="text"
+				name="postal_code"
+				value={ form.PostalCode }
+				autocomplete="postal-code"
+				required
+				if form.FieldError(addressFieldPostalCode) != "" {
+					aria-invalid="true"
+					aria-describedby="address-postal-code-error"
+				}
+				class="field-input h-12 text-base"
+			/>
+			if form.FieldError(addressFieldPostalCode) != "" {
+				<p id="address-postal-code-error" role="alert" class="field-error">{ form.FieldError(addressFieldPostalCode) }</p>
+			}
 		</label>
 	</div>
 	<label class="grid gap-2 text-xs font-medium text-muted">
 		Phone (optional)
-		<input type="tel" name="phone" value={ form.Phone } autocomplete="tel" class="field-input h-12 text-base"/>
+		<input
+			type="tel"
+			name="phone"
+			value={ form.Phone }
+			autocomplete="tel"
+			if form.FieldError(addressFieldPhone) != "" {
+				aria-invalid="true"
+				aria-describedby="address-phone-error"
+			}
+			class="field-input h-12 text-base"
+		/>
+		if form.FieldError(addressFieldPhone) != "" {
+			<p id="address-phone-error" role="alert" class="field-error">{ form.FieldError(addressFieldPhone) }</p>
+		}
 	</label>
 	<p class="text-xs font-medium text-muted">Country: United States. We currently ship only within the United States while we launch.</p>
 }

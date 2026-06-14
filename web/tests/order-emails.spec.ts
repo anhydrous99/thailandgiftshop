@@ -33,7 +33,7 @@ async function fillGuestCheckoutForm(page: Page, email: string, fullName: string
   await form.getByLabel('Full name').fill(fullName);
   await form.getByLabel('Address line 1').fill('88 Charoen Krung Road');
   await form.getByLabel('City').fill('Seattle');
-  await form.getByLabel('State').fill('WA');
+  await form.getByLabel('State').selectOption('WA');
   await form.getByLabel('ZIP code').fill('98101');
 }
 

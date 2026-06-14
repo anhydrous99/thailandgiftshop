@@ -86,20 +86,20 @@ KMS key adds ~$1/mo.
 - [ ] **Replace developer-credit footer copy** ("Built with Go… find me on
   GitHub") with customer-facing content. `internal/ssr/layout.templ` (footer
   bottom row).
-- [ ] **Add `Permissions-Policy` + COOP** response headers. `infra/site.go:294`.
+- [x] **Add `Permissions-Policy` + COOP** response headers. `infra/site.go`.
 - [ ] **Tighten CSP `connect-src`/`form-action`** off the global
   `*.s3.amazonaws.com` wildcard. `infra/site.go:296`.
 
 ### P2 — accessibility & correctness
-- [ ] Order-detail section labels are `<p>`, not headings (h1→h3 skip).
+- [x] Order-detail section labels are `<p>`, not headings (h1→h3 skip).
   `internal/ssr/order_detail.templ:48,66,81,92,105`.
-- [ ] Checkout saved-address radios lack `<fieldset>`/`<legend>`.
+- [x] Checkout saved-address radios lack `<fieldset>`/`<legend>`.
   `internal/ssr/checkout.templ:101-124`.
-- [ ] Address-form errors lack per-field `aria-invalid`/`aria-describedby`;
+- [x] Address-form errors lack per-field `aria-invalid`/`aria-describedby`;
   State is free-text. `internal/ssr/addresses.templ:23-52`.
-- [ ] Payment-processing page uses a 3s `<meta refresh>` (re-announces for AT).
+- [x] Payment-processing page uses a 3s `<meta refresh>` (re-announces for AT).
   `internal/ssr/checkout.templ:236`.
-- [ ] DynamoDB deletion protection covered; consider CloudFront
+- [x] DynamoDB deletion protection covered; consider CloudFront
   `PriceClass_200` for cost. `infra/site.go`.
 
 ### P3 — copy & nits

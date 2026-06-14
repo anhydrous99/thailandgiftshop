@@ -640,6 +640,10 @@ func TestFakePayThroughConfirmPlacesPaidOrder(t *testing.T) {
 		`data-testid="order-placed-banner"`,
 		`data-testid="order-status"`,
 		`>Paid</span>`,
+		`<h2 class="text-xs font-semibold uppercase tracking-eyebrow text-flag-red">Items</h2>`,
+		`<h2 class="text-xs font-semibold uppercase tracking-eyebrow text-flag-red">Status timeline</h2>`,
+		`<h2 class="text-xs font-semibold uppercase tracking-eyebrow text-flag-white">Order total</h2>`,
+		`<h3 class="text-xs font-semibold uppercase tracking-eyebrow text-flag-white">Ships to</h3>`,
 		`data-testid="order-timeline-step"`,
 		`Pending payment`,
 		`Mango Sticky Rice Treats`,
@@ -785,11 +789,13 @@ func TestConfirmRendersProcessingPageWhileUnpaid(t *testing.T) {
 		t.Fatalf("confirm status = %d, want 200 processing page", response.StatusCode)
 	}
 	assertBodyContains(t, response.Body, []string{
-		`<meta http-equiv="refresh" content="3">`,
 		`data-testid="checkout-processing"`,
 		`Payment processing`,
+		`Check payment status`,
+		`href="/checkout/confirm?session_id=` + sessionID + `"`,
 		`/orders/` + orderID,
 	})
+	assertBodyOmits(t, response.Body, []string{`http-equiv="refresh"`})
 	if got := response.Headers["Cache-Control"]; got != privatePageCacheControl {
 		t.Fatalf("Cache-Control = %q, want %q", got, privatePageCacheControl)
 	}
@@ -1916,7 +1922,7 @@ func TestGuestPlaceOrderCSRFAndValidation(t *testing.T) {
 		if response.StatusCode != http.StatusBadRequest {
 			t.Fatalf("status = %d, want 400", response.StatusCode)
 		}
-		assertBodyContains(t, response.Body, []string{invalidAddressError, `value="` + guestCheckoutEmail + `"`, `value="Austin"`})
+		assertBodyContains(t, response.Body, []string{invalidAddressError, `value="` + guestCheckoutEmail + `"`, `value="Austin"`, `aria-describedby="address-line1-error"`, `Enter a street address.`})
 	})
 
 	t.Run("empty cart bounces to /cart", func(t *testing.T) {
@@ -2603,11 +2609,13 @@ func TestGuestConfirmUnpaidRendersProcessing(t *testing.T) {
 		t.Fatalf("confirm status = %d, want 200 processing page", response.StatusCode)
 	}
 	assertBodyContains(t, response.Body, []string{
-		`<meta http-equiv="refresh" content="3">`,
 		`data-testid="checkout-processing"`,
 		`Payment processing`,
+		`Check payment status`,
+		`href="/checkout/confirm?session_id=` + sessionID + `"`,
 		`/orders/` + orderID,
 	})
+	assertBodyOmits(t, response.Body, []string{`http-equiv="refresh"`})
 	if got, _, _ := env.commerce.GetOrder(context.Background(), orderID); got.Status != commerce.OrderStatusPendingPayment {
 		t.Fatalf("order status = %q, want still pending_payment", got.Status)
 	}

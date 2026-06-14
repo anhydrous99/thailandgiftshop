@@ -229,12 +229,20 @@ type addressFormData struct {
 	PostalCode   string
 	Phone        string
 	ErrorMessage string
+	FieldErrors  map[string]string
 	// Confirming and Suggestion drive the address-validation "suggest &
 	// confirm" panel: when Confirming is true the form re-renders with the
 	// standardized Suggestion alongside the shopper's entry so they can pick
 	// which one to use.
 	Confirming bool
 	Suggestion *addressSuggestionView
+}
+
+func (f addressFormData) FieldError(field string) string {
+	if f.FieldErrors == nil {
+		return ""
+	}
+	return f.FieldErrors[field]
 }
 
 // addressSuggestionView is the standardized address Amazon Location Service
@@ -376,9 +384,10 @@ type fakePayPageData struct {
 }
 
 // checkoutProcessingPageData renders the no-JS payment-processing interstitial
-// that meta-refreshes the confirm URL until the webhook or reconcile lands.
+// with a manual confirm retry link while the webhook or reconcile lands.
 type checkoutProcessingPageData struct {
 	Metadata        seoMetadata
 	HeaderCartLabel string
 	OrderID         string
+	RefreshURL      string
 }

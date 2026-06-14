@@ -27,6 +27,84 @@ const addressConflictError = "This address changed in another window. Review and
 // addressCountryUS is fixed for v1; the form renders it read-only.
 const addressCountryUS = "US"
 
+const (
+	addressFieldFullName   = "full_name"
+	addressFieldLine1      = "line1"
+	addressFieldLine2      = "line2"
+	addressFieldCity       = "city"
+	addressFieldRegion     = "region"
+	addressFieldPostalCode = "postal_code"
+	addressFieldPhone      = "phone"
+)
+
+type addressRegionOption struct {
+	Code  string
+	Label string
+}
+
+var addressRegionOptions = []addressRegionOption{
+	{Code: "AL", Label: "Alabama"},
+	{Code: "AK", Label: "Alaska"},
+	{Code: "AZ", Label: "Arizona"},
+	{Code: "AR", Label: "Arkansas"},
+	{Code: "CA", Label: "California"},
+	{Code: "CO", Label: "Colorado"},
+	{Code: "CT", Label: "Connecticut"},
+	{Code: "DE", Label: "Delaware"},
+	{Code: "DC", Label: "District of Columbia"},
+	{Code: "FL", Label: "Florida"},
+	{Code: "GA", Label: "Georgia"},
+	{Code: "HI", Label: "Hawaii"},
+	{Code: "ID", Label: "Idaho"},
+	{Code: "IL", Label: "Illinois"},
+	{Code: "IN", Label: "Indiana"},
+	{Code: "IA", Label: "Iowa"},
+	{Code: "KS", Label: "Kansas"},
+	{Code: "KY", Label: "Kentucky"},
+	{Code: "LA", Label: "Louisiana"},
+	{Code: "ME", Label: "Maine"},
+	{Code: "MD", Label: "Maryland"},
+	{Code: "MA", Label: "Massachusetts"},
+	{Code: "MI", Label: "Michigan"},
+	{Code: "MN", Label: "Minnesota"},
+	{Code: "MS", Label: "Mississippi"},
+	{Code: "MO", Label: "Missouri"},
+	{Code: "MT", Label: "Montana"},
+	{Code: "NE", Label: "Nebraska"},
+	{Code: "NV", Label: "Nevada"},
+	{Code: "NH", Label: "New Hampshire"},
+	{Code: "NJ", Label: "New Jersey"},
+	{Code: "NM", Label: "New Mexico"},
+	{Code: "NY", Label: "New York"},
+	{Code: "NC", Label: "North Carolina"},
+	{Code: "ND", Label: "North Dakota"},
+	{Code: "OH", Label: "Ohio"},
+	{Code: "OK", Label: "Oklahoma"},
+	{Code: "OR", Label: "Oregon"},
+	{Code: "PA", Label: "Pennsylvania"},
+	{Code: "RI", Label: "Rhode Island"},
+	{Code: "SC", Label: "South Carolina"},
+	{Code: "SD", Label: "South Dakota"},
+	{Code: "TN", Label: "Tennessee"},
+	{Code: "TX", Label: "Texas"},
+	{Code: "UT", Label: "Utah"},
+	{Code: "VT", Label: "Vermont"},
+	{Code: "VA", Label: "Virginia"},
+	{Code: "WA", Label: "Washington"},
+	{Code: "WV", Label: "West Virginia"},
+	{Code: "WI", Label: "Wisconsin"},
+	{Code: "WY", Label: "Wyoming"},
+}
+
+var addressRegionLookup = func() map[string]string {
+	lookup := make(map[string]string, len(addressRegionOptions)*2)
+	for _, option := range addressRegionOptions {
+		lookup[strings.ToUpper(option.Code)] = option.Code
+		lookup[strings.ToLower(option.Label)] = option.Code
+	}
+	return lookup
+}()
+
 var orderStatusLabels = map[commerce.OrderStatus]string{
 	commerce.OrderStatusPendingPayment: "Pending payment",
 	commerce.OrderStatusPaid:           "Paid",
@@ -372,24 +450,47 @@ func (h *Handler) setDefaultAddressWithRetry(ctx context.Context, customer comme
 }
 
 func parseAddressForm(form url.Values) (addressFormData, commerce.Address, bool) {
+	region, regionOK := normalizeAddressRegion(form.Get(addressFieldRegion))
 	formData := addressFormData{
-		FullName:   strings.TrimSpace(form.Get("full_name")),
-		Line1:      strings.TrimSpace(form.Get("line1")),
-		Line2:      strings.TrimSpace(form.Get("line2")),
-		City:       strings.TrimSpace(form.Get("city")),
-		Region:     strings.TrimSpace(form.Get("region")),
-		PostalCode: strings.TrimSpace(form.Get("postal_code")),
-		Phone:      strings.TrimSpace(form.Get("phone")),
+		FullName:   strings.TrimSpace(form.Get(addressFieldFullName)),
+		Line1:      strings.TrimSpace(form.Get(addressFieldLine1)),
+		Line2:      strings.TrimSpace(form.Get(addressFieldLine2)),
+		City:       strings.TrimSpace(form.Get(addressFieldCity)),
+		Region:     region,
+		PostalCode: strings.TrimSpace(form.Get(addressFieldPostalCode)),
+		Phone:      strings.TrimSpace(form.Get(addressFieldPhone)),
 	}
 
-	valid := formData.FullName != "" && formData.Line1 != "" && formData.City != "" && formData.Region != "" && formData.PostalCode != ""
-	for _, field := range []string{formData.FullName, formData.Line1, formData.Line2, formData.City, formData.Region} {
-		if len(field) > maxAddressFieldLength {
-			valid = false
-		}
+	if formData.FullName == "" {
+		addAddressFieldError(&formData, addressFieldFullName, "Enter the recipient's full name.")
+	} else if len(formData.FullName) > maxAddressFieldLength {
+		addAddressFieldError(&formData, addressFieldFullName, "Enter a full name with 120 characters or fewer.")
 	}
-	if len(formData.PostalCode) > maxAddressPostalCodeLength || len(formData.Phone) > maxAddressPhoneLength {
-		valid = false
+	if formData.Line1 == "" {
+		addAddressFieldError(&formData, addressFieldLine1, "Enter a street address.")
+	} else if len(formData.Line1) > maxAddressFieldLength {
+		addAddressFieldError(&formData, addressFieldLine1, "Enter address line 1 with 120 characters or fewer.")
+	}
+	if len(formData.Line2) > maxAddressFieldLength {
+		addAddressFieldError(&formData, addressFieldLine2, "Enter address line 2 with 120 characters or fewer.")
+	}
+	if formData.City == "" {
+		addAddressFieldError(&formData, addressFieldCity, "Enter a city.")
+	} else if len(formData.City) > maxAddressFieldLength {
+		addAddressFieldError(&formData, addressFieldCity, "Enter a city with 120 characters or fewer.")
+	}
+	if formData.Region == "" {
+		addAddressFieldError(&formData, addressFieldRegion, "Choose a state.")
+	} else if !regionOK {
+		addAddressFieldError(&formData, addressFieldRegion, "Choose a valid state.")
+	}
+	if formData.PostalCode == "" {
+		addAddressFieldError(&formData, addressFieldPostalCode, "Enter a ZIP code.")
+	} else if len(formData.PostalCode) > maxAddressPostalCodeLength {
+		addAddressFieldError(&formData, addressFieldPostalCode, "Enter a ZIP code with 20 characters or fewer.")
+	}
+	if len(formData.Phone) > maxAddressPhoneLength {
+		addAddressFieldError(&formData, addressFieldPhone, "Enter a phone number with 32 characters or fewer.")
 	}
 
 	return formData, commerce.Address{
@@ -401,16 +502,45 @@ func parseAddressForm(form url.Values) (addressFormData, commerce.Address, bool)
 		PostalCode: formData.PostalCode,
 		Country:    addressCountryUS,
 		Phone:      formData.Phone,
-	}, valid
+	}, len(formData.FieldErrors) == 0
+}
+
+func addAddressFieldError(form *addressFormData, field string, message string) {
+	if form.FieldErrors == nil {
+		form.FieldErrors = map[string]string{}
+	}
+	if form.FieldErrors[field] == "" {
+		form.FieldErrors[field] = message
+	}
+}
+
+func validAddressRegion(region string) bool {
+	_, ok := normalizeAddressRegion(region)
+	return ok
+}
+
+func normalizeAddressRegion(region string) (string, bool) {
+	trimmed := strings.TrimSpace(region)
+	if trimmed == "" {
+		return "", false
+	}
+	if code, ok := addressRegionLookup[strings.ToUpper(trimmed)]; ok {
+		return code, true
+	}
+	if code, ok := addressRegionLookup[strings.ToLower(trimmed)]; ok {
+		return code, true
+	}
+	return strings.ToUpper(trimmed), false
 }
 
 func addressFormDataFromAddress(address commerce.Address) addressFormData {
+	region, _ := normalizeAddressRegion(address.Region)
 	return addressFormData{
 		FullName:   address.FullName,
 		Line1:      address.Line1,
 		Line2:      address.Line2,
 		City:       address.City,
-		Region:     address.Region,
+		Region:     region,
 		PostalCode: address.PostalCode,
 		Phone:      address.Phone,
 	}

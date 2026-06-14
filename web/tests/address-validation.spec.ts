@@ -32,7 +32,7 @@ async function fillAddress(form: Locator, line1: string, fullName = 'Anong Shopp
   await form.getByLabel('Full name').fill(fullName);
   await form.getByLabel('Address line 1').fill(line1);
   await form.getByLabel('City').fill('Townsville');
-  await form.getByLabel('State').fill('CA');
+  await form.getByLabel('State').selectOption('CA');
   await form.getByLabel('ZIP code').fill('90001');
 }
 

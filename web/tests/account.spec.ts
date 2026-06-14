@@ -29,7 +29,7 @@ async function fillAddressForm(page: Page, data: AddressFormData) {
   await form.getByLabel('Full name').fill(data.fullName);
   await form.getByLabel('Address line 1').fill(data.line1);
   await form.getByLabel('City').fill(data.city);
-  await form.getByLabel('State').fill(data.region);
+  await form.getByLabel('State').selectOption(data.region);
   await form.getByLabel('ZIP code').fill(data.postalCode);
 }
 

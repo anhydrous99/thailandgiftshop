@@ -52,8 +52,13 @@ func (h *Handler) resolveAddressValidation(ctx context.Context, form url.Values,
 		return addressDecision{kind: addressProceed, address: entered}
 	}
 	if confirmed && choice == addressChoiceSuggested {
+		standardized, ok := standardizedAddressFromForm(form, entered)
+		if !ok {
+			h.recordAddressValidation("invalid_suggestion")
+			return addressDecision{kind: addressReject}
+		}
 		h.recordAddressValidation("accepted")
-		return addressDecision{kind: addressProceed, address: standardizedAddressFromForm(form, entered)}
+		return addressDecision{kind: addressProceed, address: standardized}
 	}
 
 	if h.addressValidator == nil {
@@ -106,23 +111,39 @@ func locationAddressFromCommerce(a commerce.Address) location.Address {
 // standardizedAddressFromForm rebuilds the accepted suggestion from the hidden
 // standardized_* inputs, keeping the non-validated fields (name, phone) from
 // the entered address and falling back to entered values defensively.
-func standardizedAddressFromForm(form url.Values, entered commerce.Address) commerce.Address {
+func standardizedAddressFromForm(form url.Values, entered commerce.Address) (commerce.Address, bool) {
 	std := entered
 	std.Country = addressCountryUS
 	if line1 := strings.TrimSpace(form.Get("standardized_line1")); line1 != "" {
+		if len(line1) > maxAddressFieldLength {
+			return commerce.Address{}, false
+		}
 		std.Line1 = line1
 	}
 	std.Line2 = strings.TrimSpace(form.Get("standardized_line2"))
+	if len(std.Line2) > maxAddressFieldLength {
+		return commerce.Address{}, false
+	}
 	if city := strings.TrimSpace(form.Get("standardized_city")); city != "" {
+		if len(city) > maxAddressFieldLength {
+			return commerce.Address{}, false
+		}
 		std.City = city
 	}
 	if region := strings.TrimSpace(form.Get("standardized_region")); region != "" {
-		std.Region = region
+		normalized, ok := normalizeAddressRegion(region)
+		if !ok {
+			return commerce.Address{}, false
+		}
+		std.Region = normalized
 	}
 	if postal := strings.TrimSpace(form.Get("standardized_postal_code")); postal != "" {
+		if len(postal) > maxAddressPostalCodeLength {
+			return commerce.Address{}, false
+		}
 		std.PostalCode = postal
 	}
-	return std
+	return std, true
 }
 
 func addressSuggestionViewFromLocation(a location.Address) addressSuggestionView {

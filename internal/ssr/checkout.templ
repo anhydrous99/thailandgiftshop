@@ -98,7 +98,8 @@ templ checkoutPage(vm checkoutPageViewModel) {
 											</div>
 											<a href="/account/addresses?next=/checkout" class="text-sm font-bold text-flag-red transition hover:text-flag-red-deep hover:underline hover:underline-offset-4">Manage addresses</a>
 										</div>
-										<div class="grid gap-3">
+										<fieldset class="grid gap-3">
+											<legend class="sr-only">Choose a shipping address</legend>
 											for _, address := range vm.Addresses {
 												<label data-testid="checkout-address-option" class="grid cursor-pointer grid-cols-[auto_1fr] items-start gap-4 border border-flag-blue/15 bg-flag-white p-4 transition hover:border-flag-blue has-checked:border-flag-blue has-checked:bg-paper">
 													if address.ID == vm.SelectedAddress {
@@ -121,7 +122,7 @@ templ checkoutPage(vm checkoutPageViewModel) {
 													</span>
 												</label>
 											}
-										</div>
+										</fieldset>
 									</section>
 									@checkoutItemsSection(vm)
 								</div>
@@ -233,7 +234,6 @@ templ checkoutProcessingPage(vm checkoutProcessingPageData) {
 		<head>
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
-			<meta http-equiv="refresh" content="3"/>
 			<title>{ vm.Metadata.Title }</title>
 			<meta name="description" content={ vm.Metadata.Description }/>
 			<meta name="robots" content="noindex, follow"/>
@@ -249,7 +249,8 @@ templ checkoutProcessingPage(vm checkoutProcessingPageData) {
 						<div class="p-8 text-center">
 							<p class="text-xs font-semibold uppercase tracking-eyebrow text-flag-red">Checkout</p>
 							<h1 class="mt-3 font-display text-3xl font-bold tracking-tight text-flag-blue">Payment processing</h1>
-							<p class="mt-4 text-sm leading-6 text-muted">Stripe is confirming your payment. This page refreshes on its own — leave it open and your order appears as soon as the payment settles.</p>
+							<p class="mt-4 text-sm leading-6 text-muted">Stripe is confirming your payment. This can take a moment; use the button below to check again when you are ready.</p>
+							<a href={ vm.RefreshURL } class="mt-6 inline-flex h-12 items-center justify-center bg-flag-red px-6 text-sm font-bold text-white transition hover:bg-flag-red-deep">Check payment status</a>
 							if vm.OrderID != "" {
 								<p class="mt-4 text-sm leading-6 text-muted">You can also check <a href={ "/orders/" + vm.OrderID } class="font-bold text-flag-red transition hover:text-flag-red-deep hover:underline hover:underline-offset-4">your order page</a> directly.</p>
 							}

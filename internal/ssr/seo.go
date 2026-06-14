@@ -189,7 +189,7 @@ var checkoutMetadata = sync.OnceValue(func() seoMetadata {
 var checkoutConfirmMetadata = sync.OnceValue(func() seoMetadata {
 	return noindexMetadata(
 		"Payment processing | Thailand Gift Shop",
-		"We are confirming your Stripe payment. This page refreshes on its own.",
+		"We are confirming your Stripe payment. Check the payment status again when you are ready.",
 		"/checkout/confirm",
 	)
 })

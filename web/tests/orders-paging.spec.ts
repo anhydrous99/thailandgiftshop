@@ -47,7 +47,7 @@ async function signUpWithAddress(page: Page, email: string) {
   await form.getByLabel('Full name').fill('Paging Tester');
   await form.getByLabel('Address line 1').fill('55 Silom Road');
   await form.getByLabel('City').fill('Houston');
-  await form.getByLabel('State').fill('TX');
+  await form.getByLabel('State').selectOption('TX');
   await form.getByLabel('ZIP code').fill('77002');
   await form.getByRole('button', { name: 'Save address' }).click();
   await expect(page).toHaveURL(/\/account\/addresses$/);

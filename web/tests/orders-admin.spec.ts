@@ -27,7 +27,7 @@ async function placePaidOrder(page: Page, email: string): Promise<string> {
   await form.getByLabel('Full name').fill('Order Desk Tester');
   await form.getByLabel('Address line 1').fill('55 Silom Road');
   await form.getByLabel('City').fill('Houston');
-  await form.getByLabel('State').fill('TX');
+  await form.getByLabel('State').selectOption('TX');
   await form.getByLabel('ZIP code').fill('77002');
   await form.getByRole('button', { name: 'Save address' }).click();
   await expect(page).toHaveURL(/\/account\/addresses$/);

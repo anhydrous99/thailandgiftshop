@@ -84,6 +84,44 @@ func TestAddressValidationSuggestionAcceptStoresStandardized(t *testing.T) {
 	}
 }
 
+func TestAddressValidationRejectsTamperedStandardizedRegion(t *testing.T) {
+	env := newAccountTestEnv(t)
+	jar := testCookieJar{}
+	signUpTestCustomer(t, env.handler, jar, "shopper@example.com", "orchid-market-99")
+	token := accountCSRFToken(t, env.handler, jar)
+
+	suggest, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/addresses",
+		confirmCreateForm(token, "10 "+location.FakeSuggestMarker+" Blvd", nil), jar))
+	if err != nil {
+		t.Fatalf("Handle suggest returned error: %v", err)
+	}
+	jar.update(t, suggest)
+	if suggest.StatusCode != http.StatusOK {
+		t.Fatalf("suggest status = %d, want %d", suggest.StatusCode, http.StatusOK)
+	}
+
+	confirmToken := hiddenInputValue(t, suggest.Body, customerCSRFFieldName)
+	tampered, err := env.handler.Handle(context.Background(), jarFormPostRequest("/account/addresses",
+		confirmCreateForm(confirmToken, "10 "+location.FakeSuggestMarker+" Blvd", url.Values{
+			"address_confirmed":        {"1"},
+			"address_choice":           {"suggested"},
+			"standardized_line1":       {hiddenInputValue(t, suggest.Body, "standardized_line1")},
+			"standardized_city":        {hiddenInputValue(t, suggest.Body, "standardized_city")},
+			"standardized_region":      {"ZZ"},
+			"standardized_postal_code": {hiddenInputValue(t, suggest.Body, "standardized_postal_code")},
+		}), jar))
+	if err != nil {
+		t.Fatalf("Handle tampered accept returned error: %v", err)
+	}
+	if tampered.StatusCode != http.StatusBadRequest {
+		t.Fatalf("tampered accept status = %d, want %d", tampered.StatusCode, http.StatusBadRequest)
+	}
+	assertBodyContains(t, tampered.Body, []string{unverifiableAddressError})
+	if addrs, _ := env.commerce.ListAddresses(context.Background(), accountCustomerID(t, env, "shopper@example.com")); len(addrs) != 0 {
+		t.Fatalf("tampered suggestion must not persist; stored %d", len(addrs))
+	}
+}
+
 func TestAddressValidationConfirmPreservesNext(t *testing.T) {
 	env := newAccountTestEnv(t)
 	jar := testCookieJar{}

@@ -22,7 +22,7 @@ async function saveAddress(page: Page, fullName: string) {
   await form.getByLabel('Full name').fill(fullName);
   await form.getByLabel('Address line 1').fill('44 Rama IV Road');
   await form.getByLabel('City').fill('Austin');
-  await form.getByLabel('State').fill('TX');
+  await form.getByLabel('State').selectOption('TX');
   await form.getByLabel('ZIP code').fill('78701');
   await form.getByRole('button', { name: 'Save address' }).click();
 }
