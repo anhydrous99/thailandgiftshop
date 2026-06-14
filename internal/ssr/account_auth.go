@@ -344,6 +344,12 @@ func (h *Handler) handleSignInSubmit(ctx context.Context, request events.APIGate
 	return h.finishCustomerAuth(ctx, request, pageAccountSignIn, authOperationSignIn, customer.ID, returnTo)
 }
 
+// passwordResetRequestFloor is the minimum wall-clock duration of a reset
+// request, chosen above the observed p99 of the existence-dependent work
+// (token mint + DynamoDB write + SES send) so timing cannot distinguish a
+// registered email from an unknown one.
+const passwordResetRequestFloor = 600 * time.Millisecond
+
 func (h *Handler) handlePasswordResetRequestRoute(ctx context.Context, request events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
 	method := httpapi.Method(request)
 	if method != http.MethodPost {
@@ -397,6 +403,18 @@ func (h *Handler) handlePasswordResetRequestSubmit(ctx context.Context, request 
 		return customerThrottleResponse(pageAccountPasswordReset, now, ipDecision, emailDecision)
 	}
 
+	// The reset response is already enumeration-safe (identical body for
+	// found and not-found). Equalize its latency too: only real accounts run
+	// the token mint + store write + email send, so without a floor the wall
+	// clock would still reveal whether an email is registered. A goroutine
+	// after the response would not help — Lambda freezes after returning.
+	start := time.Now()
+	response := h.resolvePasswordResetRequest(ctx, normalizedEmail, now)
+	h.sleepPasswordResetFloor(start)
+	return response
+}
+
+func (h *Handler) resolvePasswordResetRequest(ctx context.Context, normalizedEmail string, now time.Time) events.APIGatewayV2HTTPResponse {
 	customer, found, err := h.commerce.GetCustomerByEmail(ctx, normalizedEmail)
 	if err != nil {
 		logAccountError("password reset: lookup customer", err)
@@ -413,6 +431,14 @@ func (h *Handler) handlePasswordResetRequestSubmit(ctx context.Context, request 
 
 	h.recordCustomerAuth(authOperationPasswordReset, authOutcomeSuccess)
 	return accountSeeOther("/account/password-reset?sent=1", pageAccountPasswordReset, nil)
+}
+
+// sleepPasswordResetFloor pads the reset request to passwordResetFloor of real
+// wall-clock time, masking the existence-dependent work's timing.
+func (h *Handler) sleepPasswordResetFloor(start time.Time) {
+	if remaining := h.passwordResetFloor - time.Since(start); remaining > 0 {
+		time.Sleep(remaining)
+	}
 }
 
 func (h *Handler) issuePasswordResetEmail(ctx context.Context, customer commerce.Customer, now time.Time) error {

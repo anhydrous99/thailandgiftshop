@@ -4052,6 +4052,7 @@ func newAccountTestEnvWithProducts(t *testing.T, products []catalog.Product) acc
 	provider := payments.NewFakeProvider()
 	handler := NewLocalDemoHandler(catalogStore, commerceStore, provider)
 	handler.passwordHashCost = bcrypt.MinCost
+	handler.passwordResetFloor = 0 // keep reset-request unit tests fast and deterministic
 	fakeEmail, ok := handler.emailSender.(*email.FakeSender)
 	if !ok {
 		t.Fatalf("handler email sender = %T, want *email.FakeSender", handler.emailSender)

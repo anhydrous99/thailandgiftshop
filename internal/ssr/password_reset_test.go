@@ -51,6 +51,29 @@ func TestPasswordResetRequestEnumerationSafeAndSendsKnownCustomer(t *testing.T) 
 	}
 }
 
+func TestPasswordResetRequestAppliesConstantTimeFloorToKnownAndUnknown(t *testing.T) {
+	env := newAccountTestEnv(t)
+	const floor = 120 * time.Millisecond
+	env.handler.passwordResetFloor = floor
+	signUpTestCustomer(t, env.handler, testCookieJar{}, "shopper@example.com", "orchid-market-99")
+	env.email.Clear()
+
+	knownStart := time.Now()
+	submitPasswordResetRequest(t, env.handler, testCookieJar{}, "shopper@example.com")
+	knownElapsed := time.Since(knownStart)
+
+	unknownStart := time.Now()
+	submitPasswordResetRequest(t, env.handler, testCookieJar{}, "missing@example.com")
+	unknownElapsed := time.Since(unknownStart)
+
+	if knownElapsed < floor {
+		t.Errorf("known-email reset took %s, want at least the %s floor", knownElapsed, floor)
+	}
+	if unknownElapsed < floor {
+		t.Errorf("unknown-email reset took %s, want at least the %s floor (no timing oracle)", unknownElapsed, floor)
+	}
+}
+
 func TestPasswordResetRequestReissueInvalidatesOldLink(t *testing.T) {
 	env := newAccountTestEnv(t)
 	signUpTestCustomer(t, env.handler, testCookieJar{}, "shopper@example.com", "orchid-market-99")

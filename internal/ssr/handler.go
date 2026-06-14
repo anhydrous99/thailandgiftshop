@@ -47,8 +47,12 @@ type Handler struct {
 	customerSessionSecret      string
 	passwordHashCost           int
 	now                        func() time.Time
-	originSecretDigests        httpapi.OriginSecretDigests
-	originSecretSet            bool
+	// passwordResetFloor is the minimum wall-clock duration of a password
+	// reset request so the existence-dependent work does not leak whether an
+	// email is registered via a timing side channel. Tests set it to 0.
+	passwordResetFloor  time.Duration
+	originSecretDigests httpapi.OriginSecretDigests
+	originSecretSet     bool
 }
 
 var ssrColdStartRecorded atomic.Bool
@@ -72,6 +76,7 @@ func NewHandlerWithProductImagePlaceholderURL(catalogStore catalog.Store, placeh
 		cartCookieSecret:           os.Getenv(cart.EnvCookieSecret),
 		customerSessionSecret:      os.Getenv(commerce.EnvSessionSecret),
 		now:                        time.Now,
+		passwordResetFloor:         passwordResetRequestFloor,
 		originSecretDigests:        originSecretDigests,
 		originSecretSet:            originSecretSet,
 	}
