@@ -146,7 +146,7 @@ func addObservability(stack awscdk.Stack, resources observabilityResources) {
 		// The alarm ID and name predate the customer-auth rate rule; both are
 		// kept stable so the alarm resource is not replaced on deploy. The
 		// Rule=ALL metric covers every edge rule in the web ACL.
-		addAlarm(stack, "WafAdminBlocksAlarm", "ThailandGiftshop-WAF-AdminBlocks", wafBlocked, 10, 1, "WAF blocked requests across all edge rules (admin login, admin path, and customer auth) exceeded the normal operating threshold."),
+		addAlarm(stack, "WafAdminBlocksAlarm", "ThailandGiftshop-WAF-AdminBlocks", wafBlocked, 50, 1, "WAF blocked requests across all edge rules (rate limits plus the AWS managed IP-reputation and known-bad-inputs groups) exceeded the normal operating threshold."),
 		addAlarm(stack, "AdminOriginRejectedAlarm", "ThailandGiftshop-Admin-OriginRejected", adminOriginRejected, 0, 1, "Admin origin header rejections were observed."),
 		addAlarm(stack, "AdminLoginInvalidAlarm", "ThailandGiftshop-Admin-InvalidLogins", adminLoginInvalid, 10, 1, "Admin invalid login attempts exceeded the normal operating threshold."),
 		addAlarm(stack, "AdminLoginThrottledAlarm", "ThailandGiftshop-Admin-ThrottledLogins", adminLoginThrottled, 0, 1, "Admin login throttling occurred."),

@@ -23,8 +23,40 @@ func adminRateLimitWebACL(stack awscdk.Stack, id string, name string, scope stri
 			adminRateLimitRule("AdminPathRateLimit", 1, 500, adminPathStatement(), metricName+"Path"),
 			adminRateLimitRule("CustomerAuthPostRateLimit", 2, 100, customerAuthPostStatement(), metricName+"CustomerAuthPost"),
 			adminRateLimitRule("CheckoutPlaceOrderRateLimit", 3, 100, checkoutPlaceOrderPostStatement(), metricName+"CheckoutPlaceOrderPost"),
+			// AWS managed baseline: IP reputation and known-bad-inputs block
+			// immediately (low false-positive); the broader common rule set
+			// runs in Count first so its metrics can be reviewed before it is
+			// switched to Block.
+			managedRuleGroupRule("AmazonIpReputationList", 4, wafOverrideNone(), "AWSManagedRulesAmazonIpReputationList", metricName+"IpReputation"),
+			managedRuleGroupRule("KnownBadInputs", 5, wafOverrideNone(), "AWSManagedRulesKnownBadInputsRuleSet", metricName+"KnownBadInputs"),
+			managedRuleGroupRule("CommonRuleSet", 6, wafOverrideCount(), "AWSManagedRulesCommonRuleSet", metricName+"CommonRuleSet"),
 		},
 	})
+}
+
+// managedRuleGroupRule applies an AWS managed rule group. wafOverrideNone keeps
+// the group's own block actions; wafOverrideCount only counts (tuning mode).
+func managedRuleGroupRule(name string, priority int, override *awswafv2.CfnWebACL_OverrideActionProperty, ruleGroupName string, metricName string) *awswafv2.CfnWebACL_RuleProperty {
+	return &awswafv2.CfnWebACL_RuleProperty{
+		Name:           jsii.String(name),
+		Priority:       jsii.Number(priority),
+		OverrideAction: override,
+		Statement: &awswafv2.CfnWebACL_StatementProperty{
+			ManagedRuleGroupStatement: &awswafv2.CfnWebACL_ManagedRuleGroupStatementProperty{
+				VendorName: jsii.String("AWS"),
+				Name:       jsii.String(ruleGroupName),
+			},
+		},
+		VisibilityConfig: wafVisibility(metricName),
+	}
+}
+
+func wafOverrideNone() *awswafv2.CfnWebACL_OverrideActionProperty {
+	return &awswafv2.CfnWebACL_OverrideActionProperty{None: &map[string]interface{}{}}
+}
+
+func wafOverrideCount() *awswafv2.CfnWebACL_OverrideActionProperty {
+	return &awswafv2.CfnWebACL_OverrideActionProperty{Count: &map[string]interface{}{}}
 }
 
 func adminRateLimitRule(name string, priority int, limit int, statement any, metricName string) *awswafv2.CfnWebACL_RuleProperty {

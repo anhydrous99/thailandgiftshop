@@ -435,6 +435,60 @@
               "MetricName": "ThailandGiftshopAdminCloudFrontCheckoutPlaceOrderPost",
               "SampledRequestsEnabled": false
             }
+          },
+          {
+            "Name": "AmazonIpReputationList",
+            "OverrideAction": {
+              "None": {}
+            },
+            "Priority": 4,
+            "Statement": {
+              "ManagedRuleGroupStatement": {
+                "Name": "AWSManagedRulesAmazonIpReputationList",
+                "VendorName": "AWS"
+              }
+            },
+            "VisibilityConfig": {
+              "CloudWatchMetricsEnabled": true,
+              "MetricName": "ThailandGiftshopAdminCloudFrontIpReputation",
+              "SampledRequestsEnabled": false
+            }
+          },
+          {
+            "Name": "KnownBadInputs",
+            "OverrideAction": {
+              "None": {}
+            },
+            "Priority": 5,
+            "Statement": {
+              "ManagedRuleGroupStatement": {
+                "Name": "AWSManagedRulesKnownBadInputsRuleSet",
+                "VendorName": "AWS"
+              }
+            },
+            "VisibilityConfig": {
+              "CloudWatchMetricsEnabled": true,
+              "MetricName": "ThailandGiftshopAdminCloudFrontKnownBadInputs",
+              "SampledRequestsEnabled": false
+            }
+          },
+          {
+            "Name": "CommonRuleSet",
+            "OverrideAction": {
+              "Count": {}
+            },
+            "Priority": 6,
+            "Statement": {
+              "ManagedRuleGroupStatement": {
+                "Name": "AWSManagedRulesCommonRuleSet",
+                "VendorName": "AWS"
+              }
+            },
+            "VisibilityConfig": {
+              "CloudWatchMetricsEnabled": true,
+              "MetricName": "ThailandGiftshopAdminCloudFrontCommonRuleSet",
+              "SampledRequestsEnabled": false
+            }
           }
         ],
         "Scope": "CLOUDFRONT",
@@ -6492,7 +6546,7 @@
     "WafAdminBlocksAlarm6177071E": {
       "Properties": {
         "ActionsEnabled": false,
-        "AlarmDescription": "WAF blocked requests across all edge rules (admin login, admin path, and customer auth) exceeded the normal operating threshold.",
+        "AlarmDescription": "WAF blocked requests across all edge rules (rate limits plus the AWS managed IP-reputation and known-bad-inputs groups) exceeded the normal operating threshold.",
         "AlarmName": "ThailandGiftshop-WAF-AdminBlocks",
         "ComparisonOperator": "GreaterThanThreshold",
         "EvaluationPeriods": 1,
@@ -6536,7 +6590,7 @@
             "Value": "thailandgiftshop"
           }
         ],
-        "Threshold": 10,
+        "Threshold": 50,
         "TreatMissingData": "notBreaching"
       },
       "Type": "AWS::CloudWatch::Alarm"
