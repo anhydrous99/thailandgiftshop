@@ -6185,6 +6185,7 @@ func TestHeaderAndFooterRenderStaticAccountLink(t *testing.T) {
 			assertBodyContains(t, response.Body, []string{
 				`href="/account">Account</a>`,
 				"Checkout is handled securely by Stripe. We never see or store card numbers.",
+				`href="https://github.com/anhydrous99" target="_blank" rel="noopener noreferrer">find me on GitHub</a>`,
 			})
 		})
 	}

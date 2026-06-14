@@ -731,7 +731,7 @@ func siteFooter(cartLabel string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "</a> <a class=\"transition hover:text-white/72 focus-visible:outline-white\" href=\"/account\">Account</a></nav></div><div class=\"mx-auto mt-10 w-full max-w-7xl border-t border-white/10 pt-4\"><p class=\"text-xs text-white/50\">© Thailand Gift Shop</p></div></div></footer>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "</a> <a class=\"transition hover:text-white/72 focus-visible:outline-white\" href=\"/account\">Account</a></nav></div><div class=\"mx-auto mt-10 flex w-full max-w-7xl flex-col gap-2 border-t border-white/10 pt-4 sm:flex-row sm:items-center sm:justify-between\"><p class=\"text-xs text-white/50\">© Thailand Gift Shop</p><p class=\"text-xs text-white/50\">Built with Go, templ &amp; Tailwind on AWS, payments by Stripe. Thanks for visiting — <a class=\"underline underline-offset-4 transition hover:text-white/72 focus-visible:outline-white\" href=\"https://github.com/anhydrous99\" target=\"_blank\" rel=\"noopener noreferrer\">find me on GitHub</a>.</p></div></div></footer>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
