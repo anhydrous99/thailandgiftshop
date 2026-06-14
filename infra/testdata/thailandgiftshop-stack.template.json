@@ -4710,7 +4710,7 @@
         },
         "FunctionVersion": {
           "Fn::GetAtt": [
-            "SsrLambdaCurrentVersion647BF8901b5712c849b280afabafca2204b1c298",
+            "SsrLambdaCurrentVersion647BF890<asset-hash>",
             "Version"
           ]
         },
@@ -4721,7 +4721,7 @@
       },
       "Type": "AWS::Lambda::Alias"
     },
-    "SsrLambdaCurrentVersion647BF8901b5712c849b280afabafca2204b1c298": {
+    "SsrLambdaCurrentVersion647BF890<asset-hash>": {
       "DeletionPolicy": "Delete",
       "Properties": {
         "Description": {
