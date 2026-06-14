@@ -314,8 +314,10 @@ func siteSecurityHeaders(stack awscdk.Stack) awscloudfront.ResponseHeadersPolicy
 			},
 			StrictTransportSecurity: &awscloudfront.ResponseHeadersStrictTransportSecurity{
 				AccessControlMaxAge: awscdk.Duration_Days(jsii.Number(365)),
+				IncludeSubdomains:   jsii.Bool(true),
 				Override:            jsii.Bool(true),
-				Preload:             jsii.Bool(false),
+				// Preload is a near-irreversible commitment; enable after a soak.
+				Preload: jsii.Bool(false),
 			},
 		},
 	})

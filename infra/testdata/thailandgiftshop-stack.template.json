@@ -5124,6 +5124,7 @@
             },
             "StrictTransportSecurity": {
               "AccessControlMaxAgeSec": 31536000,
+              "IncludeSubdomains": true,
               "Override": true,
               "Preload": false
             }
