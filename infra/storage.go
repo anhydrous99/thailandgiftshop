@@ -11,8 +11,9 @@ import (
 
 func addCatalog(stack awscdk.Stack) awsdynamodb.Table {
 	catalogTable := awsdynamodb.NewTable(stack, jsii.String("CatalogTable"), &awsdynamodb.TableProps{
-		BillingMode: awsdynamodb.BillingMode_PAY_PER_REQUEST,
-		Encryption:  awsdynamodb.TableEncryption_AWS_MANAGED,
+		BillingMode:        awsdynamodb.BillingMode_PAY_PER_REQUEST,
+		DeletionProtection: jsii.Bool(true),
+		Encryption:         awsdynamodb.TableEncryption_AWS_MANAGED,
 		PartitionKey: &awsdynamodb.Attribute{
 			Name: jsii.String(catalogPartitionKeyName),
 			Type: awsdynamodb.AttributeType_STRING,
@@ -95,8 +96,9 @@ func addCatalog(stack awscdk.Stack) awsdynamodb.Table {
 // session, throttle, and Stripe-event rows.
 func addCommerce(stack awscdk.Stack) awsdynamodb.Table {
 	commerceTable := awsdynamodb.NewTable(stack, jsii.String("CommerceTable"), &awsdynamodb.TableProps{
-		BillingMode: awsdynamodb.BillingMode_PAY_PER_REQUEST,
-		Encryption:  awsdynamodb.TableEncryption_AWS_MANAGED,
+		BillingMode:        awsdynamodb.BillingMode_PAY_PER_REQUEST,
+		DeletionProtection: jsii.Bool(true),
+		Encryption:         awsdynamodb.TableEncryption_AWS_MANAGED,
 		PartitionKey: &awsdynamodb.Attribute{
 			Name: jsii.String(commercePartitionKeyName),
 			Type: awsdynamodb.AttributeType_STRING,

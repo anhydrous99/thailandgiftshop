@@ -1951,6 +1951,7 @@
           }
         ],
         "BillingMode": "PAY_PER_REQUEST",
+        "DeletionProtectionEnabled": true,
         "GlobalSecondaryIndexes": [
           {
             "IndexName": "slug-index",
@@ -2867,6 +2868,7 @@
           }
         ],
         "BillingMode": "PAY_PER_REQUEST",
+        "DeletionProtectionEnabled": true,
         "GlobalSecondaryIndexes": [
           {
             "IndexName": "customer-orders-index",
