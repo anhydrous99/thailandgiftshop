@@ -4,7 +4,7 @@ package staticassets
 
 const (
 	AppCSSPath               = "/static/assets/app.b2b385f2d753.css"
-	EnhanceJSPath            = "/static/js/enhance.03acdb03ff43.js"
+	EnhanceJSPath            = "/static/js/enhance.34c4fd7943a3.js"
 	AdminProductUploadJSPath = "/static/js/admin-product-upload.ab33936fdb98.js"
 	AdminDashboardJSPath     = "/static/js/admin-dashboard.5735b0da2bbd.js"
 	SpaceGrotesk500FontPath  = "/static/fonts/space-grotesk-latin-500.1b1a8131d9ed.woff2"

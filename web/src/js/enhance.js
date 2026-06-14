@@ -154,6 +154,12 @@
 		var pending = null;
 
 		function submitConfirmed(form, submitter) {
+			// requestSubmit() runs the form's interactive validation and only
+			// dispatches a submit event (which clears this flag on its second
+			// pass) when the form is valid. The finally below drops the flag if
+			// that submit never fired - e.g. a future data-confirm form with a
+			// failing client-side constraint - so the next attempt is confirmed
+			// again instead of slipping through unconfirmed.
 			form.setAttribute("data-confirmed", "true");
 			try {
 				if (typeof form.requestSubmit === "function") {
@@ -166,6 +172,8 @@
 				}
 			} catch (err) {
 				// Fall through to the plain submit below.
+			} finally {
+				form.removeAttribute("data-confirmed");
 			}
 			form.submit();
 		}
