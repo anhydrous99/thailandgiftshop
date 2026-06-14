@@ -195,6 +195,7 @@ func addAdminLoginAttempts(stack awscdk.Stack) awsdynamodb.Table {
 			PointInTimeRecoveryEnabled: jsii.Bool(true),
 		},
 		RemovalPolicy:       awscdk.RemovalPolicy_DESTROY,
+		TableName:           jsii.String(adminLoginAttemptsTableName),
 		TimeToLiveAttribute: jsii.String(adminLoginAttemptsTTLName),
 	})
 }

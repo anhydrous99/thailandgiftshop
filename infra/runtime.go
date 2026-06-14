@@ -100,9 +100,11 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable a
 			commerceTable.TableArn(),
 		},
 	}))
-	ssrAlias := ssrFunction.AddAlias(jsii.String(ssrLambdaAliasName), &awslambda.AliasOptions{
-		ProvisionedConcurrentExecutions: jsii.Number(ssrProvisionedConcurrency),
-	})
+	ssrAliasOptions := &awslambda.AliasOptions{}
+	if ssrProvisionedConcurrency > 0 {
+		ssrAliasOptions.ProvisionedConcurrentExecutions = jsii.Number(ssrProvisionedConcurrency)
+	}
+	ssrAlias := ssrFunction.AddAlias(jsii.String(ssrLambdaAliasName), ssrAliasOptions)
 
 	httpAPI := awsapigatewayv2.NewHttpApi(stack, jsii.String("SsrHttpApi"), &awsapigatewayv2.HttpApiProps{
 		ApiName:            jsii.String("thailandgiftshop-ssr"),

@@ -32,14 +32,17 @@ const (
 	commerceOrdersIndexSKName         = "gsi2sk"
 	commerceTTLAttributeName          = "expires_at"
 
-	staticAssetsKeyPrefix                        = "static"
-	productImagesKeyPrefix                       = "images"
-	adminCredentialsSecretName                   = "thailandgiftshop/admin/credentials"
-	stripeCredentialsSecretName                  = "thailandgiftshop/stripe/credentials"
-	ssrLambdaLogGroupName                        = "/aws/lambda/thailandgiftshop-ssr"
-	ssrLambdaAliasName                           = "live"
-	ssrProvisionedConcurrency                    = 1
+	staticAssetsKeyPrefix       = "static"
+	productImagesKeyPrefix      = "images"
+	adminCredentialsSecretName  = "thailandgiftshop/admin/credentials"
+	stripeCredentialsSecretName = "thailandgiftshop/stripe/credentials"
+	ssrLambdaLogGroupName       = "/aws/lambda/thailandgiftshop-ssr"
+	ssrLambdaAliasName          = "live"
+	// Keep at 0 until the account concurrency quota can leave Lambda's
+	// required 10 unreserved executions available.
+	ssrProvisionedConcurrency                    = 0
 	adminLambdaLogGroupName                      = "/aws/lambda/thailandgiftshop-admin"
+	adminLoginAttemptsTableName                  = "thailandgiftshop-admin-login-attempts"
 	adminLoginAttemptsPKName                     = "client_key"
 	adminLoginAttemptsTTLName                    = "expires_at"
 	adminPreviousOriginHeaderSecretParameterName = "AdminOriginHeaderPreviousSecret"

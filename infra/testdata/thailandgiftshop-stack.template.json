@@ -1121,6 +1121,7 @@
         "SSESpecification": {
           "SSEEnabled": true
         },
+        "TableName": "thailandgiftshop-admin-login-attempts",
         "Tags": [
           {
             "Key": "ManagedBy",
@@ -4714,10 +4715,7 @@
             "Version"
           ]
         },
-        "Name": "live",
-        "ProvisionedConcurrencyConfig": {
-          "ProvisionedConcurrentExecutions": 1
-        }
+        "Name": "live"
       },
       "Type": "AWS::Lambda::Alias"
     },
