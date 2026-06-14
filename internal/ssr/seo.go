@@ -128,6 +128,48 @@ var storyMetadata = sync.OnceValue(func() seoMetadata {
 	), storyBreadcrumbs())
 })
 
+var shippingMetadata = sync.OnceValue(func() seoMetadata {
+	return metadataWithBreadcrumbs(metadataForPath(
+		"Shipping | Thailand Gift Shop",
+		"How Thailand Gift Shop ships Thai snacks, souvenirs, and keepsakes within the United States.",
+		"/shipping",
+	), shippingBreadcrumbs())
+})
+
+var returnsMetadata = sync.OnceValue(func() seoMetadata {
+	return metadataWithBreadcrumbs(metadataForPath(
+		"Returns and refunds | Thailand Gift Shop",
+		"How returns and full refunds work for Thailand Gift Shop orders.",
+		"/returns",
+	), returnsBreadcrumbs())
+})
+
+var contactMetadata = sync.OnceValue(func() seoMetadata {
+	return metadataWithBreadcrumbs(metadataForPath(
+		"Contact us | Thailand Gift Shop",
+		"Reach Thailand Gift Shop for help with orders, shipping, returns, and product questions.",
+		"/contact",
+	), contactBreadcrumbs())
+})
+
+// Privacy and Terms are noindex while their copy is a draft pending legal
+// review, so search engines do not surface placeholder legal text.
+var privacyMetadata = sync.OnceValue(func() seoMetadata {
+	return metadataWithBreadcrumbs(noindexMetadata(
+		"Privacy Policy | Thailand Gift Shop",
+		"How Thailand Gift Shop handles your personal information.",
+		"/privacy",
+	), privacyBreadcrumbs())
+})
+
+var termsMetadata = sync.OnceValue(func() seoMetadata {
+	return metadataWithBreadcrumbs(noindexMetadata(
+		"Terms of Service | Thailand Gift Shop",
+		"The terms that govern your use of Thailand Gift Shop.",
+		"/terms",
+	), termsBreadcrumbs())
+})
+
 var cartMetadata = sync.OnceValue(func() seoMetadata {
 	return noindexMetadata(
 		"Cart | Thailand Gift Shop",
@@ -272,6 +314,26 @@ func storyBreadcrumbs() []breadcrumbItem {
 	return []breadcrumbItem{homeBreadcrumb(), {Name: "Our Story", Path: "/story"}}
 }
 
+func shippingBreadcrumbs() []breadcrumbItem {
+	return []breadcrumbItem{homeBreadcrumb(), {Name: "Shipping", Path: "/shipping"}}
+}
+
+func returnsBreadcrumbs() []breadcrumbItem {
+	return []breadcrumbItem{homeBreadcrumb(), {Name: "Returns and refunds", Path: "/returns"}}
+}
+
+func contactBreadcrumbs() []breadcrumbItem {
+	return []breadcrumbItem{homeBreadcrumb(), {Name: "Contact us", Path: "/contact"}}
+}
+
+func privacyBreadcrumbs() []breadcrumbItem {
+	return []breadcrumbItem{homeBreadcrumb(), {Name: "Privacy Policy", Path: "/privacy"}}
+}
+
+func termsBreadcrumbs() []breadcrumbItem {
+	return []breadcrumbItem{homeBreadcrumb(), {Name: "Terms of Service", Path: "/terms"}}
+}
+
 func accountBreadcrumbs() []breadcrumbItem {
 	return []breadcrumbItem{homeBreadcrumb(), {Name: "Account", Path: "/account"}}
 }
@@ -398,7 +460,12 @@ func sitemapXML(products []catalog.Product, categories []catalog.Category) (stri
 			LastMod: sitemapLastMod(category.UpdatedAt),
 		})
 	}
-	urls = append(urls, sitemapURL{Loc: canonicalURL("/story")})
+	urls = append(urls,
+		sitemapURL{Loc: canonicalURL("/story")},
+		sitemapURL{Loc: canonicalURL("/shipping")},
+		sitemapURL{Loc: canonicalURL("/returns")},
+		sitemapURL{Loc: canonicalURL("/contact")},
+	)
 
 	data, err := xml.MarshalIndent(sitemapURLSet{
 		Xmlns: "http://www.sitemaps.org/schemas/sitemap/0.9",
@@ -442,15 +509,20 @@ func seoHeadersForRoute(kind pageKind) map[string]string {
 		return map[string]string{"Cache-Control": "no-store"}
 	case pageRobotsTxt, pageSitemapXML:
 		return map[string]string{"Cache-Control": seoDiscoveryCacheControl}
-	case pageHome, pageProducts, pageProductDetail, pageCategories, pageCategoryDetail, pageStory:
+	case pageHome, pageProducts, pageProductDetail, pageCategories, pageCategoryDetail, pageStory, pageShipping, pageReturns, pageContact:
 		return map[string]string{"Cache-Control": catalogPageCacheControl}
+	case pagePrivacy, pageTerms:
+		// Public and edge-cacheable, but noindex while the legal copy is a
+		// draft pending review.
+		return map[string]string{"Cache-Control": catalogPageCacheControl, "X-Robots-Tag": "noindex, follow"}
 	}
 	return nil
 }
 
 func usesSharedPublicPageCache(kind pageKind) bool {
 	switch kind {
-	case pageHome, pageProducts, pageProductDetail, pageCategories, pageCategoryDetail, pageStory:
+	case pageHome, pageProducts, pageProductDetail, pageCategories, pageCategoryDetail, pageStory,
+		pageShipping, pageReturns, pageContact, pagePrivacy, pageTerms:
 		return true
 	}
 	return false

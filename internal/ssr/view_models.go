@@ -75,6 +75,27 @@ type storyPageViewModel struct {
 	HeaderCartLabel string
 }
 
+// policyPageViewModel drives the shared static content page used for shipping,
+// returns, privacy, terms, and contact. Draft marks legal copy still pending
+// review; ContactEmail, when set, renders a prominent mailto link.
+type policyPageViewModel struct {
+	Metadata        seoMetadata
+	Breadcrumbs     []breadcrumbItem
+	HeaderCartLabel string
+	Eyebrow         string
+	Title           string
+	Intro           string
+	Draft           bool
+	ContactEmail    string
+	Sections        []policySection
+	UpdatedNote     string
+}
+
+type policySection struct {
+	Heading    string
+	Paragraphs []string
+}
+
 type cartPageViewModel struct {
 	Metadata                   seoMetadata
 	Lines                      []cartLineView

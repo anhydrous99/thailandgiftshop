@@ -19,6 +19,11 @@ const (
 	pageCategories     pageKind = "categories"
 	pageCategoryDetail pageKind = "category-detail"
 	pageStory          pageKind = "story"
+	pageShipping       pageKind = "shipping"
+	pageReturns        pageKind = "returns"
+	pagePrivacy        pageKind = "privacy"
+	pageTerms          pageKind = "terms"
+	pageContact        pageKind = "contact"
 	pageCart           pageKind = "cart"
 	pageCheckout       pageKind = "checkout"
 	pageRobotsTxt      pageKind = "robots-txt"
@@ -96,6 +101,26 @@ func routeForPath(path string) pageRoute {
 		return pageRoute{kind: pageStory, knownPageShape: true}
 	case "/story/":
 		return pageRoute{kind: pageStory, redirectTo: "/story", knownPageShape: true}
+	case "/shipping":
+		return pageRoute{kind: pageShipping, knownPageShape: true}
+	case "/shipping/":
+		return pageRoute{kind: pageShipping, redirectTo: "/shipping", knownPageShape: true}
+	case "/returns":
+		return pageRoute{kind: pageReturns, knownPageShape: true}
+	case "/returns/":
+		return pageRoute{kind: pageReturns, redirectTo: "/returns", knownPageShape: true}
+	case "/privacy":
+		return pageRoute{kind: pagePrivacy, knownPageShape: true}
+	case "/privacy/":
+		return pageRoute{kind: pagePrivacy, redirectTo: "/privacy", knownPageShape: true}
+	case "/terms":
+		return pageRoute{kind: pageTerms, knownPageShape: true}
+	case "/terms/":
+		return pageRoute{kind: pageTerms, redirectTo: "/terms", knownPageShape: true}
+	case "/contact":
+		return pageRoute{kind: pageContact, knownPageShape: true}
+	case "/contact/":
+		return pageRoute{kind: pageContact, redirectTo: "/contact", knownPageShape: true}
 	case "/cart":
 		return pageRoute{kind: pageCart, knownPageShape: true}
 	case "/cart/":

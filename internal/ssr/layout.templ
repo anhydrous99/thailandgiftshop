@@ -177,14 +177,26 @@ templ siteFooter(cartLabel string) {
 					</a>
 					<p class="mt-5 text-base leading-7">Browse a Thai gift-shop catalog of snacks, souvenirs, pantry favorites, textiles, decor, wellness, and small keepsakes.</p>
 					<p class="mt-3 text-base leading-7">Checkout is handled securely by Stripe. We never see or store card numbers.</p>
+					<p class="mt-3 text-base leading-7">Questions? Email <a class="font-semibold underline underline-offset-4 transition hover:text-white/72 focus-visible:outline-white" href="mailto:support@thailandgiftshop.com">support@thailandgiftshop.com</a>.</p>
 				</div>
-				<nav aria-label="Footer navigation" class="grid gap-3 font-medium text-white sm:grid-cols-5 lg:justify-items-end">
-					<a class="transition hover:text-white/72 focus-visible:outline-white" href="/products">Products</a>
-					<a class="transition hover:text-white/72 focus-visible:outline-white" href="/categories">Categories</a>
-					<a class="transition hover:text-white/72 focus-visible:outline-white" href="/story">Story</a>
-					<a class="transition hover:text-white/72 focus-visible:outline-white" href="/cart">{ cartLabel }</a>
-					<a class="transition hover:text-white/72 focus-visible:outline-white" href="/account">Account</a>
-				</nav>
+				<div class="grid gap-8 text-sm font-medium text-white sm:grid-cols-2 lg:justify-items-end">
+					<nav aria-label="Shop" class="grid content-start gap-3">
+						<p class="text-xs font-semibold uppercase tracking-eyebrow text-flag-white">Shop</p>
+						<a class="transition hover:text-white/72 focus-visible:outline-white" href="/products">Products</a>
+						<a class="transition hover:text-white/72 focus-visible:outline-white" href="/categories">Categories</a>
+						<a class="transition hover:text-white/72 focus-visible:outline-white" href="/story">Story</a>
+						<a class="transition hover:text-white/72 focus-visible:outline-white" href="/cart">{ cartLabel }</a>
+						<a class="transition hover:text-white/72 focus-visible:outline-white" href="/account">Account</a>
+					</nav>
+					<nav aria-label="Help and policies" class="grid content-start gap-3">
+						<p class="text-xs font-semibold uppercase tracking-eyebrow text-flag-white">Help</p>
+						<a class="transition hover:text-white/72 focus-visible:outline-white" href="/shipping">Shipping</a>
+						<a class="transition hover:text-white/72 focus-visible:outline-white" href="/returns">Returns and refunds</a>
+						<a class="transition hover:text-white/72 focus-visible:outline-white" href="/contact">Contact</a>
+						<a class="transition hover:text-white/72 focus-visible:outline-white" href="/privacy">Privacy</a>
+						<a class="transition hover:text-white/72 focus-visible:outline-white" href="/terms">Terms</a>
+					</nav>
+				</div>
 			</div>
 			<div class="mx-auto mt-10 flex w-full max-w-7xl flex-col gap-2 border-t border-white/10 pt-4 sm:flex-row sm:items-center sm:justify-between">
 				<p class="text-xs text-white/50">© Thailand Gift Shop</p>

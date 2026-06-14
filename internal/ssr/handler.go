@@ -347,6 +347,8 @@ func (h *Handler) handle(ctx context.Context, request events.APIGatewayV2HTTPReq
 		}
 	case pageStory:
 		body, err = h.renderStory(ctx, headerCartLabel)
+	case pageShipping, pageReturns, pagePrivacy, pageTerms, pageContact:
+		body, err = h.renderPolicyPage(ctx, route.kind, headerCartLabel)
 	case pageCart:
 		body, err = renderCartPage(ctx, cartPageViewModel{
 			Metadata:                   cartMetadata(),
