@@ -60,6 +60,28 @@ var expectedHomeContent = []string{
 	`No categories are available yet.`,
 }
 
+func TestFormatPriceUsesThousandsSeparators(t *testing.T) {
+	tests := []struct {
+		name       string
+		priceCents int
+		want       string
+	}{
+		{name: "negative", priceCents: -1, want: "$0.00"},
+		{name: "zero", priceCents: 0, want: "$0.00"},
+		{name: "under one thousand", priceCents: 2899, want: "$28.99"},
+		{name: "one thousand", priceCents: 100000, want: "$1,000.00"},
+		{name: "millions", priceCents: 123456789, want: "$1,234,567.89"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := formatPrice(test.priceCents); got != test.want {
+				t.Fatalf("formatPrice(%d) = %q, want %q", test.priceCents, got, test.want)
+			}
+		})
+	}
+}
+
 func TestRouteForPath(t *testing.T) {
 	tests := []struct {
 		name string
@@ -885,7 +907,7 @@ func TestCartPageRenders(t *testing.T) {
 		if response.StatusCode != http.StatusOK {
 			t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusOK)
 		}
-		assertBodyContains(t, response.Body, []string{`<title>Cart | Thailand Gift Shop</title>`, `Your cart is empty.`, `Browse the latest Thai snacks`, `href="/products"`, `Continue shopping`})
+		assertBodyContains(t, response.Body, []string{`<title>Cart | Thailand Gift Shop</title>`, `Your cart is empty.`, `Browse the latest Thai snacks`, `start your cart.`, `href="/products"`, `Continue shopping`})
 		assertBodyOmits(t, response.Body, []string{`data-testid="cart-line-item"`, `href="/checkout"`, `action="/cart/clear"`})
 	})
 
@@ -922,7 +944,7 @@ func TestCartPageShowsVariantLabelAndBlocksUnavailableVariantUntilRemoved(t *tes
 		`Size Small`,
 		`Size Archived`,
 		`Selected size is unavailable. Remove it to continue.`,
-		`Remove unavailable sizes before checkout.`,
+		`Remove unavailable items before checkout.`,
 		`action="/cart/items/variant-shirt/remove"`,
 		`type="hidden" name="variant_id" value="var-archived"`,
 	})
@@ -4419,6 +4441,8 @@ func TestSignUpPageRendersFormWithGuestCSRF(t *testing.T) {
 		`name="guest_csrf_token" value="`,
 		`name="email"`,
 		`name="password"`,
+		`data-password-min-bytes="8"`,
+		`maxlength="72"`,
 		`Accounts are active immediately`,
 	})
 	guestCookie := rawSetCookie(t, response, commerce.GuestCSRFCookieName)
@@ -4447,6 +4471,7 @@ func TestSignInPageRendersPasswordResetLinkAndReturnTo(t *testing.T) {
 	assertBodyContains(t, response.Body, []string{
 		`data-testid="signin-form"`,
 		`action="/account/sign-in"`,
+		`maxlength="72"`,
 		`href="/account/password-reset"`,
 		`Reset it by email`,
 		`name="return_to" value="/cart"`,
@@ -4513,7 +4538,7 @@ func TestSignUpCreatesAccountSessionAndCookies(t *testing.T) {
 	if accountResponse.StatusCode != http.StatusOK {
 		t.Fatalf("/account status = %d, want %d", accountResponse.StatusCode, http.StatusOK)
 	}
-	assertBodyContains(t, accountResponse.Body, []string{"Shopper@Example.com", `action="/account/sign-out"`, `action="/account/password"`})
+	assertBodyContains(t, accountResponse.Body, []string{"Shopper@Example.com", `action="/account/sign-out"`, `action="/account/password"`, `data-password-min-bytes="8"`, `maxlength="72"`})
 }
 
 // TestGuestPointerCookieClearedOnSignIn pins the finishCustomerAuth tail: a
@@ -4625,6 +4650,20 @@ func TestSignUpRejectsInvalidEmailAndPasswordLengths(t *testing.T) {
 				t.Fatal("invalid sign-up created a customer")
 			}
 		})
+	}
+}
+
+func TestSignUpAcceptsPasswordMinimumByBytes(t *testing.T) {
+	env := newAccountTestEnv(t)
+	password := "密码密" // 3 characters, 9 UTF-8 bytes.
+	signUpTestCustomer(t, env.handler, testCookieJar{}, "shopper@example.com", password)
+
+	customer, found, err := env.commerce.GetCustomerByEmail(context.Background(), "shopper@example.com")
+	if err != nil || !found {
+		t.Fatalf("customer lookup = found %t, err %v", found, err)
+	}
+	if bcrypt.CompareHashAndPassword([]byte(customer.PasswordHash), []byte(password)) != nil {
+		t.Fatal("stored password hash does not verify the byte-length password")
 	}
 }
 

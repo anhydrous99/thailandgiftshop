@@ -48,12 +48,80 @@
 		});
 	}
 
+	function passwordByteLength(value) {
+		if (typeof window.TextEncoder === "function") {
+			return new window.TextEncoder().encode(value).length;
+		}
+		try {
+			return encodeURIComponent(value).replace(/%[0-9A-F]{2}/g, "x").length;
+		} catch (err) {
+			return value.length;
+		}
+	}
+
+	function passwordMinBytes(input) {
+		return parseInt(input.getAttribute("data-password-min-bytes") || "", 10) || 0;
+	}
+
+	function passwordMaxBytes(input) {
+		return parseInt(input.getAttribute("maxlength") || "", 10) || 0;
+	}
+
+	function validatePasswordByteLimits(input) {
+		var bytes = passwordByteLength(input.value);
+		var minBytes = passwordMinBytes(input);
+		var maxBytes = passwordMaxBytes(input);
+		if (input.value && minBytes && bytes < minBytes) {
+			input.setCustomValidity("Use a password at least " + minBytes + " bytes long. Non-ASCII characters may count as more than one byte.");
+			return false;
+		}
+		if (maxBytes && bytes > maxBytes) {
+			input.setCustomValidity("Use a password no longer than " + maxBytes + " bytes. Non-ASCII characters may count as more than one byte.");
+			return false;
+		}
+		input.setCustomValidity("");
+		return true;
+	}
+
+	function wirePasswordByteLimits() {
+		var selector = 'input[type="password"][maxlength], input[type="password"][data-password-min-bytes]';
+		var inputs = document.querySelectorAll(selector);
+		Array.prototype.forEach.call(inputs, function (input) {
+			input.addEventListener("input", function () {
+				validatePasswordByteLimits(input);
+			});
+		});
+
+		document.addEventListener("submit", function (event) {
+			var form = event.target;
+			if (!form || form.nodeName !== "FORM") {
+				return;
+			}
+			var invalid = null;
+			var passwordInputs = form.querySelectorAll(selector);
+			Array.prototype.forEach.call(passwordInputs, function (input) {
+				if (!validatePasswordByteLimits(input) && !invalid) {
+					invalid = input;
+				}
+			});
+			if (invalid) {
+				event.preventDefault();
+				event.stopImmediatePropagation();
+				invalid.reportValidity();
+				invalid.focus();
+			}
+		});
+	}
+
 	// Submit affordance - mark the activated submit control busy so the styled
 	// spinner shows during the POST -> redirect round trip. Cleared on the next
 	// page load (and on bfcache restore below). We never preventDefault, so the
 	// submission proceeds exactly as it would without JS.
 	function wireSubmitFeedback() {
 		document.addEventListener("submit", function (event) {
+			if (event.defaultPrevented) {
+				return;
+			}
 			var form = event.target;
 			if (!form || form.nodeName !== "FORM") {
 				return;
@@ -78,5 +146,6 @@
 	});
 
 	wireVariantPickers();
+	wirePasswordByteLimits();
 	wireSubmitFeedback();
 })();

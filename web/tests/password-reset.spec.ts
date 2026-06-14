@@ -15,7 +15,7 @@ async function signUp(page: Page, email: string) {
   await page.goto('/account/sign-up');
   await expect(page.getByTestId('signup-form')).toBeVisible();
   await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password (8 to 72 characters)').fill(oldPassword);
+  await page.getByLabel('Password (8 to 72 bytes)').fill(oldPassword);
   await page.getByRole('button', { name: 'Create account' }).click();
   await expect(page).toHaveURL(/\/account$/);
   await expect(page.getByRole('heading', { name: 'Your account', level: 1 })).toBeVisible();
@@ -71,7 +71,7 @@ test.describe('without JavaScript', () => {
     await page.goto(resetLink);
     const confirmForm = page.getByTestId('password-reset-confirm-form');
     await expect(confirmForm).toBeVisible();
-    await confirmForm.getByLabel('New password (8 to 72 characters)').fill(newPassword);
+    await confirmForm.getByLabel('New password (8 to 72 bytes)').fill(newPassword);
     await confirmForm.getByRole('button', { name: 'Reset password' }).click();
 
     await expect(page).toHaveURL(/\/account\/sign-in\?password_reset=1$/);

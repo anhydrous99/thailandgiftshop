@@ -178,8 +178,8 @@ templ checkoutSummaryAside(vm checkoutPageViewModel, showPlaceOrder bool) {
 			<p class="text-xs font-semibold uppercase tracking-eyebrow text-flag-white">Order total</p>
 			<div class="mt-5 grid gap-2 border-t border-white/15 pt-5 text-sm leading-6 text-white/70">
 				<p class="flex items-center justify-between">Subtotal <span class="font-bold tabular-nums text-white">{ vm.Subtotal }</span></p>
-				<p class="flex items-center justify-between">Shipping <span class="font-bold text-white">Free</span></p>
-				<p class="flex items-center justify-between">Tax <span class="font-bold text-white">$0.00</span></p>
+				<p class="flex items-center justify-between">Shipping <span class="font-bold tabular-nums text-white">{ vm.Shipping }</span></p>
+				<p class="flex items-center justify-between">Tax <span class="font-bold tabular-nums text-white">{ vm.Tax }</span></p>
 			</div>
 			<div class="mt-5 flex items-center justify-between border-t border-white/15 pt-5">
 				<p class="text-base font-bold text-white">Total</p>

@@ -158,7 +158,7 @@ func signUpPage(vm signUpPageData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</label> <label class=\"grid gap-2 text-xs font-medium text-muted\">Password (8 to 72 characters) <input type=\"password\" name=\"password\" autocomplete=\"new-password\" required minlength=\"8\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</label> <label class=\"grid gap-2 text-xs font-medium text-muted\">Password (8 to 72 bytes) <input type=\"password\" name=\"password\" autocomplete=\"new-password\" required data-password-min-bytes=\"8\" maxlength=\"72\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -180,7 +180,7 @@ func signUpPage(vm signUpPageData) templ.Component {
 			var templ_7745c5c3_Var7 string
 			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(vm.PasswordError)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/signup.templ`, Line: 59, Col: 90}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/signup.templ`, Line: 60, Col: 90}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 			if templ_7745c5c3_Err != nil {

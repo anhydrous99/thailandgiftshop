@@ -41,13 +41,14 @@ templ signUpPage(vm signUpPageData) {
 								}
 							</label>
 							<label class="grid gap-2 text-xs font-medium text-muted">
-								Password (8 to 72 characters)
+								Password (8 to 72 bytes)
 								<input
 									type="password"
 									name="password"
 									autocomplete="new-password"
 									required
-									minlength="8"
+									data-password-min-bytes="8"
+									maxlength="72"
 									if vm.PasswordError != "" {
 										aria-invalid="true"
 										aria-describedby="signup-password-error"

@@ -2,6 +2,7 @@ package commerce
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -1657,7 +1658,7 @@ func passwordResetTokenFromItem(item map[string]types.AttributeValue) (PasswordR
 }
 
 func passwordResetTokenUsable(token PasswordResetToken, tokenHash string, now time.Time) bool {
-	return token.TokenHash == tokenHash && token.UsedAt.IsZero() && token.ExpiresAt.After(now.UTC())
+	return subtle.ConstantTimeCompare([]byte(token.TokenHash), []byte(tokenHash)) == 1 && token.UsedAt.IsZero() && token.ExpiresAt.After(now.UTC())
 }
 
 func cartItem(record CartRecord) (map[string]types.AttributeValue, error) {

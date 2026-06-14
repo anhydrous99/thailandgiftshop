@@ -132,6 +132,8 @@ type checkoutPageViewModel struct {
 	// preservation after a failed POST).
 	AddressForm  addressFormData
 	Subtotal     string
+	Shipping     string
+	Tax          string
 	Total        string
 	Canceled     bool
 	ErrorMessage string

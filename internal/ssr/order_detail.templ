@@ -33,6 +33,7 @@ templ orderDetailPage(vm orderDetailPageData) {
 							if vm.Guest {
 								<a href="/account/sign-up" data-testid="guest-signup-upsell" class="font-bold text-flag-red transition hover:text-flag-red-deep hover:underline hover:underline-offset-4">Create an account</a> to keep your orders in one place next time.
 							}
+							<span class="mt-2 block"><a href="/products" data-testid="order-continue-shopping-link" class="font-bold text-flag-red transition hover:text-flag-red-deep hover:underline hover:underline-offset-4">Continue shopping</a>.</span>
 						</p>
 					}
 					if vm.Guest {

@@ -726,7 +726,12 @@ func formatPrice(priceCents int) string {
 		priceCents = 0
 	}
 
-	return "$" + strconv.Itoa(priceCents/100) + "." + twoDigitCents(priceCents%100)
+	dollars := strconv.Itoa(priceCents / 100)
+	for insertAt := len(dollars) - 3; insertAt > 0; insertAt -= 3 {
+		dollars = dollars[:insertAt] + "," + dollars[insertAt:]
+	}
+
+	return "$" + dollars + "." + twoDigitCents(priceCents%100)
 }
 
 func twoDigitCents(cents int) string {

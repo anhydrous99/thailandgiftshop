@@ -638,6 +638,7 @@ func TestFakePayThroughConfirmPlacesPaidOrder(t *testing.T) {
 	}
 	assertBodyContains(t, detailResponse.Body, []string{
 		`data-testid="order-placed-banner"`,
+		`data-testid="order-continue-shopping-link"`,
 		`data-testid="order-status"`,
 		`>Paid</span>`,
 		`<h2 class="text-xs font-semibold uppercase tracking-eyebrow text-flag-red">Items</h2>`,
@@ -2343,6 +2344,7 @@ func TestGuestFakePayThroughConfirmPlacesPaidOrder(t *testing.T) {
 		`data-testid="order-status"`,
 		`>Paid</span>`,
 		`data-testid="order-placed-banner"`,
+		`data-testid="order-continue-shopping-link"`,
 		`data-testid="guest-order-link-notice"`,
 		`data-testid="guest-signup-upsell"`,
 	})

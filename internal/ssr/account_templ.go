@@ -238,7 +238,7 @@ func passwordResetConfirmPage(vm passwordResetConfirmPageData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "<p class=\"mt-3 text-sm leading-6 text-muted\">Use 8 to 72 characters. Resetting your password signs out every device.</p><form method=\"post\" action=\"/account/password-reset/confirm\" data-testid=\"password-reset-confirm-form\" class=\"mt-6 grid gap-4\"><input type=\"hidden\" name=\"guest_csrf_token\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "<p class=\"mt-3 text-sm leading-6 text-muted\">Use 8 to 72 bytes. Non-ASCII characters may count as more than one byte. Resetting your password signs out every device.</p><form method=\"post\" action=\"/account/password-reset/confirm\" data-testid=\"password-reset-confirm-form\" class=\"mt-6 grid gap-4\"><input type=\"hidden\" name=\"guest_csrf_token\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -264,7 +264,7 @@ func passwordResetConfirmPage(vm passwordResetConfirmPageData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "\"> <label class=\"grid gap-2 text-xs font-medium text-muted\">New password (8 to 72 characters) <input type=\"password\" name=\"new_password\" autocomplete=\"new-password\" required minlength=\"8\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "\"> <label class=\"grid gap-2 text-xs font-medium text-muted\">New password (8 to 72 bytes) <input type=\"password\" name=\"new_password\" autocomplete=\"new-password\" required data-password-min-bytes=\"8\" maxlength=\"72\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -286,7 +286,7 @@ func passwordResetConfirmPage(vm passwordResetConfirmPageData) templ.Component {
 				var templ_7745c5c3_Var11 string
 				templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(vm.PasswordError)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/account.templ`, Line: 90, Col: 90}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/account.templ`, Line: 91, Col: 90}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 				if templ_7745c5c3_Err != nil {
@@ -370,7 +370,7 @@ func accountPage(vm accountPageData) templ.Component {
 		var templ_7745c5c3_Var13 string
 		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(vm.Email)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/account.templ`, Line: 116, Col: 123}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/account.templ`, Line: 117, Col: 123}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 		if templ_7745c5c3_Err != nil {
@@ -416,7 +416,7 @@ func accountPage(vm accountPageData) templ.Component {
 				var templ_7745c5c3_Var14 templ.SafeURL
 				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinURLErrs("/orders/" + order.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/account.templ`, Line: 136, Col: 42}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/account.templ`, Line: 137, Col: 42}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 				if templ_7745c5c3_Err != nil {
@@ -429,7 +429,7 @@ func accountPage(vm accountPageData) templ.Component {
 				var templ_7745c5c3_Var15 string
 				templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(order.PlacedAt)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/account.templ`, Line: 137, Col: 78}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/account.templ`, Line: 138, Col: 78}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 				if templ_7745c5c3_Err != nil {
@@ -442,7 +442,7 @@ func accountPage(vm accountPageData) templ.Component {
 				var templ_7745c5c3_Var16 string
 				templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(order.StatusLabel)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/account.templ`, Line: 137, Col: 142}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/account.templ`, Line: 138, Col: 142}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 				if templ_7745c5c3_Err != nil {
@@ -455,7 +455,7 @@ func accountPage(vm accountPageData) templ.Component {
 				var templ_7745c5c3_Var17 string
 				templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(order.Total)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/account.templ`, Line: 138, Col: 84}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/account.templ`, Line: 139, Col: 84}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 				if templ_7745c5c3_Err != nil {
@@ -483,7 +483,7 @@ func accountPage(vm accountPageData) templ.Component {
 			var templ_7745c5c3_Var18 string
 			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(vm.DefaultAddress.FullName)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/account.templ`, Line: 151, Col: 68}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/account.templ`, Line: 152, Col: 68}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 			if templ_7745c5c3_Err != nil {
@@ -496,7 +496,7 @@ func accountPage(vm accountPageData) templ.Component {
 			var templ_7745c5c3_Var19 string
 			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(vm.DefaultAddress.Line1)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/account.templ`, Line: 152, Col: 38}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/account.templ`, Line: 153, Col: 38}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 			if templ_7745c5c3_Err != nil {
@@ -514,7 +514,7 @@ func accountPage(vm accountPageData) templ.Component {
 				var templ_7745c5c3_Var20 string
 				templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(vm.DefaultAddress.Line2)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/account.templ`, Line: 154, Col: 39}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/account.templ`, Line: 155, Col: 39}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 				if templ_7745c5c3_Err != nil {
@@ -532,7 +532,7 @@ func accountPage(vm accountPageData) templ.Component {
 			var templ_7745c5c3_Var21 string
 			templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(vm.DefaultAddress.City)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/account.templ`, Line: 156, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/account.templ`, Line: 157, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 			if templ_7745c5c3_Err != nil {
@@ -545,7 +545,7 @@ func accountPage(vm accountPageData) templ.Component {
 			var templ_7745c5c3_Var22 string
 			templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(vm.DefaultAddress.Region)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/account.templ`, Line: 156, Col: 67}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/account.templ`, Line: 157, Col: 67}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 			if templ_7745c5c3_Err != nil {
@@ -558,7 +558,7 @@ func accountPage(vm accountPageData) templ.Component {
 			var templ_7745c5c3_Var23 string
 			templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(vm.DefaultAddress.PostalCode)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/account.templ`, Line: 156, Col: 100}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/account.templ`, Line: 157, Col: 100}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 			if templ_7745c5c3_Err != nil {
@@ -594,7 +594,7 @@ func accountPage(vm accountPageData) templ.Component {
 			var templ_7745c5c3_Var24 string
 			templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(vm.PasswordError)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/account.templ`, Line: 170, Col: 141}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/account.templ`, Line: 171, Col: 141}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 			if templ_7745c5c3_Err != nil {
@@ -612,20 +612,20 @@ func accountPage(vm accountPageData) templ.Component {
 		var templ_7745c5c3_Var25 string
 		templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.ResolveAttributeValue(vm.CSRFToken)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/account.templ`, Line: 173, Col: 68}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/account.templ`, Line: 174, Col: 68}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var25)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "\"> <label class=\"grid gap-2 text-xs font-medium text-white/70\">Current password <input type=\"password\" name=\"current_password\" autocomplete=\"current-password\" required class=\"h-12 border border-white/30 bg-white/10 px-4 text-base font-medium text-white transition focus:border-white focus:bg-white/20\"></label> <label class=\"grid gap-2 text-xs font-medium text-white/70\">New password (8 to 72 characters) <input type=\"password\" name=\"new_password\" autocomplete=\"new-password\" required minlength=\"8\" class=\"h-12 border border-white/30 bg-white/10 px-4 text-base font-medium text-white transition focus:border-white focus:bg-white/20\"></label> <button type=\"submit\" class=\"inline-flex h-12 items-center justify-center bg-flag-red px-6 text-sm font-bold text-white transition hover:bg-flag-red-deep focus-visible:outline-white\">Change password</button></form><p class=\"mt-4 text-sm leading-6 text-white/70\">Changing your password signs out every other device.</p><form method=\"post\" action=\"/account/sign-out\" class=\"mt-6 border-t border-white/15 pt-6\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "\"> <label class=\"grid gap-2 text-xs font-medium text-white/70\">Current password <input type=\"password\" name=\"current_password\" autocomplete=\"current-password\" required maxlength=\"72\" class=\"h-12 border border-white/30 bg-white/10 px-4 text-base font-medium text-white transition focus:border-white focus:bg-white/20\"></label> <label class=\"grid gap-2 text-xs font-medium text-white/70\">New password (8 to 72 bytes) <input type=\"password\" name=\"new_password\" autocomplete=\"new-password\" required data-password-min-bytes=\"8\" maxlength=\"72\" class=\"h-12 border border-white/30 bg-white/10 px-4 text-base font-medium text-white transition focus:border-white focus:bg-white/20\"></label> <button type=\"submit\" class=\"inline-flex h-12 items-center justify-center bg-flag-red px-6 text-sm font-bold text-white transition hover:bg-flag-red-deep focus-visible:outline-white\">Change password</button></form><p class=\"mt-4 text-sm leading-6 text-white/70\">Changing your password signs out every other device.</p><form method=\"post\" action=\"/account/sign-out\" class=\"mt-6 border-t border-white/15 pt-6\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var26 string
 		templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.ResolveAttributeValue(vm.CSRFToken)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/account.templ`, Line: 186, Col: 68}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ssr/account.templ`, Line: 187, Col: 68}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var26)
 		if templ_7745c5c3_Err != nil {

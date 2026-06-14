@@ -103,17 +103,17 @@ KMS key adds ~$1/mo.
   `PriceClass_200` for cost. `infra/site.go`.
 
 ### P3 — copy & nits
-- [ ] "Gift bag" vs "Cart" inconsistency (`internal/ssr/cart.templ:14,27`).
-- [ ] "Remove unavailable **sizes**" hardcoded for non-variant items
+- [x] "Gift bag" vs "Cart" inconsistency (`internal/ssr/cart.templ:14,27`).
+- [x] "Remove unavailable **sizes**" hardcoded for non-variant items
   (`internal/ssr/cart.templ:87`).
-- [ ] Checkout totals hardcode "Free"/"$0.00" instead of the view model
+- [x] Checkout totals hardcode "Free"/"$0.00" instead of the view model
   (`internal/ssr/checkout.templ:180-181`).
-- [ ] `formatPrice` has no thousands separator (`internal/ssr/handler.go`).
-- [ ] No "continue shopping" link on the placed-order view
+- [x] `formatPrice` has no thousands separator (`internal/ssr/handler.go`).
+- [x] No "continue shopping" link on the placed-order view
   (`internal/ssr/order_detail.templ:30-44`).
 - [ ] Destructive actions (clear cart, remove address/card) have no confirm.
-- [ ] Password `maxlength="72"` not enforced client-side.
-- [ ] Reset-token hash compared with `==` (not constant-time) on the validate
+- [x] Password `maxlength="72"` not enforced client-side.
+- [x] Reset-token hash compared with `==` (not constant-time) on the validate
   path (`internal/commerce/dynamo.go:1659`).
 - [ ] `tgs_cart` cookie lacks `__Host-` prefix / conditional `Secure`
   (`internal/ssr/cart_state.go`).

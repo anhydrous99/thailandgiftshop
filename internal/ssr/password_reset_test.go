@@ -94,7 +94,7 @@ func TestPasswordResetRequestReissueInvalidatesOldLink(t *testing.T) {
 	if newResponse.StatusCode != http.StatusOK {
 		t.Fatalf("new confirm GET status = %d body %q, want 200", newResponse.StatusCode, newResponse.Body)
 	}
-	assertBodyContains(t, newResponse.Body, []string{`data-testid="password-reset-confirm-form"`, `name="token"`})
+	assertBodyContains(t, newResponse.Body, []string{`data-testid="password-reset-confirm-form"`, `name="token"`, `data-password-min-bytes="8"`, `maxlength="72"`})
 }
 
 func TestPasswordResetConfirmRejectsBadTokensSafely(t *testing.T) {

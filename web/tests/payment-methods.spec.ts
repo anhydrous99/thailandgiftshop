@@ -10,7 +10,7 @@ async function signUp(page: Page, email: string) {
   await page.goto('/account/sign-up');
   await expect(page.getByTestId('signup-form')).toBeVisible();
   await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password (8 to 72 characters)').fill(password);
+  await page.getByLabel('Password (8 to 72 bytes)').fill(password);
   await page.getByRole('button', { name: 'Create account' }).click();
   await expect(page).toHaveURL(/\/account$/);
 }
