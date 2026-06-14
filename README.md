@@ -2,7 +2,7 @@
 
 Monorepo for `thailandgiftshop.com`.
 
-The AWS CDK v2 infrastructure package lives in `infra/` and is written in Go. Go Lambda entrypoints, shared Go packages, HTMX templates, Tailwind CSS, and static asset code should live outside `infra/` so application code can evolve separately from deployment code.
+The AWS CDK v2 infrastructure package lives in `infra/` and is written in Go. Go Lambda entrypoints, shared Go packages, templ templates, Tailwind CSS, and static asset code should live outside `infra/` so application code can evolve separately from deployment code.
 
 The deployed CDK stack ID is `ThailandGiftshopStack`. Production is deployed in `us-east-1` so the CloudFront certificate and site infrastructure are managed by the same stack.
 
@@ -18,7 +18,14 @@ Product image seed assets belong in `web/product-images/`. CDK deploys that fold
 
 ## Local Run
 
-Serve the checked-in local site with the Go devserver:
+Create local-only admin credentials first. The devserver initializes both the public storefront and `/admin`, so it needs admin credentials even when you only plan to browse the storefront. If you do not provide `ADMIN_PASSWORD`, the generator prints a one-time `ADMIN_PASSWORD=...` value for local sign-in:
+
+```sh
+go run ./scripts/generate-admin-secret.go -out /tmp/tgs-admin-secret.json
+export ADMIN_CREDENTIALS_SECRET_JSON="$(cat /tmp/tgs-admin-secret.json)"
+```
+
+Then serve the checked-in local site with the Go devserver:
 
 ```sh
 go run ./cmd/devserver
@@ -82,14 +89,18 @@ Bounce and complaint handling, queues, marketing email, SES templates, attachmen
 Use deterministic demo data for local browser tests or admin/public E2E work by opting into the in-memory catalog store:
 
 ```sh
-CATALOG_DEMO_STORE=1 CART_COOKIE_SECRET=<cart-cookie-secret> CUSTOMER_SESSION_SECRET=<customer-session-secret> go run ./cmd/devserver
+CATALOG_DEMO_STORE=1 \
+  ADMIN_CREDENTIALS_SECRET_JSON="$(cat /tmp/tgs-admin-secret.json)" \
+  CART_COOKIE_SECRET=<cart-cookie-secret> \
+  CUSTOMER_SESSION_SECRET=<customer-session-secret> \
+  go run ./cmd/devserver
 ```
 
 When `CATALOG_DEMO_STORE=1` is set, the devserver skips DynamoDB and serves the checked-in demo catalog from memory, alongside one shared in-memory commerce store and the fake payment provider for both the storefront and admin handlers. The whole checkout journey then runs on-site with no Stripe keys and no network: placing an order redirects to the `/checkout/fake-pay` demo payment page, whose Pay action drives the real `/checkout/confirm` reconcile path, and orders placed on the storefront appear in the admin order desk at `/admin/orders`. The demo catalog includes an active variant product, `handwoven-indigo-scarf`, with sizes `S=1`, `M=2`, and `XL=0` for stable admin and public E2E coverage. The default devserver path still uses environment-backed catalog loading, so local Go tests and Playwright tests can run without a live AWS account.
 
 Guest checkout works end-to-end in demo mode too: an anonymous shopper with a cookie cart gets the guest layout on `/checkout` (contact email + shipping address on one form), pays on the same fake-pay page, and lands on a tokenized order page. Guests get no order history; their record is a signed `?access=` status link (valid for 30 days from payment, anchored to the payment time so confirm replays never extend it) plus Stripe's receipt email in live mode. Stranded guest pending orders release their stock via the guaranteed 30-minute `checkout.session.expired` webhook in production; signed checkout-cancel returns release their own reservation before the cart is normalized.
 
-For local admin work, set placeholder-only admin environment variables before starting the admin Lambda or any local wrapper that loads admin credentials from the environment:
+For local admin work, prefer the generated local-only `ADMIN_CREDENTIALS_SECRET_JSON` shown above. If you already have a bcrypt hash and session secret from another local secret manager, the lower-level fallback is:
 
 ```sh
 export ADMIN_PASSWORD_HASH=<bcrypt-hash>
@@ -138,7 +149,7 @@ Generate Go code after editing templ files:
 go tool templ generate
 ```
 
-Build frontend assets after editing Tailwind, HTMX, or template files:
+Build frontend assets after editing Tailwind or template files:
 
 ```sh
 npm --prefix web run build
@@ -272,7 +283,7 @@ CloudFront has an AWS WAF web ACL with rate limits for `POST /admin/login`, `/ad
 
 ## Deploy
 
-Local deployers should build frontend assets before synthesizing or deploying so `web/static/` contains the generated CSS and vendored HTMX files used by CDK:
+Local deployers should build frontend assets before synthesizing or deploying so `web/static/` contains the generated CSS used by CDK:
 
 ```sh
 npm --prefix web run build
@@ -320,7 +331,9 @@ CI runs on pull requests and pushes to `main`:
 
 - Go tests for tracked Go package directories
 - Frontend asset build and browser tests
+- `npm audit --omit=dev --audit-level=high` for web and infra production dependencies
 - `gofmt` check
+- `go vet` for tracked Go package directories
 - `npx cdk synth`
 
 The CI workflow is path-aware and runs for Go, infrastructure, static asset, or workflow changes.

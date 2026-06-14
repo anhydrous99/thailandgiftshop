@@ -32,7 +32,7 @@ Implement these routes as server-rendered pages using templ. Preserve existing a
 | Story / About | `/story` | Static content | No data dependency |
 | Cart | `/cart` | Anonymous: `tgs_cart` cookie; signed-in: server cart row | Show an empty cart message when no cart items are present |
 | Sign up | `/account/sign-up` (GET/POST) | Guest CSRF + `commerce.Store` | Signed-in visitors 303 to `/account` |
-| Sign in | `/account/sign-in` (GET/POST) | Guest CSRF + `commerce.Store` | `?return_to=` validated; reset-deferral copy |
+| Sign in | `/account/sign-in` (GET/POST) | Guest CSRF + `commerce.Store` | `?return_to=` validated; password-reset link |
 | Sign out | `POST /account/sign-out` | Session + CSRF | 303 `/` clearing session, CSRF, and cart-mirror cookies |
 | Account overview | `/account` | Email, default address, recent 3 orders, password form | Anonymous visitors 303 to sign-in with `return_to` |
 | Password change | `POST /account/password` | Session + CSRF, re-verified current password | Revokes all other sessions |
@@ -80,7 +80,7 @@ Keep these features out of the current release unless a later guide explicitly a
 
 - Search, filter, and sort controls for catalog browsing.
 - Guest-order adoption and cart merge for a guest who registers later (revisit with email verification; unverified-email adoption is an account-takeover vector).
-- Email verification and self-service password reset (both need SES or equivalent email infrastructure).
+- Email verification.
 - Partial refunds (the admin Refund action always refunds the full amount).
 - Syncing dashboard-issued refunds (refunds created directly in the Stripe dashboard carry no order metadata and never update order status).
 - Asynchronous payment methods beyond cards.
