@@ -626,7 +626,7 @@ func (h *Handler) finishCustomerAuth(ctx context.Context, request events.APIGate
 // mergeCartOnLogin folds the anonymous cookie cart into the server cart
 // (per-line max, idempotent under login replay), normalizes against the live
 // catalog, persists with version-conflict retries, and returns the rewritten
-// tgs_cart mirror cookie.
+// __Host-tgs_cart mirror cookie.
 func (h *Handler) mergeCartOnLogin(ctx context.Context, request events.APIGatewayV2HTTPRequest, customerID string) (string, error) {
 	cookieCart := cart.Empty()
 	if cookieValue, found := cartCookieValue(request); found {
@@ -673,7 +673,7 @@ func (h *Handler) mergeCartOnLogin(ctx context.Context, request events.APIGatewa
 		return "", errors.New("merge cart: version conflict retries exhausted")
 	}
 
-	return h.mirrorCartCookie(normalizedCart, request), nil
+	return h.mirrorCartCookie(normalizedCart), nil
 }
 
 func (h *Handler) handleSignOut(ctx context.Context, request events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
@@ -684,12 +684,12 @@ func (h *Handler) handleSignOut(ctx context.Context, request events.APIGatewayV2
 		// this sign-out as an idempotent cookie-clearing no-op is CSRF-safe:
 		// it changes no server state and only removes the caller's own
 		// cookies. It must still scrub every customer cookie — including the
-		// tgs_cart mirror — so the next visitor on a shared machine never
+		// __Host-tgs_cart mirror — so the next visitor on a shared machine never
 		// sees (or merges) the previous customer's cart.
 		return accountSeeOther("/", pageAccountSignOut, []string{
 			clearCustomerSessionCookie().String(),
 			clearCustomerCSRFCookie().String(),
-			clearCartCookie(request),
+			clearCartCookie(),
 		})
 	}
 	if !h.validCustomerCSRF(request, session) {
@@ -700,12 +700,12 @@ func (h *Handler) handleSignOut(ctx context.Context, request events.APIGatewayV2
 		return accountHTMLResponse(http.StatusInternalServerError, "Internal server error", pageAccountSignOut, nil)
 	}
 
-	// Clearing the tgs_cart mirror too is shared-computer privacy: the next
+	// Clearing the __Host-tgs_cart mirror too is shared-computer privacy: the next
 	// visitor must not see the signed-out customer's cart contents.
 	return accountSeeOther("/", pageAccountSignOut, []string{
 		clearCustomerSessionCookie().String(),
 		clearCustomerCSRFCookie().String(),
-		clearCartCookie(request),
+		clearCartCookie(),
 	})
 }
 

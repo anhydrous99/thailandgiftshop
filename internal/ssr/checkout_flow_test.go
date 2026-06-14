@@ -584,7 +584,7 @@ func TestFakePayThroughConfirmPlacesPaidOrder(t *testing.T) {
 	}
 
 	// Confirm reconciles server-side and redirects to the order with a
-	// cleared tgs_cart mirror.
+	// cleared __Host-tgs_cart mirror.
 	confirmRequest := jarPageRequest(http.MethodGet, "/checkout/confirm", jar)
 	confirmRequest.QueryStringParameters = map[string]string{"session_id": sessionID}
 	confirmResponse, err := env.handler.Handle(context.Background(), confirmRequest)
@@ -1859,7 +1859,7 @@ func TestGuestPlaceOrderHappyPath(t *testing.T) {
 		t.Fatalf("mango stock = %d, want 3", got)
 	}
 
-	// The response sets the signed pointer cookie and leaves tgs_cart alone
+	// The response sets the signed pointer cookie and leaves __Host-tgs_cart alone
 	// (the cart survives until payment).
 	pointer := rawSetCookie(t, response, commerce.GuestOrderCookieName)
 	for _, want := range []string{"Max-Age=3600", "HttpOnly", "Secure", "SameSite=Lax"} {

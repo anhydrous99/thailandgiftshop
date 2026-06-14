@@ -533,7 +533,7 @@ func (h *Handler) handleGuestPlaceOrder(ctx context.Context, request events.APIG
 
 // renderGuestInsufficientStockCheckout mirrors renderInsufficientStockCheckout
 // for the cookie cart: re-resolving via cartStateFromRequest re-clamps the
-// anonymous cart against live stock and rewrites the repaired tgs_cart cookie.
+// anonymous cart against live stock and rewrites the repaired __Host-tgs_cart cookie.
 func (h *Handler) renderGuestInsufficientStockCheckout(ctx context.Context, request events.APIGatewayV2HTTPRequest, render checkoutRenderState, guestToken string, insufficient catalog.InsufficientStockError) events.APIGatewayV2HTTPResponse {
 	state, err := h.cartStateFromRequest(ctx, request)
 	if err != nil {
@@ -708,7 +708,7 @@ func (h *Handler) handleCheckoutConfirm(ctx context.Context, request events.APIG
 		if ptrOrder, _, ok := h.guestOrderPointer(request); ok && ptrOrder == order.ID {
 			// Only clear a pointer that names THIS order: a second tab may
 			// have started a newer checkout whose pointer must survive.
-			cookies = append(cookies, clearCartCookie(request))
+			cookies = append(cookies, clearCartCookie())
 			cookies = append(cookies, clearGuestOrderCookie().String())
 		}
 		response := httpapi.SeeOther(location, cookies, seoHeadersForRoute(pageCheckoutConfirm))
@@ -718,9 +718,9 @@ func (h *Handler) handleCheckoutConfirm(ctx context.Context, request events.APIG
 		return response
 	}
 
-	// Success clears the tgs_cart mirror alongside the server cart that
+	// Success clears the __Host-tgs_cart mirror alongside the server cart that
 	// FinalizePayment just emptied.
-	response := httpapi.SeeOther("/orders/"+order.ID+"?placed=1", []string{clearCartCookie(request)}, seoHeadersForRoute(pageCheckoutConfirm))
+	response := httpapi.SeeOther("/orders/"+order.ID+"?placed=1", []string{clearCartCookie()}, seoHeadersForRoute(pageCheckoutConfirm))
 	if method == http.MethodHead {
 		response.Body = ""
 	}

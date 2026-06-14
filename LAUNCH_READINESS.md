@@ -115,6 +115,6 @@ KMS key adds ~$1/mo.
 - [x] Password `maxlength="72"` not enforced client-side.
 - [x] Reset-token hash compared with `==` (not constant-time) on the validate
   path (`internal/commerce/dynamo.go:1659`).
-- [ ] `tgs_cart` cookie lacks `__Host-` prefix / conditional `Secure`
+- [x] `tgs_cart` cookie lacks `__Host-` prefix / conditional `Secure`
   (`internal/ssr/cart_state.go`).
 - [x] Responsive `srcset`/WebP for product images when real photography lands.

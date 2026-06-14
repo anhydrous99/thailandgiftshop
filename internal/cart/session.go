@@ -12,7 +12,7 @@ import (
 
 const (
 	EnvCookieSecret        = "CART_COOKIE_SECRET"
-	CookieName             = "tgs_cart"
+	CookieName             = "__Host-tgs_cart"
 	CookieMaxAge           = 604800
 	MaxLineItems           = 50
 	MaxEncodedCookieLength = 3072

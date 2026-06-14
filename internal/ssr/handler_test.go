@@ -1133,7 +1133,7 @@ func TestProductListingCapsProductsAtMaxListing(t *testing.T) {
 func TestCheckoutPageExcludesDroppedStaleItems(t *testing.T) {
 	// Stale server-cart lines (draft, sold out, deleted) are normalized away
 	// before the signed-in checkout renders, and the repaired cart is written
-	// back to both the CART row and the tgs_cart mirror.
+	// back to both the CART row and the __Host-tgs_cart mirror.
 	env := newAccountTestEnvWithProducts(t, append(accountTestCatalogProducts(),
 		catalog.Product{ID: "prod_draft", Slug: "draft-product", Name: "Draft Product", Status: catalog.StatusDraft, StockQuantity: 5},
 		catalog.Product{ID: "prod_sold_out", Slug: "sold-out", Name: "Sold Out", Status: catalog.StatusActive, StockQuantity: 0},
@@ -1174,43 +1174,25 @@ func TestCheckoutPageExcludesDroppedStaleItems(t *testing.T) {
 	assertBodyOmits(t, response.Body, []string{`Draft Product`, `Sold Out`, `missing-product`})
 }
 
-func TestCartCookieFlagsHttpOnlySameSitePathMaxAgeAndHttpsSecure(t *testing.T) {
+func TestCartCookieFlagsHttpOnlySecureSameSitePathMaxAgeAndHostPrefix(t *testing.T) {
 	t.Setenv(cart.EnvCookieSecret, ssrTestCartSecret)
+	// No forwarded-proto header: the __Host- prefix mandates Secure, so the
+	// cart cookie sets it unconditionally even on a plain-HTTP request (which
+	// browsers still accept over http://127.0.0.1).
 	request := formPostRequest("/cart/items", "slug=mango-sticky-rice-kit&quantity=1")
-	request.Headers["cloudfront-forwarded-proto"] = "https"
 
 	response, err := NewHandler(cartRouteStore()).Handle(context.Background(), request)
 	if err != nil {
 		t.Fatalf("Handle returned error: %v", err)
 	}
 	cookieHeader := response.Cookies[0]
+	if !strings.HasPrefix(cookieHeader, "__Host-tgs_cart=") {
+		t.Fatalf("cookie = %q, want __Host-tgs_cart name", cookieHeader)
+	}
 	for _, want := range []string{cart.CookieName + "=", "Path=/", "Max-Age=604800", "HttpOnly", "SameSite=Lax", "Secure"} {
 		if !strings.Contains(cookieHeader, want) {
 			t.Fatalf("cookie = %q, want %q", cookieHeader, want)
 		}
-	}
-
-	request = formPostRequest("/cart/items", "slug=mango-sticky-rice-kit&quantity=1")
-	response, err = NewHandler(cartRouteStore()).Handle(context.Background(), request)
-	if err != nil {
-		t.Fatalf("Handle returned error: %v", err)
-	}
-	if strings.Contains(response.Cookies[0], "Secure") {
-		t.Fatalf("localhost HTTP cookie = %q, want no Secure", response.Cookies[0])
-	}
-}
-
-func TestCartCookieFlagsHttpsSecureWithXForwardedProtoFallback(t *testing.T) {
-	t.Setenv(cart.EnvCookieSecret, ssrTestCartSecret)
-	request := formPostRequest("/cart/items", "slug=mango-sticky-rice-kit&quantity=1")
-	request.Headers["x-forwarded-proto"] = "https"
-
-	response, err := NewHandler(cartRouteStore()).Handle(context.Background(), request)
-	if err != nil {
-		t.Fatalf("Handle returned error: %v", err)
-	}
-	if cookie := response.Cookies[0]; !strings.Contains(cookie, "Secure") {
-		t.Fatalf("cookie = %q, want Secure", cookie)
 	}
 }
 

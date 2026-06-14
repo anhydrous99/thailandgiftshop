@@ -13,6 +13,14 @@ import (
 
 const testSecret = "cart-test-secret"
 
+// The cart cookie name must carry the __Host- prefix so browsers enforce
+// Secure + Path=/ + no Domain, matching the customer and admin cookies.
+func TestCookieNameHasHostPrefix(t *testing.T) {
+	if !strings.HasPrefix(CookieName, "__Host-") {
+		t.Fatalf("CookieName = %q, want __Host- prefix", CookieName)
+	}
+}
+
 func TestCartCookieRoundTrip(t *testing.T) {
 	cart, err := New([]Line{
 		{Slug: "mango-sticky-rice-kit", Quantity: 2},

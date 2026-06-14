@@ -188,12 +188,12 @@ func (h *Handler) handleCartMutation(ctx context.Context, request events.APIGate
 		if err != nil {
 			return cartMutationErrorResponse(route.kind, method, path, err)
 		}
-		// The server cart is authoritative; the tgs_cart mirror is
+		// The server cart is authoritative; the __Host-tgs_cart mirror is
 		// best-effort and must never fail the mutation.
-		return httpapi.SeeOther("/cart", []string{h.mirrorCartCookie(mutatedCart, request)}, nil)
+		return httpapi.SeeOther("/cart", []string{h.mirrorCartCookie(mutatedCart)}, nil)
 	}
 
-	cookieValue, err := h.cartResponseCookie(mutatedCart, request)
+	cookieValue, err := h.cartResponseCookie(mutatedCart)
 	if err != nil {
 		logHandlerWarn(route.kind, method, path, err)
 		return httpapi.HTMLResponse(http.StatusBadRequest, "Bad request", nil)
@@ -214,7 +214,7 @@ var errCartWriteContention = errors.New("server cart write contention: retries e
 // writeServerCart persists a signed-in cart mutation through the
 // version-conditional CART row: first write with the request's version, then
 // on conflict re-read and re-apply the mutation a bounded number of times.
-// The returned cart is what the tgs_cart mirror must reflect.
+// The returned cart is what the __Host-tgs_cart mirror must reflect.
 func (h *Handler) writeServerCart(ctx context.Context, record commerce.CartRecord, normalizedCart cart.Cart, apply func(cart.Cart) (cart.Cart, error)) (cart.Cart, error) {
 	record.Lines = normalizedCart.Lines()
 	if _, err := h.commerce.PutCart(ctx, record); err == nil {
@@ -314,7 +314,7 @@ type requestCart struct {
 }
 
 func (h *Handler) cartStateFromRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) (requestCart, error) {
-	// Signed-in carts live in the CART row; the tgs_cart cookie is only a
+	// Signed-in carts live in the CART row; the __Host-tgs_cart cookie is only a
 	// write-through mirror for the header label and the edge cache key, so
 	// it is ignored as a source here and rewritten on the way out.
 	session, customer, signedIn, sessionClearing, sessionErr := h.customerSessionWithStoreError(ctx, request)
@@ -360,17 +360,17 @@ func (h *Handler) cartStateFromRequest(ctx context.Context, request events.APIGa
 	// cart-bearing routes clear them instead of re-validating them forever.
 	state := requestCart{cart: normalizedCart, lines: lines, cookies: sessionClearing, sessionErr: sessionErr, adjusted: changed}
 	if needsClear || (changed && normalizedCart.LineCount() == 0) {
-		state.cookies = append(state.cookies, clearCartCookie(request))
+		state.cookies = append(state.cookies, clearCartCookie())
 		return state, nil
 	}
 	if changed {
 		if fromMirror {
 			// Rewriting a leftover mirror keeps its marking: it is still an
 			// echo of old server-cart state, not anonymous shopping intent.
-			state.cookies = append(state.cookies, h.mirrorCartCookie(normalizedCart, request))
+			state.cookies = append(state.cookies, h.mirrorCartCookie(normalizedCart))
 			return state, nil
 		}
-		cookieValue, err := h.cartResponseCookie(normalizedCart, request)
+		cookieValue, err := h.cartResponseCookie(normalizedCart)
 		if err != nil {
 			return requestCart{}, err
 		}
@@ -383,7 +383,7 @@ func (h *Handler) cartStateFromRequest(ctx context.Context, request events.APIGa
 
 // serverCartState sources the cart from the customer's CART row, normalizes
 // it against the live catalog, best-effort persists any normalization drift,
-// and always re-emits the tgs_cart mirror so the cookie self-heals across
+// and always re-emits the __Host-tgs_cart mirror so the cookie self-heals across
 // devices.
 func (h *Handler) serverCartState(ctx context.Context, request events.APIGatewayV2HTTPRequest, customerID string) (requestCart, error) {
 	record, _, err := h.commerce.GetCart(ctx, customerID)
@@ -405,7 +405,7 @@ func (h *Handler) serverCartState(ctx context.Context, request events.APIGateway
 			return requestCart{
 				cart:     serverCart,
 				lines:    lines,
-				cookies:  []string{h.mirrorCartCookie(serverCart, request)},
+				cookies:  []string{h.mirrorCartCookie(serverCart)},
 				signedIn: true,
 				record:   record,
 			}, nil
@@ -444,7 +444,7 @@ func (h *Handler) serverCartState(ctx context.Context, request events.APIGateway
 	return requestCart{
 		cart:     normalizedCart,
 		lines:    lines,
-		cookies:  []string{h.mirrorCartCookie(normalizedCart, request)},
+		cookies:  []string{h.mirrorCartCookie(normalizedCart)},
 		signedIn: true,
 		record:   record,
 		adjusted: changed,
@@ -727,72 +727,63 @@ func cartCookieValue(request events.APIGatewayV2HTTPRequest) (string, bool) {
 	return httpapi.CookieValue(request, cart.CookieName)
 }
 
-func (h *Handler) cartResponseCookie(currentCart cart.Cart, request events.APIGatewayV2HTTPRequest) (string, error) {
+func (h *Handler) cartResponseCookie(currentCart cart.Cart) (string, error) {
 	if currentCart.LineCount() == 0 {
-		return clearCartCookie(request), nil
+		return clearCartCookie(), nil
 	}
 	encoded, err := cart.EncodeCookie(currentCart, h.cartCookieSecret)
 	if err != nil {
 		return "", err
 	}
 
-	return cartCookieString(encoded, request), nil
+	return cartCookieString(encoded), nil
 }
 
-// mirrorCartCookie encodes the tgs_cart write-through mirror of a signed-in
+// mirrorCartCookie encodes the __Host-tgs_cart write-through mirror of a signed-in
 // customer's server cart. The server cart is authoritative, so the mirror is
 // best-effort display state and this never fails: an oversized cart degrades
 // to a truncated mirror (the header label may briefly undercount; /cart
 // renders re-sync it) and any other encode failure degrades to clearing the
 // cookie, so an oversized server cart can never brick renders, mutations,
 // checkout, or sign-in.
-func (h *Handler) mirrorCartCookie(currentCart cart.Cart, request events.APIGatewayV2HTTPRequest) string {
+func (h *Handler) mirrorCartCookie(currentCart cart.Cart) string {
 	if currentCart.LineCount() == 0 {
-		return clearCartCookie(request)
+		return clearCartCookie()
 	}
 	encoded, err := cart.EncodeMirrorCookieTruncated(currentCart, h.cartCookieSecret)
 	if err != nil {
 		logAccountError("cart mirror: encode", err)
-		return clearCartCookie(request)
+		return clearCartCookie()
 	}
 
-	return cartCookieString(encoded, request)
+	return cartCookieString(encoded)
 }
 
-func cartCookieString(encoded string, request events.APIGatewayV2HTTPRequest) string {
+// The __Host- prefix requires Secure, so the cart cookie always sets it. As
+// with the customer and admin __Host- cookies, browsers still accept it over
+// http://127.0.0.1, which local dev and the Playwright suite rely on.
+func cartCookieString(encoded string) string {
 	return (&http.Cookie{
 		Name:     cart.CookieName,
 		Value:    encoded,
 		Path:     "/",
 		MaxAge:   cart.CookieMaxAge,
 		HttpOnly: true,
-		Secure:   isHTTPSRequest(request),
+		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 	}).String()
 }
 
-func clearCartCookie(request events.APIGatewayV2HTTPRequest) string {
+func clearCartCookie() string {
 	return (&http.Cookie{
 		Name:     cart.CookieName,
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   isHTTPSRequest(request),
+		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 	}).String()
-}
-
-func isHTTPSRequest(request events.APIGatewayV2HTTPRequest) bool {
-	for _, headerName := range []string{"cloudfront-forwarded-proto", "x-forwarded-proto"} {
-		for proto := range strings.SplitSeq(httpapi.HeaderValue(request.Headers, headerName), ",") {
-			if strings.EqualFold(strings.TrimSpace(proto), "https") {
-				return true
-			}
-		}
-	}
-
-	return false
 }
 
 func lineTotalCents(line cartLineView) int {

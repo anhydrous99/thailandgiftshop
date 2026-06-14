@@ -5,7 +5,7 @@ This guide is for AI agents implementing the pages implied by the home page. Kee
 ## Current State
 
 - The SSR app routes the catalog pages plus customer accounts, server-backed carts, a real Stripe-hosted checkout, order history with tracking, and the Stripe webhook endpoint.
-- Customers sign up and sign in under `/account`; sessions are server-side rows in the commerce table with HMAC-signed cookies. Signed-in carts are stored server-side, and the `tgs_cart` cookie becomes a write-through mirror so the header cart label stays cookie-only and catalog pages stay edge-cacheable.
+- Customers sign up and sign in under `/account`; sessions are server-side rows in the commerce table with HMAC-signed cookies. Signed-in carts are stored server-side, and the `__Host-tgs_cart` cookie becomes a write-through mirror so the header cart label stays cookie-only and catalog pages stay edge-cacheable.
 - Checkout works signed-in or as a guest. Card entry happens exclusively on Stripe's hosted checkout page (SAQ-A); the site never sees or stores card numbers and persists only Stripe opaque IDs plus brand/last4 for display. Guest orders carry `CustomerID == ""`, ride the cookie cart, use the guest double-submit CSRF pair, and hand the shopper a signed, expiring `?access=` link to their order instead of order history. Local demo runs without Stripe credentials use the in-memory fake provider, which keeps the payment step on-site at `/checkout/fake-pay`.
 - The admin Lambda adds an order desk under `/admin/orders` for adding tracking, advancing paid orders through shipped/delivered, canceling pending orders with automatic stock release, and issuing automatic Stripe refunds for paid/shipped/delivered orders (full amount; unshipped refunds also return their reserved stock).
 - `internal/ssr/home.templ` renders the full home page.
@@ -30,7 +30,7 @@ Implement these routes as server-rendered pages using templ. Preserve existing a
 | Category index | `/categories` | `ListActiveCategories(ctx)` | Show no-categories message |
 | Category detail | `/categories/{slug}` | `ListActiveCategories(ctx)` plus `ListActiveProductsByCategory(ctx, slug, 0)` | `404` when slug is not in active categories; empty product grid when category exists but has no products |
 | Story / About | `/story` | Static content | No data dependency |
-| Cart | `/cart` | Anonymous: `tgs_cart` cookie; signed-in: server cart row | Show an empty cart message when no cart items are present |
+| Cart | `/cart` | Anonymous: `__Host-tgs_cart` cookie; signed-in: server cart row | Show an empty cart message when no cart items are present |
 | Sign up | `/account/sign-up` (GET/POST) | Guest CSRF + `commerce.Store` | Signed-in visitors 303 to `/account` |
 | Sign in | `/account/sign-in` (GET/POST) | Guest CSRF + `commerce.Store` | `?return_to=` validated; password-reset link |
 | Sign out | `POST /account/sign-out` | Session + CSRF | 303 `/` clearing session, CSRF, and cart-mirror cookies |

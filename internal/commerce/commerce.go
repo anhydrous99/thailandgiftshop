@@ -101,7 +101,7 @@ type EmailEvent struct {
 }
 
 // CartRecord is the authoritative signed-in cart. Lines reuse the exact
-// cart.Line shape so the tgs_cart cookie mirror round-trips losslessly.
+// cart.Line shape so the __Host-tgs_cart cookie mirror round-trips losslessly.
 type CartRecord struct {
 	CustomerID         string
 	Lines              []cart.Line
