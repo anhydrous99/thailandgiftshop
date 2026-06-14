@@ -64,6 +64,16 @@ export PUBLIC_BASE_URL=http://127.0.0.1:8080   # success/cancel/webhook URL base
 
 Keep real Stripe keys outside the repository. Card entry happens only on Stripe's hosted checkout page; the site never sees or stores card numbers.
 
+To exercise real Stripe (test mode) webhooks against the local devserver, forward them with the Stripe CLI rather than registering a tunnel URL (for example ngrok) as a webhook endpoint in the Stripe dashboard — ephemeral tunnel URLs go stale and leave a failing dashboard endpoint behind that retries and emails for days. Install the CLI (`brew install stripe/stripe-cli/stripe`), run `stripe login` once, then forward to the app's webhook path:
+
+```sh
+stripe listen \
+  --forward-to http://127.0.0.1:8080/webhooks/stripe \
+  --events checkout.session.completed,checkout.session.async_payment_succeeded,checkout.session.async_payment_failed,checkout.session.expired,refund.created,refund.updated,refund.failed
+```
+
+`stripe listen` prints `Your webhook signing secret is whsec_…`; copy that value into the `webhook_signing_secret` field of `STRIPE_CREDENTIALS_SECRET_JSON` above and restart the devserver, otherwise signature verification rejects every delivery with `400`. The CLI's signing secret is distinct from any dashboard endpoint's secret, and `stripe listen` stays in test mode unless `--live` is passed. The dashboard webhook endpoint is only for deployed environments (see "Stripe credentials and webhook" below); the app serves webhooks at `/webhooks/stripe`, never `/stripe/events`.
+
 Transactional email is selected by environment. Local, demo, and test runs use fake capture and never call AWS SES. Production uses AWS SESv2 simple text and HTML transactional mail through the verified `thailandgiftshop.com` identity and must fail closed when sender config is missing, invalid, or set to fake mode:
 
 ```sh
