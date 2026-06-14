@@ -174,6 +174,12 @@ go test $(sh scripts/go-packages.sh)
 npm --prefix web test
 ```
 
+CDK infrastructure tests compare the synthesized stack against snapshots in `infra/testdata/`. When an intended infrastructure change alters the synthesized CloudFormation template, update the fixtures and review the snapshot diff before committing:
+
+```sh
+UPDATE_SNAPSHOTS=1 go test ./infra
+```
+
 Check Go formatting:
 
 ```sh
