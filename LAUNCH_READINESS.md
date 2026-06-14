@@ -79,7 +79,7 @@ KMS key adds ~$1/mo.
 ### P1 — before / just after launch
 - [ ] **Raise Lambda memory** from 128 MB (CPU-starved; bcrypt ~2-3s).
   `infra/config.go:50` — Power-Tune toward 512-1024 MB.
-- [ ] **Share one `aws.Config`/HTTP client** across the 5 service constructors
+- [x] **Share one `aws.Config`/HTTP client** across the 5 service constructors
   (cold-start + connection reuse).
 - [ ] **Product-images S3 bucket versioning** (retained bucket holds admin
   uploads not in source control). `infra/storage.go:161-184`.

@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/anhydrous99/thailandgiftshop/internal/appenv"
+	"github.com/anhydrous99/thailandgiftshop/internal/awsconfig"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sesv2"
 	"github.com/aws/aws-sdk-go-v2/service/sesv2/types"
 )
@@ -78,6 +78,10 @@ func validateSESConfig(fromAddress string, sesRegion string) error {
 }
 
 func NewSenderFromEnvironment(ctx context.Context) (Sender, error) {
+	return NewSenderFromEnvironmentWithAWSConfigLoader(ctx, awsconfig.NewLoader())
+}
+
+func NewSenderFromEnvironmentWithAWSConfigLoader(ctx context.Context, configLoader awsconfig.Loader) (Sender, error) {
 	senderConfig, err := SenderConfigFromEnvironment()
 	if err != nil {
 		return nil, err
@@ -89,10 +93,11 @@ func NewSenderFromEnvironment(ctx context.Context) (Sender, error) {
 		return NewFakeSender(), nil
 	}
 
-	awsConfig, err := config.LoadDefaultConfig(ctx, config.WithRegion(senderConfig.SESRegion))
+	awsConfig, err := awsconfig.Load(ctx, configLoader)
 	if err != nil {
 		return nil, fmt.Errorf("load AWS config for SES sender: %w", err)
 	}
+	awsConfig.Region = senderConfig.SESRegion
 	return NewSESSenderFromConfig(awsConfig, senderConfig.FromAddress), nil
 }
 

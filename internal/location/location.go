@@ -18,8 +18,8 @@ import (
 	"time"
 
 	"github.com/anhydrous99/thailandgiftshop/internal/appenv"
+	"github.com/anhydrous99/thailandgiftshop/internal/awsconfig"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/geoplaces"
 	"github.com/aws/aws-sdk-go-v2/service/geoplaces/types"
 )
@@ -120,6 +120,10 @@ type geoPlacesGeocodeAPI interface {
 // ADDRESS_VALIDATOR_MODE. An empty mode defaults to ALS in production and the
 // fake validator elsewhere.
 func NewValidatorFromEnvironment(ctx context.Context) (Validator, error) {
+	return NewValidatorFromEnvironmentWithAWSConfigLoader(ctx, awsconfig.NewLoader())
+}
+
+func NewValidatorFromEnvironmentWithAWSConfigLoader(ctx context.Context, configLoader awsconfig.Loader) (Validator, error) {
 	mode := strings.ToLower(strings.TrimSpace(os.Getenv(EnvValidatorMode)))
 	if mode == "" {
 		if appenv.IsProduction() {
@@ -132,13 +136,12 @@ func NewValidatorFromEnvironment(ctx context.Context) (Validator, error) {
 	switch mode {
 	case ModeALS:
 		region := strings.TrimSpace(os.Getenv(EnvValidatorRegion))
-		var optFns []func(*config.LoadOptions) error
-		if region != "" {
-			optFns = append(optFns, config.WithRegion(region))
-		}
-		awsConfig, err := config.LoadDefaultConfig(ctx, optFns...)
+		awsConfig, err := awsconfig.Load(ctx, configLoader)
 		if err != nil {
 			return nil, fmt.Errorf("load AWS config for address validator: %w", err)
+		}
+		if region != "" {
+			awsConfig.Region = region
 		}
 		return NewALSValidatorFromConfig(awsConfig), nil
 	case ModeFake:

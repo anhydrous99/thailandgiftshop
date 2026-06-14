@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/anhydrous99/thailandgiftshop/internal/appenv"
+	"github.com/anhydrous99/thailandgiftshop/internal/awsconfig"
 	"github.com/anhydrous99/thailandgiftshop/internal/observability"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -85,6 +86,10 @@ func NewStoreFromEnv(ctx context.Context) (Store, bool, error) {
 // also implements StockStore, so checkout stock reservations can type-assert
 // the returned Store instead of constructing a second client.
 func NewStoreFromEnvWithRecorder(ctx context.Context, metrics observability.Recorder) (Store, bool, error) {
+	return NewStoreFromEnvWithAWSConfigLoader(ctx, metrics, awsconfig.NewLoader())
+}
+
+func NewStoreFromEnvWithAWSConfigLoader(ctx context.Context, metrics observability.Recorder, configLoader awsconfig.Loader) (Store, bool, error) {
 	dynamoConfig, ok := DynamoConfigFromEnv()
 	if !ok {
 		if appenv.IsProduction() {
@@ -93,7 +98,7 @@ func NewStoreFromEnvWithRecorder(ctx context.Context, metrics observability.Reco
 		return EmptyStore{}, false, nil
 	}
 
-	awsConfig, err := config.LoadDefaultConfig(ctx)
+	awsConfig, err := awsconfig.Load(ctx, configLoader)
 	if err != nil {
 		return nil, false, fmt.Errorf("load AWS config for catalog store: %w", err)
 	}

@@ -11,11 +11,11 @@ import (
 	"time"
 
 	"github.com/anhydrous99/thailandgiftshop/internal/appenv"
+	"github.com/anhydrous99/thailandgiftshop/internal/awsconfig"
 	"github.com/anhydrous99/thailandgiftshop/internal/cart"
 	"github.com/anhydrous99/thailandgiftshop/internal/observability"
 	"github.com/anhydrous99/thailandgiftshop/internal/signedtoken"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
@@ -154,6 +154,10 @@ func NewStoreFromEnv(ctx context.Context) (Store, bool, error) {
 // vars. When COMMERCE_TABLE_NAME is unset it fails closed in production and
 // falls back to an in-memory store everywhere else.
 func NewStoreFromEnvWithRecorder(ctx context.Context, metrics observability.Recorder) (Store, bool, error) {
+	return NewStoreFromEnvWithAWSConfigLoader(ctx, metrics, awsconfig.NewLoader())
+}
+
+func NewStoreFromEnvWithAWSConfigLoader(ctx context.Context, metrics observability.Recorder, configLoader awsconfig.Loader) (Store, bool, error) {
 	dynamoConfig, ok := DynamoConfigFromEnv()
 	if !ok {
 		if appenv.IsProduction() {
@@ -162,7 +166,7 @@ func NewStoreFromEnvWithRecorder(ctx context.Context, metrics observability.Reco
 		return NewMemoryStore(), false, nil
 	}
 
-	awsConfig, err := config.LoadDefaultConfig(ctx)
+	awsConfig, err := awsconfig.Load(ctx, configLoader)
 	if err != nil {
 		return nil, false, fmt.Errorf("load AWS config for commerce store: %w", err)
 	}

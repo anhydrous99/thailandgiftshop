@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/anhydrous99/thailandgiftshop/internal/appenv"
+	"github.com/anhydrous99/thailandgiftshop/internal/awsconfig"
 )
 
 const (
@@ -207,9 +208,13 @@ func PublicBaseURLFromEnvironment() string {
 // otherwise non-production falls back to the fake provider and production
 // fails closed (the catalog-store pattern).
 func NewProviderFromEnvironment(ctx context.Context) (Provider, error) {
+	return NewProviderFromEnvironmentWithAWSConfigLoader(ctx, awsconfig.NewLoader())
+}
+
+func NewProviderFromEnvironmentWithAWSConfigLoader(ctx context.Context, configLoader awsconfig.Loader) (Provider, error) {
 	switch explicit := strings.ToLower(strings.TrimSpace(os.Getenv(EnvPaymentsProvider))); explicit {
 	case KindStripe:
-		return stripeProviderFromEnvironment(ctx)
+		return stripeProviderFromEnvironment(ctx, configLoader)
 	case KindFake:
 		if appenv.IsProduction() {
 			return nil, ErrFakeProviderNotAllowedInProduction
@@ -221,7 +226,7 @@ func NewProviderFromEnvironment(ctx context.Context) (Provider, error) {
 	}
 
 	if strings.TrimSpace(os.Getenv(EnvStripeCredentialsSecretJSON)) != "" || strings.TrimSpace(os.Getenv(EnvStripeCredentialsSecretName)) != "" {
-		return stripeProviderFromEnvironment(ctx)
+		return stripeProviderFromEnvironment(ctx, configLoader)
 	}
 	if appenv.IsProduction() {
 		return nil, ErrPaymentsProviderNotConfigured
@@ -232,8 +237,8 @@ func NewProviderFromEnvironment(ctx context.Context) (Provider, error) {
 
 // stripeProviderFromEnvironment keeps a failed construction from leaking a
 // typed-nil *StripeProvider into the Provider interface return.
-func stripeProviderFromEnvironment(ctx context.Context) (Provider, error) {
-	provider, err := NewStripeProviderFromEnvironment(ctx)
+func stripeProviderFromEnvironment(ctx context.Context, configLoader awsconfig.Loader) (Provider, error) {
+	provider, err := NewStripeProviderFromEnvironmentWithAWSConfigLoader(ctx, configLoader)
 	if err != nil {
 		return nil, err
 	}

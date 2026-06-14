@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/anhydrous99/thailandgiftshop/internal/appenv"
+	"github.com/anhydrous99/thailandgiftshop/internal/awsconfig"
 	"github.com/anhydrous99/thailandgiftshop/internal/cart"
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
 	"github.com/anhydrous99/thailandgiftshop/internal/checkout"
@@ -100,18 +101,19 @@ func NewHandlerFromEnvironment(ctx context.Context) (*Handler, error) {
 	}
 
 	metrics := observability.NewEMFRecorder(os.Stdout)
-	catalogStore, _, err := catalog.NewStoreFromEnvWithRecorder(ctx, metrics)
+	awsConfigLoader := awsconfig.NewLoader()
+	catalogStore, _, err := catalog.NewStoreFromEnvWithAWSConfigLoader(ctx, metrics, awsConfigLoader)
 	if err != nil {
 		return nil, err
 	}
-	commerceStore, _, err := commerce.NewStoreFromEnvWithRecorder(ctx, metrics)
+	commerceStore, _, err := commerce.NewStoreFromEnvWithAWSConfigLoader(ctx, metrics, awsConfigLoader)
 	if err != nil {
 		return nil, err
 	}
 	handler := NewHandler(catalogStore)
 	handler.metrics = metrics
 	handler.commerce = commerceStore
-	emailSender, err := email.NewSenderFromEnvironment(ctx)
+	emailSender, err := email.NewSenderFromEnvironmentWithAWSConfigLoader(ctx, awsConfigLoader)
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +121,7 @@ func NewHandlerFromEnvironment(ctx context.Context) (*Handler, error) {
 	// Address validation is fail-open: a construction error degrades to the
 	// off validator (every address accepted) rather than blocking the
 	// storefront from booting.
-	if validator, validatorErr := location.NewValidatorFromEnvironment(ctx); validatorErr != nil {
+	if validator, validatorErr := location.NewValidatorFromEnvironmentWithAWSConfigLoader(ctx, awsConfigLoader); validatorErr != nil {
 		logAccountError("address validation: validator unavailable", validatorErr)
 		handler.addressValidator = location.OffValidator{}
 	} else {
@@ -132,7 +134,7 @@ func NewHandlerFromEnvironment(ctx context.Context) (*Handler, error) {
 	if stockStore, ok := catalogStore.(catalog.StockStore); ok {
 		handler.stock = stockStore
 	}
-	if paymentsProvider, providerErr := payments.NewProviderFromEnvironment(ctx); providerErr != nil {
+	if paymentsProvider, providerErr := payments.NewProviderFromEnvironmentWithAWSConfigLoader(ctx, awsConfigLoader); providerErr != nil {
 		logAccountError("checkout: payments provider unavailable", providerErr)
 	} else {
 		handler.payments = paymentsProvider

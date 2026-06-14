@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/anhydrous99/thailandgiftshop/internal/awsconfig"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	stripe "github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/webhook"
@@ -44,6 +44,10 @@ type secretsManagerGetValueAPI interface {
 // StripeCredentialsFromEnvironment parses inline credentials for local runs,
 // or loads the named Secrets Manager JSON secret used by production Lambda.
 func StripeCredentialsFromEnvironment(ctx context.Context) (StripeCredentials, error) {
+	return StripeCredentialsFromEnvironmentWithAWSConfigLoader(ctx, awsconfig.NewLoader())
+}
+
+func StripeCredentialsFromEnvironmentWithAWSConfigLoader(ctx context.Context, configLoader awsconfig.Loader) (StripeCredentials, error) {
 	secretJSON := strings.TrimSpace(os.Getenv(EnvStripeCredentialsSecretJSON))
 	if secretJSON != "" {
 		return stripeCredentialsFromSecretString(secretJSON)
@@ -54,7 +58,7 @@ func StripeCredentialsFromEnvironment(ctx context.Context) (StripeCredentials, e
 		return StripeCredentials{}, ErrStripeCredentialsNotConfigured
 	}
 
-	cfg, err := config.LoadDefaultConfig(ctx)
+	cfg, err := awsconfig.Load(ctx, configLoader)
 	if err != nil {
 		return StripeCredentials{}, fmt.Errorf("load AWS config for Stripe credentials: %w", err)
 	}
@@ -110,7 +114,11 @@ func NewStripeProvider(credentials StripeCredentials) *StripeProvider {
 }
 
 func NewStripeProviderFromEnvironment(ctx context.Context) (*StripeProvider, error) {
-	credentials, err := StripeCredentialsFromEnvironment(ctx)
+	return NewStripeProviderFromEnvironmentWithAWSConfigLoader(ctx, awsconfig.NewLoader())
+}
+
+func NewStripeProviderFromEnvironmentWithAWSConfigLoader(ctx context.Context, configLoader awsconfig.Loader) (*StripeProvider, error) {
+	credentials, err := StripeCredentialsFromEnvironmentWithAWSConfigLoader(ctx, configLoader)
 	if err != nil {
 		return nil, err
 	}
