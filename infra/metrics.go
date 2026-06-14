@@ -6,6 +6,7 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudwatch"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudwatchactions"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsdynamodb"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awslogs"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awss3"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssns"
 	"github.com/aws/jsii-runtime-go"
@@ -18,6 +19,10 @@ func sumMetric(label string, period awscdk.Duration, unit awscloudwatch.Unit) *a
 
 func avgMetric(label string, period awscdk.Duration, unit awscloudwatch.Unit) *awscloudwatch.MetricOptions {
 	return metricOptions(label, period, awscloudwatch.Stats_AVERAGE(), unit)
+}
+
+func maxMetric(label string, period awscdk.Duration, unit awscloudwatch.Unit) *awscloudwatch.MetricOptions {
+	return metricOptions(label, period, awscloudwatch.Stats_MAXIMUM(), unit)
 }
 
 func percentileMetric(label string, period awscdk.Duration, unit awscloudwatch.Unit, percentile float64) *awscloudwatch.MetricOptions {
@@ -144,6 +149,43 @@ func s3StorageMetric(bucket awss3.IBucket, metricName string, label string, peri
 		Statistic: awscloudwatch.Stats_AVERAGE(),
 		Unit:      unit,
 	})
+}
+
+func lambdaMaxMemoryUsedMetric(stack awscdk.Stack, id string, logGroup awslogs.ILogGroup, metricName string, label string, period awscdk.Duration) awscloudwatch.Metric {
+	pattern := awslogs.FilterPattern_SpaceDelimited(
+		jsii.String("report"),
+		jsii.String("requestIdLabel"),
+		jsii.String("requestId"),
+		jsii.String("durationLabel"),
+		jsii.String("duration"),
+		jsii.String("durationUnit"),
+		jsii.String("billedLabel"),
+		jsii.String("billedDurationLabel"),
+		jsii.String("billedDuration"),
+		jsii.String("billedDurationUnit"),
+		jsii.String("memoryLabel"),
+		jsii.String("sizeLabel"),
+		jsii.String("memorySize"),
+		jsii.String("memorySizeUnit"),
+		jsii.String("maxLabel"),
+		jsii.String("maxMemoryLabel"),
+		jsii.String("usedLabel"),
+		jsii.String("maxMemoryUsed"),
+		jsii.String("maxMemoryUsedUnit"),
+		jsii.String("..."),
+	).WhereString(jsii.String("report"), jsii.String("="), jsii.String("REPORT")).WhereString(jsii.String("maxMemoryUsedUnit"), jsii.String("="), jsii.String("MB"))
+
+	filter := awslogs.NewMetricFilter(stack, jsii.String(id), &awslogs.MetricFilterProps{
+		FilterName:      jsii.String(metricName),
+		FilterPattern:   pattern,
+		LogGroup:        logGroup,
+		MetricName:      jsii.String(metricName),
+		MetricNamespace: jsii.String(lambdaReportMetricNamespace),
+		MetricValue:     jsii.String("$maxMemoryUsed"),
+		Unit:            awscloudwatch.Unit_MEGABYTES,
+	})
+
+	return filter.Metric(maxMetric(label, period, awscloudwatch.Unit_MEGABYTES))
 }
 
 func addAlarm(stack awscdk.Stack, id string, name string, metric awscloudwatch.IMetric, threshold float64, evaluationPeriods float64, description string) awscloudwatch.Alarm {

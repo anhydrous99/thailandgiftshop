@@ -36,10 +36,15 @@ const (
 	productImagesKeyPrefix                       = "images"
 	adminCredentialsSecretName                   = "thailandgiftshop/admin/credentials"
 	stripeCredentialsSecretName                  = "thailandgiftshop/stripe/credentials"
+	ssrLambdaLogGroupName                        = "/aws/lambda/thailandgiftshop-ssr"
 	adminLambdaLogGroupName                      = "/aws/lambda/thailandgiftshop-admin"
 	adminLoginAttemptsPKName                     = "client_key"
 	adminLoginAttemptsTTLName                    = "expires_at"
 	adminPreviousOriginHeaderSecretParameterName = "AdminOriginHeaderPreviousSecret"
+	lambdaMemorySizeMB                           = 128
+	lambdaHighMemoryUsedMB                       = 100
+	lambdaNearTimeoutDurationMs                  = 8000
+	lambdaReportMetricNamespace                  = "ThailandGiftshop/Lambda"
 
 	ssrOriginRequestPolicyName = "thailandgiftshop-ssr-origin"
 	ssrCachePolicyName         = "thailandgiftshop-ssr-cache"

@@ -481,7 +481,7 @@
         "LoggingConfig": {
           "LogGroup": "/aws/lambda/thailandgiftshop-admin"
         },
-        "MemorySize": 512,
+        "MemorySize": 128,
         "Role": {
           "Fn::GetAtt": [
             "AdminLambdaServiceRole5EEFE3C9",
@@ -505,6 +505,57 @@
         }
       },
       "Type": "AWS::Lambda::Function"
+    },
+    "AdminLambdaDurationMaxNearTimeoutAlarm4B8A4D46": {
+      "Properties": {
+        "ActionsEnabled": true,
+        "AlarmActions": [
+          {
+            "Ref": "OperationsAlarmTopic741F169B"
+          }
+        ],
+        "AlarmDescription": "Admin Lambda max duration is above 8 seconds and close to the 10 second timeout.",
+        "AlarmName": "ThailandGiftshop-AdminLambda-DurationMax-NearTimeout",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "Metrics": [
+          {
+            "Id": "m1",
+            "Label": "Admin max duration",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "FunctionName",
+                    "Value": {
+                      "Ref": "AdminLambda7A0A34D4"
+                    }
+                  }
+                ],
+                "MetricName": "Duration",
+                "Namespace": "AWS/Lambda"
+              },
+              "Period": 300,
+              "Stat": "Maximum",
+              "Unit": "Milliseconds"
+            },
+            "ReturnData": true
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "Threshold": 8000,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
     },
     "AdminLambdaErrorsAlarmD7E0C946": {
       "Properties": {
@@ -570,6 +621,65 @@
         }
       },
       "Type": "Custom::LogRetention"
+    },
+    "AdminLambdaMaxMemoryUsedMetricFilter442BB635": {
+      "Properties": {
+        "FilterName": "AdminLambdaMaxMemoryUsedMB",
+        "FilterPattern": "[report = \"REPORT\", requestIdLabel, requestId, durationLabel, duration, durationUnit, billedLabel, billedDurationLabel, billedDuration, billedDurationUnit, memoryLabel, sizeLabel, memorySize, memorySizeUnit, maxLabel, maxMemoryLabel, usedLabel, maxMemoryUsed, maxMemoryUsedUnit = \"MB\", ...]",
+        "LogGroupName": "/aws/lambda/thailandgiftshop-admin",
+        "MetricTransformations": [
+          {
+            "MetricName": "AdminLambdaMaxMemoryUsedMB",
+            "MetricNamespace": "ThailandGiftshop/Lambda",
+            "MetricValue": "$maxMemoryUsed",
+            "Unit": "Megabytes"
+          }
+        ]
+      },
+      "Type": "AWS::Logs::MetricFilter"
+    },
+    "AdminLambdaMemoryUsedHighAlarm8C41F7F2": {
+      "Properties": {
+        "ActionsEnabled": true,
+        "AlarmActions": [
+          {
+            "Ref": "OperationsAlarmTopic741F169B"
+          }
+        ],
+        "AlarmDescription": "Admin Lambda max memory used is above 100 MB after the 128 MB memory cutover.",
+        "AlarmName": "ThailandGiftshop-AdminLambda-MemoryUsed-High",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "Metrics": [
+          {
+            "Id": "m1",
+            "Label": "Admin max memory used",
+            "MetricStat": {
+              "Metric": {
+                "MetricName": "AdminLambdaMaxMemoryUsedMB",
+                "Namespace": "ThailandGiftshop/Lambda"
+              },
+              "Period": 300,
+              "Stat": "Maximum",
+              "Unit": "Megabytes"
+            },
+            "ReturnData": true
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "Threshold": 100,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
     },
     "AdminLambdaServiceRole5EEFE3C9": {
       "Properties": {
@@ -3303,7 +3413,15 @@
               {
                 "Ref": "AdminLambda7A0A34D4"
               },
-              "\",{\"label\":\"Admin p95 duration\",\"stat\":\"p95\"}]],\"yAxis\":{}}},{\"type\":\"metric\",\"width\":12,\"height\":6,\"x\":12,\"y\":8,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Lambda health\",\"region\":\"",
+              "\",{\"label\":\"Admin p95 duration\",\"stat\":\"p95\"}],[\"AWS/Lambda\",\"Duration\",\"FunctionName\",\"",
+              {
+                "Ref": "SsrLambda06B7747A"
+              },
+              "\",{\"label\":\"SSR max duration\",\"stat\":\"Maximum\"}],[\"AWS/Lambda\",\"Duration\",\"FunctionName\",\"",
+              {
+                "Ref": "AdminLambda7A0A34D4"
+              },
+              "\",{\"label\":\"Admin max duration\",\"stat\":\"Maximum\"}]],\"yAxis\":{}}},{\"type\":\"metric\",\"width\":12,\"height\":6,\"x\":12,\"y\":8,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Lambda health\",\"region\":\"",
               {
                 "Ref": "AWS::Region"
               },
@@ -3331,7 +3449,7 @@
               {
                 "Ref": "AdminLambda7A0A34D4"
               },
-              "\",{\"label\":\"Admin throttles\",\"stat\":\"Sum\",\"yAxis\":\"right\"}]],\"yAxis\":{}}},{\"type\":\"metric\",\"width\":12,\"height\":6,\"x\":0,\"y\":14,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Admin and WAF security\",\"region\":\"",
+              "\",{\"label\":\"Admin throttles\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[\"ThailandGiftshop/Lambda\",\"SsrLambdaMaxMemoryUsedMB\",{\"label\":\"SSR max memory used\",\"stat\":\"Maximum\",\"yAxis\":\"right\"}],[\"ThailandGiftshop/Lambda\",\"AdminLambdaMaxMemoryUsedMB\",{\"label\":\"Admin max memory used\",\"stat\":\"Maximum\",\"yAxis\":\"right\"}]],\"yAxis\":{}}},{\"type\":\"metric\",\"width\":12,\"height\":6,\"x\":0,\"y\":14,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Admin and WAF security\",\"region\":\"",
               {
                 "Ref": "AWS::Region"
               },
@@ -3547,7 +3665,15 @@
               {
                 "Ref": "AdminLambda7A0A34D4"
               },
-              "\",{\"label\":\"Admin errors\",\"stat\":\"Sum\"}],[\"AWS/Lambda\",\"Throttles\",\"FunctionName\",\"",
+              "\",{\"label\":\"Admin errors\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/Lambda\",\"SsrLambdaMaxMemoryUsedMB\",{\"label\":\"SSR max memory used\",\"stat\":\"Maximum\"}],[\"ThailandGiftshop/Lambda\",\"AdminLambdaMaxMemoryUsedMB\",{\"label\":\"Admin max memory used\",\"stat\":\"Maximum\"}],[\"AWS/Lambda\",\"Duration\",\"FunctionName\",\"",
+              {
+                "Ref": "SsrLambda06B7747A"
+              },
+              "\",{\"label\":\"SSR max duration\",\"stat\":\"Maximum\"}],[\"AWS/Lambda\",\"Duration\",\"FunctionName\",\"",
+              {
+                "Ref": "AdminLambda7A0A34D4"
+              },
+              "\",{\"label\":\"Admin max duration\",\"stat\":\"Maximum\"}],[\"AWS/Lambda\",\"Throttles\",\"FunctionName\",\"",
               {
                 "Ref": "SsrLambda06B7747A"
               },
@@ -4552,7 +4678,7 @@
             "Ref": "SsrLambdaLogGroup5806F2F2"
           }
         },
-        "MemorySize": 512,
+        "MemorySize": 128,
         "Role": {
           "Fn::GetAtt": [
             "SsrLambdaServiceRole46A57904",
@@ -4576,6 +4702,57 @@
         }
       },
       "Type": "AWS::Lambda::Function"
+    },
+    "SsrLambdaDurationMaxNearTimeoutAlarm66293608": {
+      "Properties": {
+        "ActionsEnabled": true,
+        "AlarmActions": [
+          {
+            "Ref": "OperationsAlarmTopic741F169B"
+          }
+        ],
+        "AlarmDescription": "SSR Lambda max duration is above 8 seconds and close to the 10 second timeout.",
+        "AlarmName": "ThailandGiftshop-SsrLambda-DurationMax-NearTimeout",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "Metrics": [
+          {
+            "Id": "m1",
+            "Label": "SSR max duration",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "FunctionName",
+                    "Value": {
+                      "Ref": "SsrLambda06B7747A"
+                    }
+                  }
+                ],
+                "MetricName": "Duration",
+                "Namespace": "AWS/Lambda"
+              },
+              "Period": 300,
+              "Stat": "Maximum",
+              "Unit": "Milliseconds"
+            },
+            "ReturnData": true
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "Threshold": 8000,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
     },
     "SsrLambdaErrorsAlarm62E5F5FB": {
       "Properties": {
@@ -4646,6 +4823,67 @@
       },
       "Type": "AWS::Logs::LogGroup",
       "UpdateReplacePolicy": "Retain"
+    },
+    "SsrLambdaMaxMemoryUsedMetricFilterD8ADE8AC": {
+      "Properties": {
+        "FilterName": "SsrLambdaMaxMemoryUsedMB",
+        "FilterPattern": "[report = \"REPORT\", requestIdLabel, requestId, durationLabel, duration, durationUnit, billedLabel, billedDurationLabel, billedDuration, billedDurationUnit, memoryLabel, sizeLabel, memorySize, memorySizeUnit, maxLabel, maxMemoryLabel, usedLabel, maxMemoryUsed, maxMemoryUsedUnit = \"MB\", ...]",
+        "LogGroupName": {
+          "Ref": "SsrLambdaLogGroup5806F2F2"
+        },
+        "MetricTransformations": [
+          {
+            "MetricName": "SsrLambdaMaxMemoryUsedMB",
+            "MetricNamespace": "ThailandGiftshop/Lambda",
+            "MetricValue": "$maxMemoryUsed",
+            "Unit": "Megabytes"
+          }
+        ]
+      },
+      "Type": "AWS::Logs::MetricFilter"
+    },
+    "SsrLambdaMemoryUsedHighAlarm75C9CE02": {
+      "Properties": {
+        "ActionsEnabled": true,
+        "AlarmActions": [
+          {
+            "Ref": "OperationsAlarmTopic741F169B"
+          }
+        ],
+        "AlarmDescription": "SSR Lambda max memory used is above 100 MB after the 128 MB memory cutover.",
+        "AlarmName": "ThailandGiftshop-SsrLambda-MemoryUsed-High",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "Metrics": [
+          {
+            "Id": "m1",
+            "Label": "SSR max memory used",
+            "MetricStat": {
+              "Metric": {
+                "MetricName": "SsrLambdaMaxMemoryUsedMB",
+                "Namespace": "ThailandGiftshop/Lambda"
+              },
+              "Period": 300,
+              "Stat": "Maximum",
+              "Unit": "Megabytes"
+            },
+            "ReturnData": true
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "Threshold": 100,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
     },
     "SsrLambdaServiceRole46A57904": {
       "Properties": {

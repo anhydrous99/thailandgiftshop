@@ -27,10 +27,14 @@ func addObservability(stack awscdk.Stack, resources observabilityResources) {
 	ssrErrors := resources.ssrFunction.MetricErrors(sumMetric("SSR errors", period5m, awscloudwatch.Unit_COUNT))
 	ssrThrottles := resources.ssrFunction.MetricThrottles(sumMetric("SSR throttles", period5m, awscloudwatch.Unit_COUNT))
 	ssrDurationP95 := resources.ssrFunction.MetricDuration(percentileMetric("SSR p95 duration", period5m, awscloudwatch.Unit_MILLISECONDS, 95))
+	ssrDurationMax := resources.ssrFunction.MetricDuration(maxMetric("SSR max duration", period5m, awscloudwatch.Unit_MILLISECONDS))
+	ssrMemoryUsedMax := lambdaMaxMemoryUsedMetric(stack, "SsrLambdaMaxMemoryUsedMetricFilter", resources.ssrLogGroup, "SsrLambdaMaxMemoryUsedMB", "SSR max memory used", period5m)
 	adminInvocations := resources.adminFunction.MetricInvocations(sumMetric("Admin invocations", period5m, awscloudwatch.Unit_COUNT))
 	adminErrors := resources.adminFunction.MetricErrors(sumMetric("Admin errors", period5m, awscloudwatch.Unit_COUNT))
 	adminThrottles := resources.adminFunction.MetricThrottles(sumMetric("Admin throttles", period5m, awscloudwatch.Unit_COUNT))
 	adminDurationP95 := resources.adminFunction.MetricDuration(percentileMetric("Admin p95 duration", period5m, awscloudwatch.Unit_MILLISECONDS, 95))
+	adminDurationMax := resources.adminFunction.MetricDuration(maxMetric("Admin max duration", period5m, awscloudwatch.Unit_MILLISECONDS))
+	adminMemoryUsedMax := lambdaMaxMemoryUsedMetric(stack, "AdminLambdaMaxMemoryUsedMetricFilter", resources.adminLogGroup, "AdminLambdaMaxMemoryUsedMB", "Admin max memory used", period5m)
 
 	catalogDynamoOperations := []dynamoMetricOperation{
 		{idSuffix: "get", dimension: "GetItem"},
@@ -124,6 +128,10 @@ func addObservability(stack awscdk.Stack, resources observabilityResources) {
 		addAlarm(stack, "HttpApiLatencyAlarm", "ThailandGiftshop-HttpApi-LatencyP95-High", apiLatencyP95, 3000, 3, "HTTP API p95 latency is above 3 seconds."),
 		addCriticalAlarm(stack, operationsAlarmTopic, "SsrLambdaErrorsAlarm", "ThailandGiftshop-SsrLambda-Errors", ssrErrors, 0, 2, "SSR Lambda has errors."),
 		addCriticalAlarm(stack, operationsAlarmTopic, "AdminLambdaErrorsAlarm", "ThailandGiftshop-AdminLambda-Errors", adminErrors, 0, 2, "Admin Lambda has errors."),
+		addCriticalAlarm(stack, operationsAlarmTopic, "SsrLambdaMemoryUsedHighAlarm", "ThailandGiftshop-SsrLambda-MemoryUsed-High", ssrMemoryUsedMax, lambdaHighMemoryUsedMB, 1, "SSR Lambda max memory used is above 100 MB after the 128 MB memory cutover."),
+		addCriticalAlarm(stack, operationsAlarmTopic, "AdminLambdaMemoryUsedHighAlarm", "ThailandGiftshop-AdminLambda-MemoryUsed-High", adminMemoryUsedMax, lambdaHighMemoryUsedMB, 1, "Admin Lambda max memory used is above 100 MB after the 128 MB memory cutover."),
+		addCriticalAlarm(stack, operationsAlarmTopic, "SsrLambdaDurationMaxNearTimeoutAlarm", "ThailandGiftshop-SsrLambda-DurationMax-NearTimeout", ssrDurationMax, lambdaNearTimeoutDurationMs, 1, "SSR Lambda max duration is above 8 seconds and close to the 10 second timeout."),
+		addCriticalAlarm(stack, operationsAlarmTopic, "AdminLambdaDurationMaxNearTimeoutAlarm", "ThailandGiftshop-AdminLambda-DurationMax-NearTimeout", adminDurationMax, lambdaNearTimeoutDurationMs, 1, "Admin Lambda max duration is above 8 seconds and close to the 10 second timeout."),
 		addAlarm(stack, "SsrLambdaThrottlesAlarm", "ThailandGiftshop-SsrLambda-Throttles", ssrThrottles, 0, 1, "SSR Lambda is throttling."),
 		addAlarm(stack, "AdminLambdaThrottlesAlarm", "ThailandGiftshop-AdminLambda-Throttles", adminThrottles, 0, 1, "Admin Lambda is throttling."),
 		addAlarm(stack, "CatalogThrottlesAlarm", "ThailandGiftshop-CatalogTable-Throttles", catalogThrottles, 0, 1, "Catalog DynamoDB table is throttling."),
@@ -171,13 +179,13 @@ func addObservability(stack awscdk.Stack, resources observabilityResources) {
 		awscloudwatch.NewGraphWidget(&awscloudwatch.GraphWidgetProps{
 			Title: jsii.String("API and Lambda latency"),
 			Width: jsii.Number(12),
-			Left:  cwMetrics(apiLatencyP95, apiIntegrationLatencyP95, ssrDurationP95, adminDurationP95),
+			Left:  cwMetrics(apiLatencyP95, apiIntegrationLatencyP95, ssrDurationP95, adminDurationP95, ssrDurationMax, adminDurationMax),
 		}),
 		awscloudwatch.NewGraphWidget(&awscloudwatch.GraphWidgetProps{
 			Title: jsii.String("Lambda health"),
 			Width: jsii.Number(12),
 			Left:  cwMetrics(ssrInvocations, adminInvocations),
-			Right: cwMetrics(ssrErrors, adminErrors, ssrThrottles, adminThrottles),
+			Right: cwMetrics(ssrErrors, adminErrors, ssrThrottles, adminThrottles, ssrMemoryUsedMax, adminMemoryUsedMax),
 		}),
 	)
 	dashboard.AddWidgets(

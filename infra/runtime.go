@@ -23,7 +23,7 @@ import (
 
 func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable awsdynamodb.ITable, productImagesBucket awss3.IBucket, adminLoginAttemptsTable awsdynamodb.ITable, adminOriginHeaderSecret awssecretsmanager.ISecret, adminPreviousOriginHeaderSecret *string, emailIdentity awsses.IEmailIdentity) ssrResources {
 	lambdaLogGroup := awslogs.NewLogGroup(stack, jsii.String("SsrLambdaLogGroup"), &awslogs.LogGroupProps{
-		LogGroupName: jsii.String("/aws/lambda/thailandgiftshop-ssr"),
+		LogGroupName: jsii.String(ssrLambdaLogGroupName),
 		Retention:    awslogs.RetentionDays_THREE_MONTHS,
 	})
 	cartCookieSecret := addCartCookieSecret(stack)
@@ -65,7 +65,7 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable a
 		FunctionName: jsii.String("thailandgiftshop-ssr"),
 		Handler:      jsii.String("bootstrap"),
 		LogGroup:     lambdaLogGroup,
-		MemorySize:   jsii.Number(512),
+		MemorySize:   jsii.Number(lambdaMemorySizeMB),
 		Runtime:      awslambda.Runtime_PROVIDED_AL2023(),
 		Timeout:      awscdk.Duration_Seconds(jsii.Number(10)),
 		Tracing:      awslambda.Tracing_ACTIVE,
@@ -138,7 +138,7 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable a
 		Value:       httpAPI.ApiEndpoint(),
 	})
 
-	return ssrResources{httpAPI: httpAPI, function: ssrFunction, admin: admin}
+	return ssrResources{httpAPI: httpAPI, function: ssrFunction, logGroup: lambdaLogGroup, admin: admin}
 }
 
 func addAdmin(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable awsdynamodb.ITable, productImagesBucket awss3.IBucket, adminLoginAttemptsTable awsdynamodb.ITable, adminOriginHeaderSecret awssecretsmanager.ISecret, adminPreviousOriginHeaderSecret *string, customerSessionSecret awssecretsmanager.ISecret, stripeSecret awssecretsmanager.ISecret, emailIdentity awsses.IEmailIdentity, httpAPI awsapigatewayv2.HttpApi) adminResources {
@@ -189,7 +189,7 @@ func addAdmin(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable
 		FunctionName: jsii.String("thailandgiftshop-admin"),
 		Handler:      jsii.String("bootstrap"),
 		LogGroup:     lambdaLogGroup,
-		MemorySize:   jsii.Number(512),
+		MemorySize:   jsii.Number(lambdaMemorySizeMB),
 		Runtime:      awslambda.Runtime_PROVIDED_AL2023(),
 		Timeout:      awscdk.Duration_Seconds(jsii.Number(10)),
 		Tracing:      awslambda.Tracing_ACTIVE,
@@ -246,5 +246,5 @@ func addAdmin(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable
 		Integration: adminIntegration,
 	})
 
-	return adminResources{routes: []awsapigatewayv2.HttpRoute{exactRoute, proxyRoute}, function: adminFunction}
+	return adminResources{routes: []awsapigatewayv2.HttpRoute{exactRoute, proxyRoute}, function: adminFunction, logGroup: lambdaLogGroup}
 }
