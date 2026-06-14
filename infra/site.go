@@ -124,7 +124,7 @@ func addSite(stack awscdk.Stack, httpAPI awsapigatewayv2.HttpApi, productImagesB
 		},
 		Validation: awscertificatemanager.CertificateValidation_FromDns(hostedZone),
 	})
-	securityHeadersPolicy := siteSecurityHeaders(stack)
+	securityHeadersPolicy := siteSecurityHeaders(stack, productImagesBucket)
 	adminWebACL := addAdminCloudFrontWebACL(stack)
 	originRequestPolicy := ssrOriginRequestPolicy(stack)
 	cachePolicy := ssrCachePolicy(stack)
@@ -294,7 +294,21 @@ func siteHostedZone(stack awscdk.Stack) awsroute53.IPublicHostedZone {
 	})
 }
 
-func siteSecurityHeaders(stack awscdk.Stack) awscloudfront.ResponseHeadersPolicy {
+func siteSecurityHeaders(stack awscdk.Stack, productImagesBucket awss3.IBucket) awscloudfront.ResponseHeadersPolicy {
+	productImagesBucketDomain := awscdk.Fn_Join(jsii.String(""), &[]*string{jsii.String("https://"), productImagesBucket.BucketDomainName()})
+	productImagesBucketRegionalDomain := awscdk.Fn_Join(jsii.String(""), &[]*string{jsii.String("https://"), productImagesBucket.BucketRegionalDomainName()})
+	contentSecurityPolicy := awscdk.Fn_Join(jsii.String(""), &[]*string{
+		jsii.String("default-src 'self'; base-uri 'self'; connect-src 'self' "),
+		productImagesBucketDomain,
+		jsii.String(" "),
+		productImagesBucketRegionalDomain,
+		jsii.String("; frame-ancestors 'none'; form-action 'self' "),
+		productImagesBucketDomain,
+		jsii.String(" "),
+		productImagesBucketRegionalDomain,
+		jsii.String(" https://checkout.stripe.com; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self' " + skipLinkStyleCSPHash + "; manifest-src 'self'"),
+	})
+
 	return awscloudfront.NewResponseHeadersPolicy(stack, jsii.String("SiteSecurityHeadersPolicy"), &awscloudfront.ResponseHeadersPolicyProps{
 		Comment: jsii.String("Security headers for thailandgiftshop.com"),
 		CustomHeadersBehavior: &awscloudfront.ResponseCustomHeadersBehavior{
@@ -313,7 +327,7 @@ func siteSecurityHeaders(stack awscdk.Stack) awscloudfront.ResponseHeadersPolicy
 		},
 		SecurityHeadersBehavior: &awscloudfront.ResponseSecurityHeadersBehavior{
 			ContentSecurityPolicy: &awscloudfront.ResponseHeadersContentSecurityPolicy{
-				ContentSecurityPolicy: jsii.String("default-src 'self'; base-uri 'self'; connect-src 'self' https://*.s3.amazonaws.com https://*.s3.us-east-1.amazonaws.com; frame-ancestors 'none'; form-action 'self' https://*.s3.amazonaws.com https://*.s3.us-east-1.amazonaws.com https://checkout.stripe.com; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self' " + skipLinkStyleCSPHash + "; manifest-src 'self'"),
+				ContentSecurityPolicy: contentSecurityPolicy,
 				Override:              jsii.Bool(true),
 			},
 			ContentTypeOptions: &awscloudfront.ResponseHeadersContentTypeOptions{

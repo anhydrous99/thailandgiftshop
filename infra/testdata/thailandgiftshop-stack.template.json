@@ -5256,7 +5256,42 @@
           "Name": "TestStackSiteSecurityHeadersPolicy5BCC3F2A",
           "SecurityHeadersConfig": {
             "ContentSecurityPolicy": {
-              "ContentSecurityPolicy": "default-src 'self'; base-uri 'self'; connect-src 'self' https://*.s3.amazonaws.com https://*.s3.us-east-1.amazonaws.com; frame-ancestors 'none'; form-action 'self' https://*.s3.amazonaws.com https://*.s3.us-east-1.amazonaws.com https://checkout.stripe.com; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self' 'sha256-rE+bFBvY9ntOvyDDnI4OBE9+BdhsJpyJJWxGWylO5oY='; manifest-src 'self'",
+              "ContentSecurityPolicy": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "default-src 'self'; base-uri 'self'; connect-src 'self' https://",
+                    {
+                      "Fn::GetAtt": [
+                        "ProductImagesBucket03BDA4C8",
+                        "DomainName"
+                      ]
+                    },
+                    " https://",
+                    {
+                      "Fn::GetAtt": [
+                        "ProductImagesBucket03BDA4C8",
+                        "RegionalDomainName"
+                      ]
+                    },
+                    "; frame-ancestors 'none'; form-action 'self' https://",
+                    {
+                      "Fn::GetAtt": [
+                        "ProductImagesBucket03BDA4C8",
+                        "DomainName"
+                      ]
+                    },
+                    " https://",
+                    {
+                      "Fn::GetAtt": [
+                        "ProductImagesBucket03BDA4C8",
+                        "RegionalDomainName"
+                      ]
+                    },
+                    " https://checkout.stripe.com; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self' 'sha256-rE+bFBvY9ntOvyDDnI4OBE9+BdhsJpyJJWxGWylO5oY='; manifest-src 'self'"
+                  ]
+                ]
+              },
               "Override": true
             },
             "ContentTypeOptions": {

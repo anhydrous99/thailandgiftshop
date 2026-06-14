@@ -87,8 +87,8 @@ KMS key adds ~$1/mo.
   GitHub") with customer-facing content. `internal/ssr/layout.templ` (footer
   bottom row).
 - [x] **Add `Permissions-Policy` + COOP** response headers. `infra/site.go`.
-- [ ] **Tighten CSP `connect-src`/`form-action`** off the global
-  `*.s3.amazonaws.com` wildcard. `infra/site.go:296`.
+- [x] **Tighten CSP `connect-src`/`form-action`** off the global
+  `*.s3.amazonaws.com` wildcard. `infra/site.go:297`.
 
 ### P2 — accessibility & correctness
 - [x] Order-detail section labels are `<p>`, not headings (h1→h3 skip).
