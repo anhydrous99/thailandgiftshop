@@ -1,0 +1,5549 @@
+{
+  "Mappings": {
+    "AWSCloudFrontPartitionHostedZoneIdMap": {
+      "aws": {
+        "zoneId": "Z2FDTNDATAQYW2"
+      },
+      "aws-cn": {
+        "zoneId": "Z3RFFRIM2A3IF5"
+      }
+    }
+  },
+  "Outputs": {
+    "CatalogTableArn": {
+      "Description": "DynamoDB table ARN for products and categories",
+      "Value": {
+        "Fn::GetAtt": [
+          "CatalogTableF8EA09BD",
+          "Arn"
+        ]
+      }
+    },
+    "CatalogTableName": {
+      "Description": "DynamoDB table name for products and categories",
+      "Value": {
+        "Ref": "CatalogTableF8EA09BD"
+      }
+    },
+    "CommerceCustomerOrdersIndexName": {
+      "Description": "DynamoDB GSI name for a customer's order history",
+      "Value": "customer-orders-index"
+    },
+    "CommerceOrdersIndexName": {
+      "Description": "DynamoDB GSI name for the admin all-orders listing",
+      "Value": "orders-index"
+    },
+    "CommerceTableArn": {
+      "Description": "DynamoDB table ARN for customers, carts, addresses, and orders",
+      "Value": {
+        "Fn::GetAtt": [
+          "CommerceTable6CC80189",
+          "Arn"
+        ]
+      }
+    },
+    "CommerceTableName": {
+      "Description": "DynamoDB table name for customers, carts, addresses, and orders",
+      "Value": {
+        "Ref": "CommerceTable6CC80189"
+      }
+    },
+    "ProductImagesBaseUrl": {
+      "Description": "CloudFront base URL path for product images",
+      "Value": "https://thailandgiftshop.com/images/"
+    },
+    "ProductImagesBucketName": {
+      "Description": "S3 bucket name for product image objects",
+      "Value": {
+        "Ref": "ProductImagesBucket03BDA4C8"
+      }
+    },
+    "SiteDistributionDomainName": {
+      "Description": "CloudFront domain name for thailandgiftshop.com",
+      "Value": {
+        "Fn::GetAtt": [
+          "SiteDistribution3FF9535D",
+          "DomainName"
+        ]
+      }
+    },
+    "SiteUrl": {
+      "Description": "CloudFront URL for thailandgiftshop.com",
+      "Value": "https://thailandgiftshop.com"
+    },
+    "SsrHttpApiUrl": {
+      "Description": "Base URL for the SSR HTTP API",
+      "Value": {
+        "Fn::GetAtt": [
+          "SsrHttpApi76D079D6",
+          "ApiEndpoint"
+        ]
+      }
+    }
+  },
+  "Parameters": {
+    "AdminOriginHeaderPreviousSecret": {
+      "Default": "",
+      "Description": "Previous X-TGS-Origin-Secret value accepted during CloudFront origin header rotations",
+      "NoEcho": true,
+      "Type": "String"
+    },
+    "AlarmNotificationEmail": {
+      "Description": "Email address subscribed to critical operations alarms",
+      "Type": "String"
+    },
+    "BootstrapVersion": {
+      "Default": "/cdk-bootstrap/hnb659fds/version",
+      "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]",
+      "Type": "AWS::SSM::Parameter::Value<String>"
+    },
+    "HostedZoneId": {
+      "Description": "Route 53 public hosted zone ID for thailandgiftshop.com",
+      "Type": "String"
+    }
+  },
+  "Resources": {
+    "AdminCloudFrontWebACL": {
+      "Properties": {
+        "DefaultAction": {
+          "Allow": {}
+        },
+        "Name": "thailandgiftshop-admin-cloudfront",
+        "Rules": [
+          {
+            "Action": {
+              "Block": {
+                "CustomResponse": {
+                  "ResponseCode": 429
+                }
+              }
+            },
+            "Name": "AdminLoginPostRateLimit",
+            "Priority": 0,
+            "Statement": {
+              "RateBasedStatement": {
+                "AggregateKeyType": "IP",
+                "EvaluationWindowSec": 300,
+                "Limit": 100,
+                "ScopeDownStatement": {
+                  "AndStatement": {
+                    "Statements": [
+                      {
+                        "ByteMatchStatement": {
+                          "FieldToMatch": {
+                            "UriPath": {}
+                          },
+                          "PositionalConstraint": "EXACTLY",
+                          "SearchString": "/admin/login",
+                          "TextTransformations": [
+                            {
+                              "Priority": 0,
+                              "Type": "URL_DECODE"
+                            },
+                            {
+                              "Priority": 1,
+                              "Type": "NONE"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "ByteMatchStatement": {
+                          "FieldToMatch": {
+                            "Method": {}
+                          },
+                          "PositionalConstraint": "EXACTLY",
+                          "SearchString": "POST",
+                          "TextTransformations": [
+                            {
+                              "Priority": 0,
+                              "Type": "NONE"
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            "VisibilityConfig": {
+              "CloudWatchMetricsEnabled": true,
+              "MetricName": "ThailandGiftshopAdminCloudFrontLoginPost",
+              "SampledRequestsEnabled": false
+            }
+          },
+          {
+            "Action": {
+              "Block": {
+                "CustomResponse": {
+                  "ResponseCode": 429
+                }
+              }
+            },
+            "Name": "AdminPathRateLimit",
+            "Priority": 1,
+            "Statement": {
+              "RateBasedStatement": {
+                "AggregateKeyType": "IP",
+                "EvaluationWindowSec": 300,
+                "Limit": 500,
+                "ScopeDownStatement": {
+                  "OrStatement": {
+                    "Statements": [
+                      {
+                        "ByteMatchStatement": {
+                          "FieldToMatch": {
+                            "UriPath": {}
+                          },
+                          "PositionalConstraint": "EXACTLY",
+                          "SearchString": "/admin",
+                          "TextTransformations": [
+                            {
+                              "Priority": 0,
+                              "Type": "NONE"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "ByteMatchStatement": {
+                          "FieldToMatch": {
+                            "UriPath": {}
+                          },
+                          "PositionalConstraint": "STARTS_WITH",
+                          "SearchString": "/admin/",
+                          "TextTransformations": [
+                            {
+                              "Priority": 0,
+                              "Type": "NONE"
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            "VisibilityConfig": {
+              "CloudWatchMetricsEnabled": true,
+              "MetricName": "ThailandGiftshopAdminCloudFrontPath",
+              "SampledRequestsEnabled": false
+            }
+          },
+          {
+            "Action": {
+              "Block": {
+                "CustomResponse": {
+                  "ResponseCode": 429
+                }
+              }
+            },
+            "Name": "CustomerAuthPostRateLimit",
+            "Priority": 2,
+            "Statement": {
+              "RateBasedStatement": {
+                "AggregateKeyType": "IP",
+                "EvaluationWindowSec": 300,
+                "Limit": 100,
+                "ScopeDownStatement": {
+                  "AndStatement": {
+                    "Statements": [
+                      {
+                        "OrStatement": {
+                          "Statements": [
+                            {
+                              "ByteMatchStatement": {
+                                "FieldToMatch": {
+                                  "UriPath": {}
+                                },
+                                "PositionalConstraint": "EXACTLY",
+                                "SearchString": "/account/sign-in",
+                                "TextTransformations": [
+                                  {
+                                    "Priority": 0,
+                                    "Type": "URL_DECODE"
+                                  },
+                                  {
+                                    "Priority": 1,
+                                    "Type": "NONE"
+                                  }
+                                ]
+                              }
+                            },
+                            {
+                              "ByteMatchStatement": {
+                                "FieldToMatch": {
+                                  "UriPath": {}
+                                },
+                                "PositionalConstraint": "EXACTLY",
+                                "SearchString": "/account/sign-up",
+                                "TextTransformations": [
+                                  {
+                                    "Priority": 0,
+                                    "Type": "URL_DECODE"
+                                  },
+                                  {
+                                    "Priority": 1,
+                                    "Type": "NONE"
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "ByteMatchStatement": {
+                          "FieldToMatch": {
+                            "Method": {}
+                          },
+                          "PositionalConstraint": "EXACTLY",
+                          "SearchString": "POST",
+                          "TextTransformations": [
+                            {
+                              "Priority": 0,
+                              "Type": "NONE"
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            "VisibilityConfig": {
+              "CloudWatchMetricsEnabled": true,
+              "MetricName": "ThailandGiftshopAdminCloudFrontCustomerAuthPost",
+              "SampledRequestsEnabled": false
+            }
+          },
+          {
+            "Action": {
+              "Block": {
+                "CustomResponse": {
+                  "ResponseCode": 429
+                }
+              }
+            },
+            "Name": "CheckoutPlaceOrderRateLimit",
+            "Priority": 3,
+            "Statement": {
+              "RateBasedStatement": {
+                "AggregateKeyType": "IP",
+                "EvaluationWindowSec": 300,
+                "Limit": 100,
+                "ScopeDownStatement": {
+                  "AndStatement": {
+                    "Statements": [
+                      {
+                        "ByteMatchStatement": {
+                          "FieldToMatch": {
+                            "UriPath": {}
+                          },
+                          "PositionalConstraint": "EXACTLY",
+                          "SearchString": "/checkout/place-order",
+                          "TextTransformations": [
+                            {
+                              "Priority": 0,
+                              "Type": "URL_DECODE"
+                            },
+                            {
+                              "Priority": 1,
+                              "Type": "NONE"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "ByteMatchStatement": {
+                          "FieldToMatch": {
+                            "Method": {}
+                          },
+                          "PositionalConstraint": "EXACTLY",
+                          "SearchString": "POST",
+                          "TextTransformations": [
+                            {
+                              "Priority": 0,
+                              "Type": "NONE"
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            "VisibilityConfig": {
+              "CloudWatchMetricsEnabled": true,
+              "MetricName": "ThailandGiftshopAdminCloudFrontCheckoutPlaceOrderPost",
+              "SampledRequestsEnabled": false
+            }
+          }
+        ],
+        "Scope": "CLOUDFRONT",
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "VisibilityConfig": {
+          "CloudWatchMetricsEnabled": true,
+          "MetricName": "ThailandGiftshopAdminCloudFront",
+          "SampledRequestsEnabled": false
+        }
+      },
+      "Type": "AWS::WAFv2::WebACL"
+    },
+    "AdminLambda7A0A34D4": {
+      "DependsOn": [
+        "AdminLambdaServiceRoleDefaultPolicy90F8EC81",
+        "AdminLambdaServiceRole5EEFE3C9"
+      ],
+      "Properties": {
+        "Architectures": [
+          "arm64"
+        ],
+        "Code": {
+          "S3Bucket": {
+            "Fn::Sub": "cdk-hnb659fds-assets-${AWS::AccountId}-${AWS::Region}"
+          },
+          "S3Key": "<asset-hash>.zip"
+        },
+        "Description": "Admin HTML handler for thailandgiftshop.com",
+        "Environment": {
+          "Variables": {
+            "ADMIN_CREDENTIALS_SECRET_NAME": "thailandgiftshop/admin/credentials",
+            "ADMIN_LOGIN_ATTEMPTS_TABLE_NAME": {
+              "Ref": "AdminLoginAttemptsTable0319FCD7"
+            },
+            "ADMIN_ORIGIN_HEADER_PREVIOUS_SECRET": {
+              "Ref": "AdminOriginHeaderPreviousSecret"
+            },
+            "ADMIN_ORIGIN_HEADER_SECRET": {
+              "Fn::Join": [
+                "",
+                [
+                  "{{resolve:secretsmanager:",
+                  {
+                    "Ref": "AdminOriginHeaderSecretD1A227E9"
+                  },
+                  ":SecretString:::}}"
+                ]
+              ]
+            },
+            "APP_ENV": "production",
+            "CATALOG_ENTITY_INDEX_NAME": "entity-index",
+            "CATALOG_PUBLIC_INDEX_NAME": "public-index",
+            "CATALOG_RECENT_INDEX_NAME": "recent-index",
+            "CATALOG_SLUG_INDEX_NAME": "slug-index",
+            "CATALOG_TABLE_NAME": {
+              "Ref": "CatalogTableF8EA09BD"
+            },
+            "COMMERCE_CUSTOMER_ORDERS_INDEX_NAME": "customer-orders-index",
+            "COMMERCE_ORDERS_INDEX_NAME": "orders-index",
+            "COMMERCE_TABLE_NAME": {
+              "Ref": "CommerceTable6CC80189"
+            },
+            "CUSTOMER_SESSION_SECRET": {
+              "Fn::Join": [
+                "",
+                [
+                  "{{resolve:secretsmanager:",
+                  {
+                    "Ref": "CustomerSessionSecret059A28A9"
+                  },
+                  ":SecretString:::}}"
+                ]
+              ]
+            },
+            "EMAIL_FROM_ADDRESS": "noreply@thailandgiftshop.com",
+            "EMAIL_SENDER_MODE": "ses",
+            "EMAIL_SES_REGION": "us-east-1",
+            "PRODUCT_IMAGES_BUCKET_NAME": {
+              "Ref": "ProductImagesBucket03BDA4C8"
+            },
+            "PRODUCT_IMAGES_KEY_PREFIX": "images",
+            "PRODUCT_IMAGE_PLACEHOLDER_URL": "/images/placeholder-product.jpg",
+            "STRIPE_CREDENTIALS_SECRET_NAME": "thailandgiftshop/stripe/credentials"
+          }
+        },
+        "FunctionName": "thailandgiftshop-admin",
+        "Handler": "bootstrap",
+        "LoggingConfig": {
+          "LogGroup": "/aws/lambda/thailandgiftshop-admin"
+        },
+        "MemorySize": 512,
+        "Role": {
+          "Fn::GetAtt": [
+            "AdminLambdaServiceRole5EEFE3C9",
+            "Arn"
+          ]
+        },
+        "Runtime": "provided.al2023",
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "Timeout": 10,
+        "TracingConfig": {
+          "Mode": "Active"
+        }
+      },
+      "Type": "AWS::Lambda::Function"
+    },
+    "AdminLambdaErrorsAlarmD7E0C946": {
+      "Properties": {
+        "ActionsEnabled": true,
+        "AlarmActions": [
+          {
+            "Ref": "OperationsAlarmTopic741F169B"
+          }
+        ],
+        "AlarmDescription": "Admin Lambda has errors.",
+        "AlarmName": "ThailandGiftshop-AdminLambda-Errors",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 2,
+        "Metrics": [
+          {
+            "Id": "m1",
+            "Label": "Admin errors",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "FunctionName",
+                    "Value": {
+                      "Ref": "AdminLambda7A0A34D4"
+                    }
+                  }
+                ],
+                "MetricName": "Errors",
+                "Namespace": "AWS/Lambda"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": true
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "AdminLambdaLogRetentionFEF35F77": {
+      "Properties": {
+        "LogGroupName": "/aws/lambda/thailandgiftshop-admin",
+        "RemovalPolicy": "retain",
+        "RetentionInDays": 90,
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aFD4BFC8A",
+            "Arn"
+          ]
+        }
+      },
+      "Type": "Custom::LogRetention"
+    },
+    "AdminLambdaServiceRole5EEFE3C9": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition"
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+              ]
+            ]
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Role"
+    },
+    "AdminLambdaServiceRoleDefaultPolicy90F8EC81": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "xray:PutTraceSegments",
+                "xray:PutTelemetryRecords"
+              ],
+              "Effect": "Allow",
+              "Resource": "*"
+            },
+            {
+              "Action": [
+                "dynamodb:BatchGetItem",
+                "dynamodb:Query",
+                "dynamodb:GetItem",
+                "dynamodb:Scan",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:BatchWriteItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:DescribeTable"
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "CatalogTableF8EA09BD",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "CatalogTableF8EA09BD",
+                          "Arn"
+                        ]
+                      },
+                      "/index/*"
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "Action": [
+                "dynamodb:GetRecords",
+                "dynamodb:GetShardIterator"
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "CatalogTableF8EA09BD",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "CatalogTableF8EA09BD",
+                          "Arn"
+                        ]
+                      },
+                      "/index/*"
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "Action": "dynamodb:TransactWriteItems",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "CatalogTableF8EA09BD",
+                  "Arn"
+                ]
+              }
+            },
+            {
+              "Action": [
+                "dynamodb:BatchGetItem",
+                "dynamodb:Query",
+                "dynamodb:GetItem",
+                "dynamodb:Scan",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:BatchWriteItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:DescribeTable"
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "CommerceTable6CC80189",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "CommerceTable6CC80189",
+                          "Arn"
+                        ]
+                      },
+                      "/index/*"
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "Action": [
+                "dynamodb:GetRecords",
+                "dynamodb:GetShardIterator"
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "CommerceTable6CC80189",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "CommerceTable6CC80189",
+                          "Arn"
+                        ]
+                      },
+                      "/index/*"
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "Action": [
+                "secretsmanager:GetSecretValue",
+                "secretsmanager:DescribeSecret"
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition"
+                    },
+                    ":secretsmanager:",
+                    {
+                      "Ref": "AWS::Region"
+                    },
+                    ":",
+                    {
+                      "Ref": "AWS::AccountId"
+                    },
+                    ":secret:thailandgiftshop/stripe/credentials-??????"
+                  ]
+                ]
+              }
+            },
+            {
+              "Action": "ses:SendEmail",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition"
+                    },
+                    ":ses:",
+                    {
+                      "Ref": "AWS::Region"
+                    },
+                    ":",
+                    {
+                      "Ref": "AWS::AccountId"
+                    },
+                    ":identity/",
+                    {
+                      "Ref": "SiteEmailIdentity10D37221"
+                    }
+                  ]
+                ]
+              }
+            },
+            {
+              "Action": [
+                "secretsmanager:GetSecretValue",
+                "secretsmanager:DescribeSecret"
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition"
+                    },
+                    ":secretsmanager:",
+                    {
+                      "Ref": "AWS::Region"
+                    },
+                    ":",
+                    {
+                      "Ref": "AWS::AccountId"
+                    },
+                    ":secret:thailandgiftshop/admin/credentials-??????"
+                  ]
+                ]
+              }
+            },
+            {
+              "Action": "dynamodb:TransactWriteItems",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "CommerceTable6CC80189",
+                  "Arn"
+                ]
+              }
+            },
+            {
+              "Action": [
+                "s3:GetObject*",
+                "s3:GetBucket*",
+                "s3:List*"
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "ProductImagesBucket03BDA4C8",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "ProductImagesBucket03BDA4C8",
+                          "Arn"
+                        ]
+                      },
+                      "/images/*"
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "Action": [
+                "s3:PutObject",
+                "s3:PutObjectLegalHold",
+                "s3:PutObjectRetention",
+                "s3:PutObjectTagging",
+                "s3:PutObjectVersionTagging",
+                "s3:Abort*"
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Fn::GetAtt": [
+                        "ProductImagesBucket03BDA4C8",
+                        "Arn"
+                      ]
+                    },
+                    "/images/*"
+                  ]
+                ]
+              }
+            },
+            {
+              "Action": [
+                "dynamodb:GetItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem"
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "AdminLoginAttemptsTable0319FCD7",
+                  "Arn"
+                ]
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "PolicyName": "AdminLambdaServiceRoleDefaultPolicy90F8EC81",
+        "Roles": [
+          {
+            "Ref": "AdminLambdaServiceRole5EEFE3C9"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Policy"
+    },
+    "AdminLambdaThrottlesAlarm5E6BD549": {
+      "Properties": {
+        "ActionsEnabled": false,
+        "AlarmDescription": "Admin Lambda is throttling.",
+        "AlarmName": "ThailandGiftshop-AdminLambda-Throttles",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "Metrics": [
+          {
+            "Id": "m1",
+            "Label": "Admin throttles",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "FunctionName",
+                    "Value": {
+                      "Ref": "AdminLambda7A0A34D4"
+                    }
+                  }
+                ],
+                "MetricName": "Throttles",
+                "Namespace": "AWS/Lambda"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": true
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "AdminLoginAttemptsTable0319FCD7": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "client_key",
+            "AttributeType": "S"
+          }
+        ],
+        "BillingMode": "PAY_PER_REQUEST",
+        "KeySchema": [
+          {
+            "AttributeName": "client_key",
+            "KeyType": "HASH"
+          }
+        ],
+        "PointInTimeRecoverySpecification": {
+          "PointInTimeRecoveryEnabled": true
+        },
+        "SSESpecification": {
+          "SSEEnabled": true
+        },
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "TimeToLiveSpecification": {
+          "AttributeName": "expires_at",
+          "Enabled": true
+        }
+      },
+      "Type": "AWS::DynamoDB::Table",
+      "UpdateReplacePolicy": "Delete"
+    },
+    "AdminLoginInvalidAlarmD54809F6": {
+      "Properties": {
+        "ActionsEnabled": false,
+        "AlarmDescription": "Admin invalid login attempts exceeded the normal operating threshold.",
+        "AlarmName": "ThailandGiftshop-Admin-InvalidLogins",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "Metrics": [
+          {
+            "Id": "m1",
+            "Label": "Admin login invalid",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "login"
+                  },
+                  {
+                    "Name": "Outcome",
+                    "Value": "invalid"
+                  },
+                  {
+                    "Name": "Service",
+                    "Value": "admin"
+                  }
+                ],
+                "MetricName": "AdminLoginAttempt",
+                "Namespace": "ThailandGiftshop/App"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": true
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "Threshold": 10,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "AdminLoginThrottleTableThrottlesAlarm675CD9C5": {
+      "Properties": {
+        "ActionsEnabled": false,
+        "AlarmDescription": "Admin login throttle DynamoDB table is throttling.",
+        "AlarmName": "ThailandGiftshop-AdminLoginThrottleTable-Throttles",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "Metrics": [
+          {
+            "Expression": "altget+altupdate+altdelete",
+            "Id": "expr_1",
+            "Label": "Admin login throttle table throttles",
+            "ReturnData": true
+          },
+          {
+            "Id": "altdelete",
+            "Label": "DeleteItem",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "DeleteItem"
+                  },
+                  {
+                    "Name": "TableName",
+                    "Value": {
+                      "Ref": "AdminLoginAttemptsTable0319FCD7"
+                    }
+                  }
+                ],
+                "MetricName": "ThrottledRequests",
+                "Namespace": "AWS/DynamoDB"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "altget",
+            "Label": "GetItem",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "GetItem"
+                  },
+                  {
+                    "Name": "TableName",
+                    "Value": {
+                      "Ref": "AdminLoginAttemptsTable0319FCD7"
+                    }
+                  }
+                ],
+                "MetricName": "ThrottledRequests",
+                "Namespace": "AWS/DynamoDB"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "altupdate",
+            "Label": "UpdateItem",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "UpdateItem"
+                  },
+                  {
+                    "Name": "TableName",
+                    "Value": {
+                      "Ref": "AdminLoginAttemptsTable0319FCD7"
+                    }
+                  }
+                ],
+                "MetricName": "ThrottledRequests",
+                "Namespace": "AWS/DynamoDB"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "AdminLoginThrottledAlarmF240D5ED": {
+      "Properties": {
+        "ActionsEnabled": false,
+        "AlarmDescription": "Admin login throttling occurred.",
+        "AlarmName": "ThailandGiftshop-Admin-ThrottledLogins",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "Metrics": [
+          {
+            "Id": "m1",
+            "Label": "Admin login throttled",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "login"
+                  },
+                  {
+                    "Name": "Outcome",
+                    "Value": "throttled"
+                  },
+                  {
+                    "Name": "Service",
+                    "Value": "admin"
+                  }
+                ],
+                "MetricName": "AdminLoginAttempt",
+                "Namespace": "ThailandGiftshop/App"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": true
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "AdminOriginHeaderSecretD1A227E9": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "Description": "Shared origin header secret for thailandgiftshop.com admin requests through CloudFront",
+        "GenerateSecretString": {
+          "ExcludePunctuation": true,
+          "PasswordLength": 64
+        },
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ]
+      },
+      "Type": "AWS::SecretsManager::Secret",
+      "UpdateReplacePolicy": "Delete"
+    },
+    "AdminOriginRejectedAlarm1A16AB49": {
+      "Properties": {
+        "ActionsEnabled": true,
+        "AlarmActions": [
+          {
+            "Ref": "OperationsAlarmTopic741F169B"
+          }
+        ],
+        "AlarmDescription": "Admin origin header rejections were observed.",
+        "AlarmName": "ThailandGiftshop-Admin-OriginRejected",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "Metrics": [
+          {
+            "Id": "m1",
+            "Label": "Admin origin rejected",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "origin"
+                  },
+                  {
+                    "Name": "Outcome",
+                    "Value": "rejected"
+                  },
+                  {
+                    "Name": "Service",
+                    "Value": "admin"
+                  }
+                ],
+                "MetricName": "AdminOriginRejected",
+                "Namespace": "ThailandGiftshop/App"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": true
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "AdminProxyRouteA88DF6BF": {
+      "Properties": {
+        "ApiId": {
+          "Ref": "SsrHttpApi76D079D6"
+        },
+        "AuthorizationType": "NONE",
+        "RouteKey": "ANY /admin/{proxy+}",
+        "Target": {
+          "Fn::Join": [
+            "",
+            [
+              "integrations/",
+              {
+                "Ref": "AdminRouteAdminLambdaIntegration55154424"
+              }
+            ]
+          ]
+        }
+      },
+      "Type": "AWS::ApiGatewayV2::Route"
+    },
+    "AdminProxyRouteAdminLambdaIntegrationPermissionE917385F": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "AdminLambda7A0A34D4",
+            "Arn"
+          ]
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition"
+              },
+              ":execute-api:",
+              {
+                "Ref": "AWS::Region"
+              },
+              ":",
+              {
+                "Ref": "AWS::AccountId"
+              },
+              ":",
+              {
+                "Ref": "SsrHttpApi76D079D6"
+              },
+              "/*/*/admin/{proxy+}"
+            ]
+          ]
+        }
+      },
+      "Type": "AWS::Lambda::Permission"
+    },
+    "AdminRoute260CB1E1": {
+      "Properties": {
+        "ApiId": {
+          "Ref": "SsrHttpApi76D079D6"
+        },
+        "AuthorizationType": "NONE",
+        "RouteKey": "ANY /admin",
+        "Target": {
+          "Fn::Join": [
+            "",
+            [
+              "integrations/",
+              {
+                "Ref": "AdminRouteAdminLambdaIntegration55154424"
+              }
+            ]
+          ]
+        }
+      },
+      "Type": "AWS::ApiGatewayV2::Route"
+    },
+    "AdminRouteAdminLambdaIntegration55154424": {
+      "Properties": {
+        "ApiId": {
+          "Ref": "SsrHttpApi76D079D6"
+        },
+        "IntegrationType": "AWS_PROXY",
+        "IntegrationUri": {
+          "Fn::GetAtt": [
+            "AdminLambda7A0A34D4",
+            "Arn"
+          ]
+        },
+        "PayloadFormatVersion": "2.0",
+        "TimeoutInMillis": 10000
+      },
+      "Type": "AWS::ApiGatewayV2::Integration"
+    },
+    "AdminRouteAdminLambdaIntegrationPermission1E46B41B": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "AdminLambda7A0A34D4",
+            "Arn"
+          ]
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition"
+              },
+              ":execute-api:",
+              {
+                "Ref": "AWS::Region"
+              },
+              ":",
+              {
+                "Ref": "AWS::AccountId"
+              },
+              ":",
+              {
+                "Ref": "SsrHttpApi76D079D6"
+              },
+              "/*/*/admin"
+            ]
+          ]
+        }
+      },
+      "Type": "AWS::Lambda::Permission"
+    },
+    "CanonicalHostRedirectFunction16A899A8": {
+      "Properties": {
+        "AutoPublish": true,
+        "FunctionCode": "function handler(event) {\n    var request = event.request;\n    var host = request.headers.host.value.toLowerCase();\n\n    if (host !== \"www.thailandgiftshop.com\") {\n        return request;\n    }\n\n    var location = \"https://thailandgiftshop.com\" + request.uri;\n    var querystring = request.querystring;\n    var queryParts = [];\n\n    for (var name in querystring) {\n        if (!Object.prototype.hasOwnProperty.call(querystring, name)) {\n            continue;\n        }\n\n        var parameter = querystring[name];\n        if (parameter.multiValue) {\n            for (var index = 0; index < parameter.multiValue.length; index++) {\n                queryParts.push(name + \"=\" + parameter.multiValue[index].value);\n            }\n            continue;\n        }\n\n        queryParts.push(name + \"=\" + parameter.value);\n    }\n\n    if (queryParts.length > 0) {\n        location += \"?\" + queryParts.join(\"&\");\n    }\n\n    return {\n        statusCode: 308,\n        statusDescription: \"Permanent Redirect\",\n        headers: {\n            location: {\n                value: location\n            }\n        }\n    };\n}",
+        "FunctionConfig": {
+          "Comment": "Redirect www.thailandgiftshop.com requests to the apex host",
+          "Runtime": "cloudfront-js-2.0"
+        },
+        "Name": "thailandgiftshop-www-to-apex",
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ]
+      },
+      "Type": "AWS::CloudFront::Function"
+    },
+    "CartCookieSecret4041D8EB": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "Description": "Signing secret for thailandgiftshop.com cart cookies",
+        "GenerateSecretString": {
+          "ExcludePunctuation": true,
+          "PasswordLength": 64
+        },
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ]
+      },
+      "Type": "AWS::SecretsManager::Secret",
+      "UpdateReplacePolicy": "Delete"
+    },
+    "CatalogSystemErrorsAlarmE4788F18": {
+      "Properties": {
+        "ActionsEnabled": false,
+        "AlarmDescription": "Catalog DynamoDB table has system errors.",
+        "AlarmName": "ThailandGiftshop-CatalogTable-SystemErrors",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "Metrics": [
+          {
+            "Expression": "csget+csbatchget+csquery+csscan+csput+csdelete+csupdate+csbatchwrite+cstransactwrite",
+            "Id": "expr_1",
+            "Label": "Catalog system errors",
+            "ReturnData": true
+          },
+          {
+            "Id": "csbatchget",
+            "Label": "BatchGetItem",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "BatchGetItem"
+                  },
+                  {
+                    "Name": "TableName",
+                    "Value": {
+                      "Ref": "CatalogTableF8EA09BD"
+                    }
+                  }
+                ],
+                "MetricName": "SystemErrors",
+                "Namespace": "AWS/DynamoDB"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "csbatchwrite",
+            "Label": "BatchWriteItem",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "BatchWriteItem"
+                  },
+                  {
+                    "Name": "TableName",
+                    "Value": {
+                      "Ref": "CatalogTableF8EA09BD"
+                    }
+                  }
+                ],
+                "MetricName": "SystemErrors",
+                "Namespace": "AWS/DynamoDB"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "csdelete",
+            "Label": "DeleteItem",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "DeleteItem"
+                  },
+                  {
+                    "Name": "TableName",
+                    "Value": {
+                      "Ref": "CatalogTableF8EA09BD"
+                    }
+                  }
+                ],
+                "MetricName": "SystemErrors",
+                "Namespace": "AWS/DynamoDB"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "csget",
+            "Label": "GetItem",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "GetItem"
+                  },
+                  {
+                    "Name": "TableName",
+                    "Value": {
+                      "Ref": "CatalogTableF8EA09BD"
+                    }
+                  }
+                ],
+                "MetricName": "SystemErrors",
+                "Namespace": "AWS/DynamoDB"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "csput",
+            "Label": "PutItem",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "PutItem"
+                  },
+                  {
+                    "Name": "TableName",
+                    "Value": {
+                      "Ref": "CatalogTableF8EA09BD"
+                    }
+                  }
+                ],
+                "MetricName": "SystemErrors",
+                "Namespace": "AWS/DynamoDB"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "csquery",
+            "Label": "Query",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "Query"
+                  },
+                  {
+                    "Name": "TableName",
+                    "Value": {
+                      "Ref": "CatalogTableF8EA09BD"
+                    }
+                  }
+                ],
+                "MetricName": "SystemErrors",
+                "Namespace": "AWS/DynamoDB"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "csscan",
+            "Label": "Scan",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "Scan"
+                  },
+                  {
+                    "Name": "TableName",
+                    "Value": {
+                      "Ref": "CatalogTableF8EA09BD"
+                    }
+                  }
+                ],
+                "MetricName": "SystemErrors",
+                "Namespace": "AWS/DynamoDB"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "cstransactwrite",
+            "Label": "TransactWriteItems",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "TransactWriteItems"
+                  },
+                  {
+                    "Name": "TableName",
+                    "Value": {
+                      "Ref": "CatalogTableF8EA09BD"
+                    }
+                  }
+                ],
+                "MetricName": "SystemErrors",
+                "Namespace": "AWS/DynamoDB"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "csupdate",
+            "Label": "UpdateItem",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "UpdateItem"
+                  },
+                  {
+                    "Name": "TableName",
+                    "Value": {
+                      "Ref": "CatalogTableF8EA09BD"
+                    }
+                  }
+                ],
+                "MetricName": "SystemErrors",
+                "Namespace": "AWS/DynamoDB"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "CatalogTableF8EA09BD": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "pk",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "sk",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "gsi1pk",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "gsi1sk",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "gsi2pk",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "gsi2sk",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "gsi3pk",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "gsi3sk",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "gsi4pk",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "gsi4sk",
+            "AttributeType": "S"
+          }
+        ],
+        "BillingMode": "PAY_PER_REQUEST",
+        "GlobalSecondaryIndexes": [
+          {
+            "IndexName": "slug-index",
+            "KeySchema": [
+              {
+                "AttributeName": "gsi1pk",
+                "KeyType": "HASH"
+              },
+              {
+                "AttributeName": "gsi1sk",
+                "KeyType": "RANGE"
+              }
+            ],
+            "Projection": {
+              "ProjectionType": "ALL"
+            }
+          },
+          {
+            "IndexName": "public-index",
+            "KeySchema": [
+              {
+                "AttributeName": "gsi2pk",
+                "KeyType": "HASH"
+              },
+              {
+                "AttributeName": "gsi2sk",
+                "KeyType": "RANGE"
+              }
+            ],
+            "Projection": {
+              "ProjectionType": "ALL"
+            }
+          },
+          {
+            "IndexName": "recent-index",
+            "KeySchema": [
+              {
+                "AttributeName": "gsi3pk",
+                "KeyType": "HASH"
+              },
+              {
+                "AttributeName": "gsi3sk",
+                "KeyType": "RANGE"
+              }
+            ],
+            "Projection": {
+              "ProjectionType": "ALL"
+            }
+          },
+          {
+            "IndexName": "entity-index",
+            "KeySchema": [
+              {
+                "AttributeName": "gsi4pk",
+                "KeyType": "HASH"
+              },
+              {
+                "AttributeName": "gsi4sk",
+                "KeyType": "RANGE"
+              }
+            ],
+            "Projection": {
+              "ProjectionType": "ALL"
+            }
+          }
+        ],
+        "KeySchema": [
+          {
+            "AttributeName": "pk",
+            "KeyType": "HASH"
+          },
+          {
+            "AttributeName": "sk",
+            "KeyType": "RANGE"
+          }
+        ],
+        "PointInTimeRecoverySpecification": {
+          "PointInTimeRecoveryEnabled": true
+        },
+        "SSESpecification": {
+          "SSEEnabled": true
+        },
+        "TableName": "thailandgiftshop-catalog",
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ]
+      },
+      "Type": "AWS::DynamoDB::Table",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "CatalogThrottlesAlarm194CA82B": {
+      "Properties": {
+        "ActionsEnabled": false,
+        "AlarmDescription": "Catalog DynamoDB table is throttling.",
+        "AlarmName": "ThailandGiftshop-CatalogTable-Throttles",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "Metrics": [
+          {
+            "Expression": "ctget+ctbatchget+ctquery+ctscan+ctput+ctdelete+ctupdate+ctbatchwrite+cttransactwrite",
+            "Id": "expr_1",
+            "Label": "Catalog throttles",
+            "ReturnData": true
+          },
+          {
+            "Id": "ctbatchget",
+            "Label": "BatchGetItem",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "BatchGetItem"
+                  },
+                  {
+                    "Name": "TableName",
+                    "Value": {
+                      "Ref": "CatalogTableF8EA09BD"
+                    }
+                  }
+                ],
+                "MetricName": "ThrottledRequests",
+                "Namespace": "AWS/DynamoDB"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "ctbatchwrite",
+            "Label": "BatchWriteItem",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "BatchWriteItem"
+                  },
+                  {
+                    "Name": "TableName",
+                    "Value": {
+                      "Ref": "CatalogTableF8EA09BD"
+                    }
+                  }
+                ],
+                "MetricName": "ThrottledRequests",
+                "Namespace": "AWS/DynamoDB"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "ctdelete",
+            "Label": "DeleteItem",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "DeleteItem"
+                  },
+                  {
+                    "Name": "TableName",
+                    "Value": {
+                      "Ref": "CatalogTableF8EA09BD"
+                    }
+                  }
+                ],
+                "MetricName": "ThrottledRequests",
+                "Namespace": "AWS/DynamoDB"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "ctget",
+            "Label": "GetItem",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "GetItem"
+                  },
+                  {
+                    "Name": "TableName",
+                    "Value": {
+                      "Ref": "CatalogTableF8EA09BD"
+                    }
+                  }
+                ],
+                "MetricName": "ThrottledRequests",
+                "Namespace": "AWS/DynamoDB"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "ctput",
+            "Label": "PutItem",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "PutItem"
+                  },
+                  {
+                    "Name": "TableName",
+                    "Value": {
+                      "Ref": "CatalogTableF8EA09BD"
+                    }
+                  }
+                ],
+                "MetricName": "ThrottledRequests",
+                "Namespace": "AWS/DynamoDB"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "ctquery",
+            "Label": "Query",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "Query"
+                  },
+                  {
+                    "Name": "TableName",
+                    "Value": {
+                      "Ref": "CatalogTableF8EA09BD"
+                    }
+                  }
+                ],
+                "MetricName": "ThrottledRequests",
+                "Namespace": "AWS/DynamoDB"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "ctscan",
+            "Label": "Scan",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "Scan"
+                  },
+                  {
+                    "Name": "TableName",
+                    "Value": {
+                      "Ref": "CatalogTableF8EA09BD"
+                    }
+                  }
+                ],
+                "MetricName": "ThrottledRequests",
+                "Namespace": "AWS/DynamoDB"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "cttransactwrite",
+            "Label": "TransactWriteItems",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "TransactWriteItems"
+                  },
+                  {
+                    "Name": "TableName",
+                    "Value": {
+                      "Ref": "CatalogTableF8EA09BD"
+                    }
+                  }
+                ],
+                "MetricName": "ThrottledRequests",
+                "Namespace": "AWS/DynamoDB"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "ctupdate",
+            "Label": "UpdateItem",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Operation",
+                    "Value": "UpdateItem"
+                  },
+                  {
+                    "Name": "TableName",
+                    "Value": {
+                      "Ref": "CatalogTableF8EA09BD"
+                    }
+                  }
+                ],
+                "MetricName": "ThrottledRequests",
+                "Namespace": "AWS/DynamoDB"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "CatalogWriteErrorsAlarm5D490D63": {
+      "Properties": {
+        "ActionsEnabled": true,
+        "AlarmActions": [
+          {
+            "Ref": "OperationsAlarmTopic741F169B"
+          }
+        ],
+        "AlarmDescription": "Admin catalog write errors occurred.",
+        "AlarmName": "ThailandGiftshop-CatalogWrite-Errors",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "Metrics": [
+          {
+            "Id": "m1",
+            "Label": "Catalog write errors",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Outcome",
+                    "Value": "error"
+                  },
+                  {
+                    "Name": "Service",
+                    "Value": "admin"
+                  }
+                ],
+                "MetricName": "CatalogWrite",
+                "Namespace": "ThailandGiftshop/App"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": true
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "CheckoutPaymentErrorsAlarmDEF9553D": {
+      "Properties": {
+        "ActionsEnabled": true,
+        "AlarmActions": [
+          {
+            "Ref": "OperationsAlarmTopic741F169B"
+          }
+        ],
+        "AlarmDescription": "Checkout payment provider or processing errors occurred.",
+        "AlarmName": "ThailandGiftshop-CheckoutPayment-Errors",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "Metrics": [
+          {
+            "Expression": "cpprovider_error+cperror",
+            "Id": "expr_1",
+            "Label": "Checkout payment errors",
+            "ReturnData": true
+          },
+          {
+            "Id": "cperror",
+            "Label": "CheckoutPayment error",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Outcome",
+                    "Value": "error"
+                  },
+                  {
+                    "Name": "Service",
+                    "Value": "checkout"
+                  }
+                ],
+                "MetricName": "CheckoutPayment",
+                "Namespace": "ThailandGiftshop/App"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "cpprovider_error",
+            "Label": "CheckoutPayment provider_error",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Outcome",
+                    "Value": "provider_error"
+                  },
+                  {
+                    "Name": "Service",
+                    "Value": "checkout"
+                  }
+                ],
+                "MetricName": "CheckoutPayment",
+                "Namespace": "ThailandGiftshop/App"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "CheckoutRefundErrorsAlarm80EBEF55": {
+      "Properties": {
+        "ActionsEnabled": true,
+        "AlarmActions": [
+          {
+            "Ref": "OperationsAlarmTopic741F169B"
+          }
+        ],
+        "AlarmDescription": "A Stripe refund failed, could not be issued, or hit a processing error; the affected order page in /admin/orders names the refund and failure reason.",
+        "AlarmName": "ThailandGiftshop-CheckoutRefund-Errors",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "Metrics": [
+          {
+            "Expression": "crffailed+crfprovider_error+crferror",
+            "Id": "expr_1",
+            "Label": "Checkout refund errors",
+            "ReturnData": true
+          },
+          {
+            "Id": "crferror",
+            "Label": "CheckoutRefund error",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Outcome",
+                    "Value": "error"
+                  },
+                  {
+                    "Name": "Service",
+                    "Value": "checkout"
+                  }
+                ],
+                "MetricName": "CheckoutRefund",
+                "Namespace": "ThailandGiftshop/App"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "crffailed",
+            "Label": "CheckoutRefund failed",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Outcome",
+                    "Value": "failed"
+                  },
+                  {
+                    "Name": "Service",
+                    "Value": "checkout"
+                  }
+                ],
+                "MetricName": "CheckoutRefund",
+                "Namespace": "ThailandGiftshop/App"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "crfprovider_error",
+            "Label": "CheckoutRefund provider_error",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Outcome",
+                    "Value": "provider_error"
+                  },
+                  {
+                    "Name": "Service",
+                    "Value": "checkout"
+                  }
+                ],
+                "MetricName": "CheckoutRefund",
+                "Namespace": "ThailandGiftshop/App"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "CloudFront5xxRateAlarm8BD41DBF": {
+      "Properties": {
+        "ActionsEnabled": true,
+        "AlarmActions": [
+          {
+            "Ref": "OperationsAlarmTopic741F169B"
+          }
+        ],
+        "AlarmDescription": "CloudFront 5xx error rate is above 5%.",
+        "AlarmName": "ThailandGiftshop-CloudFront-5xxRate-High",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 2,
+        "Metrics": [
+          {
+            "Id": "m1",
+            "Label": "CloudFront 5xx rate",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "DistributionId",
+                    "Value": {
+                      "Ref": "SiteDistribution3FF9535D"
+                    }
+                  }
+                ],
+                "MetricName": "5xxErrorRate",
+                "Namespace": "AWS/CloudFront"
+              },
+              "Period": 300,
+              "Stat": "Average",
+              "Unit": "Percent"
+            },
+            "ReturnData": true
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "Threshold": 5,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "CommerceTable6CC80189": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "pk",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "sk",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "gsi1pk",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "gsi1sk",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "gsi2pk",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "gsi2sk",
+            "AttributeType": "S"
+          }
+        ],
+        "BillingMode": "PAY_PER_REQUEST",
+        "GlobalSecondaryIndexes": [
+          {
+            "IndexName": "customer-orders-index",
+            "KeySchema": [
+              {
+                "AttributeName": "gsi1pk",
+                "KeyType": "HASH"
+              },
+              {
+                "AttributeName": "gsi1sk",
+                "KeyType": "RANGE"
+              }
+            ],
+            "Projection": {
+              "ProjectionType": "ALL"
+            }
+          },
+          {
+            "IndexName": "orders-index",
+            "KeySchema": [
+              {
+                "AttributeName": "gsi2pk",
+                "KeyType": "HASH"
+              },
+              {
+                "AttributeName": "gsi2sk",
+                "KeyType": "RANGE"
+              }
+            ],
+            "Projection": {
+              "ProjectionType": "ALL"
+            }
+          }
+        ],
+        "KeySchema": [
+          {
+            "AttributeName": "pk",
+            "KeyType": "HASH"
+          },
+          {
+            "AttributeName": "sk",
+            "KeyType": "RANGE"
+          }
+        ],
+        "PointInTimeRecoverySpecification": {
+          "PointInTimeRecoveryEnabled": true
+        },
+        "SSESpecification": {
+          "SSEEnabled": true
+        },
+        "TableName": "thailandgiftshop-commerce",
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "TimeToLiveSpecification": {
+          "AttributeName": "expires_at",
+          "Enabled": true
+        }
+      },
+      "Type": "AWS::DynamoDB::Table",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C81C01536": {
+      "DependsOn": [
+        "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756CServiceRoleDefaultPolicy88902FDF",
+        "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756CServiceRole89A01265"
+      ],
+      "Properties": {
+        "Code": {
+          "S3Bucket": {
+            "Fn::Sub": "cdk-hnb659fds-assets-${AWS::AccountId}-${AWS::Region}"
+          },
+          "S3Key": "<asset-hash>.zip"
+        },
+        "Environment": {
+          "Variables": {
+            "AWS_CA_BUNDLE": "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem"
+          }
+        },
+        "Handler": "index.handler",
+        "Layers": [
+          {
+            "Ref": "StaticAssetsDeploymentAwsCliLayer92D9AAF6"
+          }
+        ],
+        "LoggingConfig": {
+          "LogGroup": {
+            "Ref": "StaticAssetsDeploymentLogGroup8946EE63"
+          }
+        },
+        "Role": {
+          "Fn::GetAtt": [
+            "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756CServiceRole89A01265",
+            "Arn"
+          ]
+        },
+        "Runtime": "python3.13",
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "Timeout": 900
+      },
+      "Type": "AWS::Lambda::Function"
+    },
+    "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756CServiceRole89A01265": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition"
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+              ]
+            ]
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Role"
+    },
+    "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756CServiceRoleDefaultPolicy88902FDF": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "s3:GetObject*",
+                "s3:GetBucket*",
+                "s3:List*"
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition"
+                      },
+                      ":s3:::",
+                      {
+                        "Fn::Sub": "cdk-hnb659fds-assets-${AWS::AccountId}-${AWS::Region}"
+                      }
+                    ]
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition"
+                      },
+                      ":s3:::",
+                      {
+                        "Fn::Sub": "cdk-hnb659fds-assets-${AWS::AccountId}-${AWS::Region}"
+                      },
+                      "/*"
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "Action": [
+                "s3:GetObject*",
+                "s3:GetBucket*",
+                "s3:List*",
+                "s3:DeleteObject*",
+                "s3:PutObject",
+                "s3:PutObjectLegalHold",
+                "s3:PutObjectRetention",
+                "s3:PutObjectTagging",
+                "s3:PutObjectVersionTagging",
+                "s3:Abort*"
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "StaticAssetsBucketC3095769",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "StaticAssetsBucketC3095769",
+                          "Arn"
+                        ]
+                      },
+                      "/*"
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "Action": [
+                "cloudfront:GetInvalidation",
+                "cloudfront:CreateInvalidation"
+              ],
+              "Effect": "Allow",
+              "Resource": "*"
+            },
+            {
+              "Action": [
+                "s3:GetObject*",
+                "s3:GetBucket*",
+                "s3:List*",
+                "s3:DeleteObject*",
+                "s3:PutObject",
+                "s3:PutObjectLegalHold",
+                "s3:PutObjectRetention",
+                "s3:PutObjectTagging",
+                "s3:PutObjectVersionTagging",
+                "s3:Abort*"
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "ProductImagesBucket03BDA4C8",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "ProductImagesBucket03BDA4C8",
+                          "Arn"
+                        ]
+                      },
+                      "/*"
+                    ]
+                  ]
+                }
+              ]
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "PolicyName": "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756CServiceRoleDefaultPolicy88902FDF",
+        "Roles": [
+          {
+            "Ref": "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756CServiceRole89A01265"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Policy"
+    },
+    "CustomerSessionSecret059A28A9": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "Description": "Signing secret for thailandgiftshop.com customer session cookies",
+        "GenerateSecretString": {
+          "ExcludePunctuation": true,
+          "PasswordLength": 64
+        },
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ]
+      },
+      "Type": "AWS::SecretsManager::Secret",
+      "UpdateReplacePolicy": "Delete"
+    },
+    "HttpApi5xxAlarmA2C1A1BE": {
+      "Properties": {
+        "ActionsEnabled": true,
+        "AlarmActions": [
+          {
+            "Ref": "OperationsAlarmTopic741F169B"
+          }
+        ],
+        "AlarmDescription": "HTTP API is returning elevated 5xx responses.",
+        "AlarmName": "ThailandGiftshop-HttpApi-5xx-High",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 2,
+        "Metrics": [
+          {
+            "Id": "m1",
+            "Label": "HTTP API 5xx",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "ApiId",
+                    "Value": {
+                      "Ref": "SsrHttpApi76D079D6"
+                    }
+                  }
+                ],
+                "MetricName": "5xx",
+                "Namespace": "AWS/ApiGateway"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": true
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "Threshold": 5,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "HttpApiLatencyAlarm12C76BA9": {
+      "Properties": {
+        "ActionsEnabled": false,
+        "AlarmDescription": "HTTP API p95 latency is above 3 seconds.",
+        "AlarmName": "ThailandGiftshop-HttpApi-LatencyP95-High",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 3,
+        "Metrics": [
+          {
+            "Id": "m1",
+            "Label": "HTTP API p95 latency",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "ApiId",
+                    "Value": {
+                      "Ref": "SsrHttpApi76D079D6"
+                    }
+                  }
+                ],
+                "MetricName": "Latency",
+                "Namespace": "AWS/ApiGateway"
+              },
+              "Period": 300,
+              "Stat": "p95",
+              "Unit": "Milliseconds"
+            },
+            "ReturnData": true
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "Threshold": 3000,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "ImageUploadErrorsAlarm54BBCCCD": {
+      "Properties": {
+        "ActionsEnabled": true,
+        "AlarmActions": [
+          {
+            "Ref": "OperationsAlarmTopic741F169B"
+          }
+        ],
+        "AlarmDescription": "Product image upload errors occurred.",
+        "AlarmName": "ThailandGiftshop-ProductImageUpload-Errors",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "Metrics": [
+          {
+            "Id": "m1",
+            "Label": "Image upload errors",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Outcome",
+                    "Value": "error"
+                  },
+                  {
+                    "Name": "Service",
+                    "Value": "admin"
+                  }
+                ],
+                "MetricName": "ProductImageUpload",
+                "Namespace": "ThailandGiftshop/App"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": true
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "ImmutableStaticAssetsDeploymentAwsCliLayerF7F1388C": {
+      "DependsOn": [
+        "StaticAssetsDeploymentAwsCliLayer92D9AAF6",
+        "StaticAssetsDeploymentCustomResource9F35A71C"
+      ],
+      "Properties": {
+        "Content": {
+          "S3Bucket": {
+            "Fn::Sub": "cdk-hnb659fds-assets-${AWS::AccountId}-${AWS::Region}"
+          },
+          "S3Key": "<asset-hash>.zip"
+        },
+        "Description": "/opt/awscli/aws"
+      },
+      "Type": "AWS::Lambda::LayerVersion"
+    },
+    "ImmutableStaticAssetsDeploymentCustomResource19F4B8D4": {
+      "DeletionPolicy": "Delete",
+      "DependsOn": [
+        "StaticAssetsDeploymentAwsCliLayer92D9AAF6",
+        "StaticAssetsDeploymentCustomResource9F35A71C"
+      ],
+      "Properties": {
+        "DestinationBucketKeyPrefix": "static/assets",
+        "DestinationBucketName": {
+          "Ref": "StaticAssetsBucketC3095769"
+        },
+        "OutputObjectKeys": true,
+        "Prune": false,
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C81C01536",
+            "Arn"
+          ]
+        },
+        "SourceBucketNames": [
+          {
+            "Fn::Sub": "cdk-hnb659fds-assets-${AWS::AccountId}-${AWS::Region}"
+          }
+        ],
+        "SourceObjectKeys": [
+          "<asset-hash>.zip"
+        ],
+        "SystemMetadata": {
+          "cache-control": "max-age=31536000, immutable"
+        },
+        "WaitForDistributionInvalidation": true
+      },
+      "Type": "Custom::CDKBucketDeployment",
+      "UpdateReplacePolicy": "Delete"
+    },
+    "ImmutableStaticFontsDeploymentAwsCliLayerC89519EF": {
+      "DependsOn": [
+        "StaticAssetsDeploymentAwsCliLayer92D9AAF6",
+        "StaticAssetsDeploymentCustomResource9F35A71C"
+      ],
+      "Properties": {
+        "Content": {
+          "S3Bucket": {
+            "Fn::Sub": "cdk-hnb659fds-assets-${AWS::AccountId}-${AWS::Region}"
+          },
+          "S3Key": "<asset-hash>.zip"
+        },
+        "Description": "/opt/awscli/aws"
+      },
+      "Type": "AWS::Lambda::LayerVersion"
+    },
+    "ImmutableStaticFontsDeploymentCustomResource7B11BA6C": {
+      "DeletionPolicy": "Delete",
+      "DependsOn": [
+        "StaticAssetsDeploymentAwsCliLayer92D9AAF6",
+        "StaticAssetsDeploymentCustomResource9F35A71C"
+      ],
+      "Properties": {
+        "DestinationBucketKeyPrefix": "static/fonts",
+        "DestinationBucketName": {
+          "Ref": "StaticAssetsBucketC3095769"
+        },
+        "OutputObjectKeys": true,
+        "Prune": false,
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C81C01536",
+            "Arn"
+          ]
+        },
+        "SourceBucketNames": [
+          {
+            "Fn::Sub": "cdk-hnb659fds-assets-${AWS::AccountId}-${AWS::Region}"
+          }
+        ],
+        "SourceObjectKeys": [
+          "<asset-hash>.zip"
+        ],
+        "SystemMetadata": {
+          "cache-control": "max-age=31536000, immutable"
+        },
+        "WaitForDistributionInvalidation": true
+      },
+      "Type": "Custom::CDKBucketDeployment",
+      "UpdateReplacePolicy": "Delete"
+    },
+    "ImmutableStaticScriptsDeploymentAwsCliLayer874A3B29": {
+      "DependsOn": [
+        "StaticAssetsDeploymentAwsCliLayer92D9AAF6",
+        "StaticAssetsDeploymentCustomResource9F35A71C"
+      ],
+      "Properties": {
+        "Content": {
+          "S3Bucket": {
+            "Fn::Sub": "cdk-hnb659fds-assets-${AWS::AccountId}-${AWS::Region}"
+          },
+          "S3Key": "<asset-hash>.zip"
+        },
+        "Description": "/opt/awscli/aws"
+      },
+      "Type": "AWS::Lambda::LayerVersion"
+    },
+    "ImmutableStaticScriptsDeploymentCustomResourceA3884173": {
+      "DeletionPolicy": "Delete",
+      "DependsOn": [
+        "StaticAssetsDeploymentAwsCliLayer92D9AAF6",
+        "StaticAssetsDeploymentCustomResource9F35A71C"
+      ],
+      "Properties": {
+        "DestinationBucketKeyPrefix": "static/js",
+        "DestinationBucketName": {
+          "Ref": "StaticAssetsBucketC3095769"
+        },
+        "OutputObjectKeys": true,
+        "Prune": false,
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C81C01536",
+            "Arn"
+          ]
+        },
+        "SourceBucketNames": [
+          {
+            "Fn::Sub": "cdk-hnb659fds-assets-${AWS::AccountId}-${AWS::Region}"
+          }
+        ],
+        "SourceObjectKeys": [
+          "<asset-hash>.zip"
+        ],
+        "SystemMetadata": {
+          "cache-control": "max-age=31536000, immutable"
+        },
+        "WaitForDistributionInvalidation": true
+      },
+      "Type": "Custom::CDKBucketDeployment",
+      "UpdateReplacePolicy": "Delete"
+    },
+    "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aFD4BFC8A": {
+      "DependsOn": [
+        "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRoleDefaultPolicyADDA7DEB",
+        "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRole9741ECFB"
+      ],
+      "Properties": {
+        "Code": {
+          "S3Bucket": {
+            "Fn::Sub": "cdk-hnb659fds-assets-${AWS::AccountId}-${AWS::Region}"
+          },
+          "S3Key": "<asset-hash>.zip"
+        },
+        "Handler": "index.handler",
+        "Role": {
+          "Fn::GetAtt": [
+            "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRole9741ECFB",
+            "Arn"
+          ]
+        },
+        "Runtime": "nodejs22.x",
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "Timeout": 900
+      },
+      "Type": "AWS::Lambda::Function"
+    },
+    "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRole9741ECFB": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition"
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+              ]
+            ]
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Role"
+    },
+    "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRoleDefaultPolicyADDA7DEB": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "logs:PutRetentionPolicy",
+                "logs:DeleteRetentionPolicy"
+              ],
+              "Effect": "Allow",
+              "Resource": "*"
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "PolicyName": "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRoleDefaultPolicyADDA7DEB",
+        "Roles": [
+          {
+            "Ref": "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRole9741ECFB"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Policy"
+    },
+    "OperationsAlarmTopic741F169B": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "TopicName": "thailandgiftshop-operations-alarms"
+      },
+      "Type": "AWS::SNS::Topic"
+    },
+    "OperationsAlarmTopicTokenSubscription17A6E3870": {
+      "Properties": {
+        "Endpoint": {
+          "Ref": "AlarmNotificationEmail"
+        },
+        "Protocol": "email",
+        "TopicArn": {
+          "Ref": "OperationsAlarmTopic741F169B"
+        }
+      },
+      "Type": "AWS::SNS::Subscription"
+    },
+    "OperationsDashboard06307C07": {
+      "Properties": {
+        "DashboardBody": {
+          "Fn::Join": [
+            "",
+            [
+              "{\"start\":\"-PT6H\",\"widgets\":[{\"type\":\"text\",\"width\":24,\"height\":2,\"x\":0,\"y\":0,\"properties\":{\"markdown\":\"# Thailand Gift Shop operations\\nProduction service metrics for https://thailandgiftshop.com in us-east-1. Critical alarm actions publish to SNS; watchlist alarms remain dashboard-only.\"}},{\"type\":\"metric\",\"width\":8,\"height\":4,\"x\":0,\"y\":2,\"properties\":{\"view\":\"singleValue\",\"title\":\"Current volume and errors\",\"region\":\"",
+              {
+                "Ref": "AWS::Region"
+              },
+              "\",\"metrics\":[[\"AWS/CloudFront\",\"Requests\",\"DistributionId\",\"",
+              {
+                "Ref": "SiteDistribution3FF9535D"
+              },
+              "\",{\"label\":\"CloudFront requests\",\"stat\":\"Sum\"}],[\"AWS/ApiGateway\",\"Count\",\"ApiId\",\"",
+              {
+                "Ref": "SsrHttpApi76D079D6"
+              },
+              "\",{\"label\":\"HTTP API requests\",\"stat\":\"Sum\"}],[\"AWS/CloudFront\",\"5xxErrorRate\",\"DistributionId\",\"",
+              {
+                "Ref": "SiteDistribution3FF9535D"
+              },
+              "\",{\"label\":\"CloudFront 5xx rate\"}],[\"AWS/ApiGateway\",\"5xx\",\"ApiId\",\"",
+              {
+                "Ref": "SsrHttpApi76D079D6"
+              },
+              "\",{\"label\":\"HTTP API 5xx\",\"stat\":\"Sum\"}]]}},{\"type\":\"metric\",\"width\":16,\"height\":6,\"x\":8,\"y\":2,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Public traffic and edge errors\",\"region\":\"",
+              {
+                "Ref": "AWS::Region"
+              },
+              "\",\"metrics\":[[\"AWS/CloudFront\",\"Requests\",\"DistributionId\",\"",
+              {
+                "Ref": "SiteDistribution3FF9535D"
+              },
+              "\",{\"label\":\"CloudFront requests\",\"stat\":\"Sum\"}],[\"AWS/ApiGateway\",\"Count\",\"ApiId\",\"",
+              {
+                "Ref": "SsrHttpApi76D079D6"
+              },
+              "\",{\"label\":\"HTTP API requests\",\"stat\":\"Sum\"}],[\"AWS/CloudFront\",\"4xxErrorRate\",\"DistributionId\",\"",
+              {
+                "Ref": "SiteDistribution3FF9535D"
+              },
+              "\",{\"label\":\"CloudFront 4xx rate\",\"yAxis\":\"right\"}],[\"AWS/CloudFront\",\"5xxErrorRate\",\"DistributionId\",\"",
+              {
+                "Ref": "SiteDistribution3FF9535D"
+              },
+              "\",{\"label\":\"CloudFront 5xx rate\",\"yAxis\":\"right\"}]],\"yAxis\":{}}},{\"type\":\"metric\",\"width\":12,\"height\":6,\"x\":0,\"y\":8,\"properties\":{\"view\":\"timeSeries\",\"title\":\"API and Lambda latency\",\"region\":\"",
+              {
+                "Ref": "AWS::Region"
+              },
+              "\",\"metrics\":[[\"AWS/ApiGateway\",\"Latency\",\"ApiId\",\"",
+              {
+                "Ref": "SsrHttpApi76D079D6"
+              },
+              "\",{\"label\":\"HTTP API p95 latency\",\"stat\":\"p95\"}],[\"AWS/ApiGateway\",\"IntegrationLatency\",\"ApiId\",\"",
+              {
+                "Ref": "SsrHttpApi76D079D6"
+              },
+              "\",{\"label\":\"HTTP API integration p95 latency\",\"stat\":\"p95\"}],[\"AWS/Lambda\",\"Duration\",\"FunctionName\",\"",
+              {
+                "Ref": "SsrLambda06B7747A"
+              },
+              "\",{\"label\":\"SSR p95 duration\",\"stat\":\"p95\"}],[\"AWS/Lambda\",\"Duration\",\"FunctionName\",\"",
+              {
+                "Ref": "AdminLambda7A0A34D4"
+              },
+              "\",{\"label\":\"Admin p95 duration\",\"stat\":\"p95\"}]],\"yAxis\":{}}},{\"type\":\"metric\",\"width\":12,\"height\":6,\"x\":12,\"y\":8,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Lambda health\",\"region\":\"",
+              {
+                "Ref": "AWS::Region"
+              },
+              "\",\"metrics\":[[\"AWS/Lambda\",\"Invocations\",\"FunctionName\",\"",
+              {
+                "Ref": "SsrLambda06B7747A"
+              },
+              "\",{\"label\":\"SSR invocations\",\"stat\":\"Sum\"}],[\"AWS/Lambda\",\"Invocations\",\"FunctionName\",\"",
+              {
+                "Ref": "AdminLambda7A0A34D4"
+              },
+              "\",{\"label\":\"Admin invocations\",\"stat\":\"Sum\"}],[\"AWS/Lambda\",\"Errors\",\"FunctionName\",\"",
+              {
+                "Ref": "SsrLambda06B7747A"
+              },
+              "\",{\"label\":\"SSR errors\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[\"AWS/Lambda\",\"Errors\",\"FunctionName\",\"",
+              {
+                "Ref": "AdminLambda7A0A34D4"
+              },
+              "\",{\"label\":\"Admin errors\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[\"AWS/Lambda\",\"Throttles\",\"FunctionName\",\"",
+              {
+                "Ref": "SsrLambda06B7747A"
+              },
+              "\",{\"label\":\"SSR throttles\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[\"AWS/Lambda\",\"Throttles\",\"FunctionName\",\"",
+              {
+                "Ref": "AdminLambda7A0A34D4"
+              },
+              "\",{\"label\":\"Admin throttles\",\"stat\":\"Sum\",\"yAxis\":\"right\"}]],\"yAxis\":{}}},{\"type\":\"metric\",\"width\":12,\"height\":6,\"x\":0,\"y\":14,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Admin and WAF security\",\"region\":\"",
+              {
+                "Ref": "AWS::Region"
+              },
+              "\",\"metrics\":[[\"AWS/WAFV2\",\"AllowedRequests\",\"Region\",\"Global\",\"Rule\",\"ALL\",\"WebACL\",\"ThailandGiftshopAdminCloudFront\",{\"label\":\"WAF allowed requests\",\"region\":\"us-east-1\",\"stat\":\"Sum\"}],[\"AWS/WAFV2\",\"BlockedRequests\",\"Region\",\"Global\",\"Rule\",\"ALL\",\"WebACL\",\"ThailandGiftshopAdminCloudFront\",{\"label\":\"WAF blocked requests\",\"region\":\"us-east-1\",\"stat\":\"Sum\"}],[\"AWS/WAFV2\",\"BlockedRequests\",\"Region\",\"Global\",\"Rule\",\"ThailandGiftshopAdminCloudFrontLoginPost\",\"WebACL\",\"ThailandGiftshopAdminCloudFront\",{\"label\":\"WAF login blocks\",\"region\":\"us-east-1\",\"stat\":\"Sum\"}],[\"AWS/WAFV2\",\"BlockedRequests\",\"Region\",\"Global\",\"Rule\",\"ThailandGiftshopAdminCloudFrontCustomerAuthPost\",\"WebACL\",\"ThailandGiftshopAdminCloudFront\",{\"label\":\"WAF customer auth blocks\",\"region\":\"us-east-1\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"AdminLoginAttempt\",\"Operation\",\"login\",\"Outcome\",\"success\",\"Service\",\"admin\",{\"label\":\"Admin login success\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[\"ThailandGiftshop/App\",\"AdminLoginAttempt\",\"Operation\",\"login\",\"Outcome\",\"invalid\",\"Service\",\"admin\",{\"label\":\"Admin login invalid\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[\"ThailandGiftshop/App\",\"AdminLoginAttempt\",\"Operation\",\"login\",\"Outcome\",\"throttled\",\"Service\",\"admin\",{\"label\":\"Admin login throttled\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[\"ThailandGiftshop/App\",\"AdminOriginRejected\",\"Operation\",\"origin\",\"Outcome\",\"rejected\",\"Service\",\"admin\",{\"label\":\"Admin origin rejected\",\"stat\":\"Sum\",\"yAxis\":\"right\"}]],\"yAxis\":{}}},{\"type\":\"metric\",\"width\":12,\"height\":6,\"x\":12,\"y\":14,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Catalog and DynamoDB health\",\"region\":\"",
+              {
+                "Ref": "AWS::Region"
+              },
+              "\",\"metrics\":[[\"ThailandGiftshop/App\",\"CatalogWrite\",\"Outcome\",\"success\",\"Service\",\"admin\",{\"label\":\"Catalog write success\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"CatalogWrite\",\"Outcome\",\"error\",\"Service\",\"admin\",{\"label\":\"Catalog write errors\",\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"ConsumedReadCapacityUnits\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"Catalog read capacity\",\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"ConsumedWriteCapacityUnits\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"Catalog write capacity\",\"stat\":\"Sum\"}],[{\"label\":\"Catalog throttles\",\"expression\":\"ctget+ctbatchget+ctquery+ctscan+ctput+ctdelete+ctupdate+ctbatchwrite+cttransactwrite\",\"yAxis\":\"right\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"BatchGetItem\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"BatchGetItem\",\"id\":\"ctbatchget\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"BatchWriteItem\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"BatchWriteItem\",\"id\":\"ctbatchwrite\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"DeleteItem\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"DeleteItem\",\"id\":\"ctdelete\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"GetItem\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"GetItem\",\"id\":\"ctget\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"PutItem\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"PutItem\",\"id\":\"ctput\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"Query\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"Query\",\"id\":\"ctquery\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"Scan\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"Scan\",\"id\":\"ctscan\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"TransactWriteItems\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"TransactWriteItems\",\"id\":\"cttransactwrite\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"UpdateItem\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"UpdateItem\",\"id\":\"ctupdate\",\"visible\":false,\"stat\":\"Sum\"}],[{\"label\":\"Catalog system errors\",\"expression\":\"csget+csbatchget+csquery+csscan+csput+csdelete+csupdate+csbatchwrite+cstransactwrite\",\"yAxis\":\"right\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"BatchGetItem\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"BatchGetItem\",\"id\":\"csbatchget\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"BatchWriteItem\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"BatchWriteItem\",\"id\":\"csbatchwrite\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"DeleteItem\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"DeleteItem\",\"id\":\"csdelete\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"GetItem\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"GetItem\",\"id\":\"csget\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"PutItem\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"PutItem\",\"id\":\"csput\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"Query\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"Query\",\"id\":\"csquery\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"Scan\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"Scan\",\"id\":\"csscan\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"TransactWriteItems\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"TransactWriteItems\",\"id\":\"cstransactwrite\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"UpdateItem\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"UpdateItem\",\"id\":\"csupdate\",\"visible\":false,\"stat\":\"Sum\"}],[{\"label\":\"Admin login throttle table throttles\",\"expression\":\"altget+altupdate+altdelete\",\"yAxis\":\"right\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"DeleteItem\",\"TableName\",\"",
+              {
+                "Ref": "AdminLoginAttemptsTable0319FCD7"
+              },
+              "\",{\"label\":\"DeleteItem\",\"id\":\"altdelete\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"GetItem\",\"TableName\",\"",
+              {
+                "Ref": "AdminLoginAttemptsTable0319FCD7"
+              },
+              "\",{\"label\":\"GetItem\",\"id\":\"altget\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"UpdateItem\",\"TableName\",\"",
+              {
+                "Ref": "AdminLoginAttemptsTable0319FCD7"
+              },
+              "\",{\"label\":\"UpdateItem\",\"id\":\"altupdate\",\"visible\":false,\"stat\":\"Sum\"}]],\"yAxis\":{}}},{\"type\":\"metric\",\"width\":12,\"height\":6,\"x\":0,\"y\":20,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Customer accounts and checkout\",\"region\":\"",
+              {
+                "Ref": "AWS::Region"
+              },
+              "\",\"metrics\":[[\"ThailandGiftshop/App\",\"CustomerAuth\",\"Outcome\",\"success\",\"Service\",\"ssr\",{\"label\":\"Customer auth success\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"CustomerAuth\",\"Outcome\",\"invalid\",\"Service\",\"ssr\",{\"label\":\"Customer auth invalid\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"CustomerAuth\",\"Outcome\",\"throttled\",\"Service\",\"ssr\",{\"label\":\"Customer auth throttled\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"CustomerAuth\",\"Outcome\",\"error\",\"Service\",\"ssr\",{\"label\":\"Customer auth errors\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"CheckoutPayment\",\"Outcome\",\"success\",\"Service\",\"checkout\",{\"label\":\"Checkout payment success\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[\"ThailandGiftshop/App\",\"CheckoutPayment\",\"Outcome\",\"insufficient_stock\",\"Service\",\"checkout\",{\"label\":\"Checkout insufficient stock\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[\"ThailandGiftshop/App\",\"CheckoutPayment\",\"Outcome\",\"provider_error\",\"Service\",\"checkout\",{\"label\":\"Checkout provider errors\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[\"ThailandGiftshop/App\",\"CheckoutPayment\",\"Outcome\",\"error\",\"Service\",\"checkout\",{\"label\":\"Checkout errors\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[\"ThailandGiftshop/App\",\"CheckoutRefund\",\"Outcome\",\"issued\",\"Service\",\"checkout\",{\"label\":\"Refunds issued\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[\"ThailandGiftshop/App\",\"CheckoutRefund\",\"Outcome\",\"issued_auto\",\"Service\",\"checkout\",{\"label\":\"Refunds auto-issued\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[\"ThailandGiftshop/App\",\"CheckoutRefund\",\"Outcome\",\"settled\",\"Service\",\"checkout\",{\"label\":\"Refunds settled\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[{\"label\":\"Checkout refund errors\",\"expression\":\"crffailed+crfprovider_error+crferror\",\"yAxis\":\"right\"}],[\"ThailandGiftshop/App\",\"CheckoutRefund\",\"Outcome\",\"error\",\"Service\",\"checkout\",{\"label\":\"CheckoutRefund error\",\"id\":\"crferror\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"CheckoutRefund\",\"Outcome\",\"failed\",\"Service\",\"checkout\",{\"label\":\"CheckoutRefund failed\",\"id\":\"crffailed\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"CheckoutRefund\",\"Outcome\",\"provider_error\",\"Service\",\"checkout\",{\"label\":\"CheckoutRefund provider_error\",\"id\":\"crfprovider_error\",\"visible\":false,\"stat\":\"Sum\"}]],\"yAxis\":{}}},{\"type\":\"metric\",\"width\":12,\"height\":6,\"x\":12,\"y\":20,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Stripe webhooks and stock adjustments\",\"region\":\"",
+              {
+                "Ref": "AWS::Region"
+              },
+              "\",\"metrics\":[[\"ThailandGiftshop/App\",\"StripeWebhook\",\"Outcome\",\"processed\",\"Service\",\"ssr\",{\"label\":\"Stripe webhook processed\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"StripeWebhook\",\"Outcome\",\"ignored\",\"Service\",\"ssr\",{\"label\":\"Stripe webhook ignored\",\"stat\":\"Sum\"}],[{\"label\":\"Stripe webhook errors\",\"expression\":\"swinvalid_signature+swamount_mismatch+swrefund_mismatch+swpaid_after_terminal+swerror\"}],[\"ThailandGiftshop/App\",\"StripeWebhook\",\"Outcome\",\"amount_mismatch\",\"Service\",\"ssr\",{\"label\":\"StripeWebhook amount_mismatch\",\"id\":\"swamount_mismatch\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"StripeWebhook\",\"Outcome\",\"error\",\"Service\",\"ssr\",{\"label\":\"StripeWebhook error\",\"id\":\"swerror\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"StripeWebhook\",\"Outcome\",\"invalid_signature\",\"Service\",\"ssr\",{\"label\":\"StripeWebhook invalid_signature\",\"id\":\"swinvalid_signature\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"StripeWebhook\",\"Outcome\",\"paid_after_terminal\",\"Service\",\"ssr\",{\"label\":\"StripeWebhook paid_after_terminal\",\"id\":\"swpaid_after_terminal\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"StripeWebhook\",\"Outcome\",\"refund_mismatch\",\"Service\",\"ssr\",{\"label\":\"StripeWebhook refund_mismatch\",\"id\":\"swrefund_mismatch\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"StockAdjust\",\"Outcome\",\"reserve\",\"Service\",\"catalog\",{\"label\":\"Stock reservations\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[\"ThailandGiftshop/App\",\"StockAdjust\",\"Outcome\",\"release\",\"Service\",\"catalog\",{\"label\":\"Stock releases\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[\"ThailandGiftshop/App\",\"StockAdjust\",\"Outcome\",\"conflict\",\"Service\",\"catalog\",{\"label\":\"Stock adjust conflicts\",\"stat\":\"Sum\",\"yAxis\":\"right\"}],[\"ThailandGiftshop/App\",\"StockAdjust\",\"Outcome\",\"rollback_error\",\"Service\",\"catalog\",{\"label\":\"Stock adjust rollback errors\",\"stat\":\"Sum\",\"yAxis\":\"right\"}]],\"yAxis\":{}}},{\"type\":\"metric\",\"width\":12,\"height\":6,\"x\":0,\"y\":26,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Commerce table and order activity\",\"region\":\"",
+              {
+                "Ref": "AWS::Region"
+              },
+              "\",\"metrics\":[[\"AWS/DynamoDB\",\"ConsumedReadCapacityUnits\",\"TableName\",\"",
+              {
+                "Ref": "CommerceTable6CC80189"
+              },
+              "\",{\"label\":\"Commerce read capacity\",\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"ConsumedWriteCapacityUnits\",\"TableName\",\"",
+              {
+                "Ref": "CommerceTable6CC80189"
+              },
+              "\",{\"label\":\"Commerce write capacity\",\"stat\":\"Sum\"}],[{\"label\":\"Commerce throttles\",\"expression\":\"cmtget+cmtquery+cmtput+cmtdelete+cmtupdate+cmtbatchwrite+cmttransactwrite\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"BatchWriteItem\",\"TableName\",\"",
+              {
+                "Ref": "CommerceTable6CC80189"
+              },
+              "\",{\"label\":\"BatchWriteItem\",\"id\":\"cmtbatchwrite\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"DeleteItem\",\"TableName\",\"",
+              {
+                "Ref": "CommerceTable6CC80189"
+              },
+              "\",{\"label\":\"DeleteItem\",\"id\":\"cmtdelete\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"GetItem\",\"TableName\",\"",
+              {
+                "Ref": "CommerceTable6CC80189"
+              },
+              "\",{\"label\":\"GetItem\",\"id\":\"cmtget\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"PutItem\",\"TableName\",\"",
+              {
+                "Ref": "CommerceTable6CC80189"
+              },
+              "\",{\"label\":\"PutItem\",\"id\":\"cmtput\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"Query\",\"TableName\",\"",
+              {
+                "Ref": "CommerceTable6CC80189"
+              },
+              "\",{\"label\":\"Query\",\"id\":\"cmtquery\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"TransactWriteItems\",\"TableName\",\"",
+              {
+                "Ref": "CommerceTable6CC80189"
+              },
+              "\",{\"label\":\"TransactWriteItems\",\"id\":\"cmttransactwrite\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"UpdateItem\",\"TableName\",\"",
+              {
+                "Ref": "CommerceTable6CC80189"
+              },
+              "\",{\"label\":\"UpdateItem\",\"id\":\"cmtupdate\",\"visible\":false,\"stat\":\"Sum\"}],[{\"label\":\"Commerce system errors\",\"expression\":\"cmeget+cmequery+cmeput+cmedelete+cmeupdate+cmebatchwrite+cmetransactwrite\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"BatchWriteItem\",\"TableName\",\"",
+              {
+                "Ref": "CommerceTable6CC80189"
+              },
+              "\",{\"label\":\"BatchWriteItem\",\"id\":\"cmebatchwrite\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"DeleteItem\",\"TableName\",\"",
+              {
+                "Ref": "CommerceTable6CC80189"
+              },
+              "\",{\"label\":\"DeleteItem\",\"id\":\"cmedelete\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"GetItem\",\"TableName\",\"",
+              {
+                "Ref": "CommerceTable6CC80189"
+              },
+              "\",{\"label\":\"GetItem\",\"id\":\"cmeget\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"PutItem\",\"TableName\",\"",
+              {
+                "Ref": "CommerceTable6CC80189"
+              },
+              "\",{\"label\":\"PutItem\",\"id\":\"cmeput\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"Query\",\"TableName\",\"",
+              {
+                "Ref": "CommerceTable6CC80189"
+              },
+              "\",{\"label\":\"Query\",\"id\":\"cmequery\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"TransactWriteItems\",\"TableName\",\"",
+              {
+                "Ref": "CommerceTable6CC80189"
+              },
+              "\",{\"label\":\"TransactWriteItems\",\"id\":\"cmetransactwrite\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"UpdateItem\",\"TableName\",\"",
+              {
+                "Ref": "CommerceTable6CC80189"
+              },
+              "\",{\"label\":\"UpdateItem\",\"id\":\"cmeupdate\",\"visible\":false,\"stat\":\"Sum\"}],[{\"label\":\"Order transitions\",\"expression\":\"SEARCH('{ThailandGiftshop/App,Actor,From,Service,To} MetricName=\\\"OrderTransition\\\"', 'Sum', 300)\",\"yAxis\":\"right\"}]],\"yAxis\":{}}},{\"type\":\"metric\",\"width\":12,\"height\":6,\"x\":12,\"y\":26,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Commerce store operations\",\"region\":\"",
+              {
+                "Ref": "AWS::Region"
+              },
+              "\",\"metrics\":[[{\"label\":\"Commerce store operations\",\"expression\":\"SEARCH('{ThailandGiftshop/App,Method,Operation,Service} MetricName=\\\"CommerceOperation\\\"', 'Sum', 300)\"}],[{\"label\":\"Commerce store latency\",\"expression\":\"SEARCH('{ThailandGiftshop/App,Method,Operation,Service} MetricName=\\\"CommerceOperationMs\\\"', 'Average', 300)\",\"yAxis\":\"right\"}]],\"yAxis\":{}}},{\"type\":\"metric\",\"width\":12,\"height\":6,\"x\":0,\"y\":32,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Product image uploads and storage\",\"region\":\"",
+              {
+                "Ref": "AWS::Region"
+              },
+              "\",\"metrics\":[[\"ThailandGiftshop/App\",\"ProductImageUpload\",\"Outcome\",\"success\",\"Service\",\"admin\",{\"label\":\"Image upload success\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"ProductImageUpload\",\"Outcome\",\"error\",\"Service\",\"admin\",{\"label\":\"Image upload errors\",\"stat\":\"Sum\"}],[\"AWS/S3\",\"BucketSizeBytes\",\"BucketName\",\"",
+              {
+                "Ref": "ProductImagesBucket03BDA4C8"
+              },
+              "\",\"StorageType\",\"StandardStorage\",{\"label\":\"Product image bytes\",\"period\":86400,\"yAxis\":\"right\"}],[\"AWS/S3\",\"NumberOfObjects\",\"BucketName\",\"",
+              {
+                "Ref": "ProductImagesBucket03BDA4C8"
+              },
+              "\",\"StorageType\",\"AllStorageTypes\",{\"label\":\"Product image objects\",\"period\":86400,\"yAxis\":\"right\"}]],\"yAxis\":{}}},{\"type\":\"metric\",\"width\":12,\"height\":4,\"x\":12,\"y\":32,\"properties\":{\"view\":\"singleValue\",\"title\":\"Alarm watchlist\",\"region\":\"",
+              {
+                "Ref": "AWS::Region"
+              },
+              "\",\"metrics\":[[\"AWS/CloudFront\",\"5xxErrorRate\",\"DistributionId\",\"",
+              {
+                "Ref": "SiteDistribution3FF9535D"
+              },
+              "\",{\"label\":\"CloudFront 5xx rate\"}],[\"AWS/ApiGateway\",\"5xx\",\"ApiId\",\"",
+              {
+                "Ref": "SsrHttpApi76D079D6"
+              },
+              "\",{\"label\":\"HTTP API 5xx\",\"stat\":\"Sum\"}],[\"AWS/ApiGateway\",\"Latency\",\"ApiId\",\"",
+              {
+                "Ref": "SsrHttpApi76D079D6"
+              },
+              "\",{\"label\":\"HTTP API p95 latency\",\"stat\":\"p95\"}],[\"AWS/Lambda\",\"Errors\",\"FunctionName\",\"",
+              {
+                "Ref": "SsrLambda06B7747A"
+              },
+              "\",{\"label\":\"SSR errors\",\"stat\":\"Sum\"}],[\"AWS/Lambda\",\"Errors\",\"FunctionName\",\"",
+              {
+                "Ref": "AdminLambda7A0A34D4"
+              },
+              "\",{\"label\":\"Admin errors\",\"stat\":\"Sum\"}],[\"AWS/Lambda\",\"Throttles\",\"FunctionName\",\"",
+              {
+                "Ref": "SsrLambda06B7747A"
+              },
+              "\",{\"label\":\"SSR throttles\",\"stat\":\"Sum\"}],[\"AWS/Lambda\",\"Throttles\",\"FunctionName\",\"",
+              {
+                "Ref": "AdminLambda7A0A34D4"
+              },
+              "\",{\"label\":\"Admin throttles\",\"stat\":\"Sum\"}],[{\"label\":\"Catalog throttles\",\"expression\":\"ctget+ctbatchget+ctquery+ctscan+ctput+ctdelete+ctupdate+ctbatchwrite+cttransactwrite\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"BatchGetItem\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"BatchGetItem\",\"id\":\"ctbatchget\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"BatchWriteItem\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"BatchWriteItem\",\"id\":\"ctbatchwrite\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"DeleteItem\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"DeleteItem\",\"id\":\"ctdelete\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"GetItem\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"GetItem\",\"id\":\"ctget\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"PutItem\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"PutItem\",\"id\":\"ctput\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"Query\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"Query\",\"id\":\"ctquery\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"Scan\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"Scan\",\"id\":\"ctscan\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"TransactWriteItems\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"TransactWriteItems\",\"id\":\"cttransactwrite\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"UpdateItem\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"UpdateItem\",\"id\":\"ctupdate\",\"visible\":false,\"stat\":\"Sum\"}],[{\"label\":\"Catalog system errors\",\"expression\":\"csget+csbatchget+csquery+csscan+csput+csdelete+csupdate+csbatchwrite+cstransactwrite\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"BatchGetItem\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"BatchGetItem\",\"id\":\"csbatchget\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"BatchWriteItem\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"BatchWriteItem\",\"id\":\"csbatchwrite\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"DeleteItem\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"DeleteItem\",\"id\":\"csdelete\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"GetItem\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"GetItem\",\"id\":\"csget\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"PutItem\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"PutItem\",\"id\":\"csput\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"Query\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"Query\",\"id\":\"csquery\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"Scan\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"Scan\",\"id\":\"csscan\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"TransactWriteItems\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"TransactWriteItems\",\"id\":\"cstransactwrite\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"UpdateItem\",\"TableName\",\"",
+              {
+                "Ref": "CatalogTableF8EA09BD"
+              },
+              "\",{\"label\":\"UpdateItem\",\"id\":\"csupdate\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/WAFV2\",\"BlockedRequests\",\"Region\",\"Global\",\"Rule\",\"ALL\",\"WebACL\",\"ThailandGiftshopAdminCloudFront\",{\"label\":\"WAF blocked requests\",\"region\":\"us-east-1\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"AdminOriginRejected\",\"Operation\",\"origin\",\"Outcome\",\"rejected\",\"Service\",\"admin\",{\"label\":\"Admin origin rejected\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"AdminLoginAttempt\",\"Operation\",\"login\",\"Outcome\",\"invalid\",\"Service\",\"admin\",{\"label\":\"Admin login invalid\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"AdminLoginAttempt\",\"Operation\",\"login\",\"Outcome\",\"throttled\",\"Service\",\"admin\",{\"label\":\"Admin login throttled\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"CatalogWrite\",\"Outcome\",\"error\",\"Service\",\"admin\",{\"label\":\"Catalog write errors\",\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"ProductImageUpload\",\"Outcome\",\"error\",\"Service\",\"admin\",{\"label\":\"Image upload errors\",\"stat\":\"Sum\"}],[{\"label\":\"Admin login throttle table throttles\",\"expression\":\"altget+altupdate+altdelete\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"DeleteItem\",\"TableName\",\"",
+              {
+                "Ref": "AdminLoginAttemptsTable0319FCD7"
+              },
+              "\",{\"label\":\"DeleteItem\",\"id\":\"altdelete\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"GetItem\",\"TableName\",\"",
+              {
+                "Ref": "AdminLoginAttemptsTable0319FCD7"
+              },
+              "\",{\"label\":\"GetItem\",\"id\":\"altget\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"ThrottledRequests\",\"Operation\",\"UpdateItem\",\"TableName\",\"",
+              {
+                "Ref": "AdminLoginAttemptsTable0319FCD7"
+              },
+              "\",{\"label\":\"UpdateItem\",\"id\":\"altupdate\",\"visible\":false,\"stat\":\"Sum\"}],[{\"label\":\"Stripe webhook errors\",\"expression\":\"swinvalid_signature+swamount_mismatch+swrefund_mismatch+swpaid_after_terminal+swerror\"}],[\"ThailandGiftshop/App\",\"StripeWebhook\",\"Outcome\",\"amount_mismatch\",\"Service\",\"ssr\",{\"label\":\"StripeWebhook amount_mismatch\",\"id\":\"swamount_mismatch\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"StripeWebhook\",\"Outcome\",\"error\",\"Service\",\"ssr\",{\"label\":\"StripeWebhook error\",\"id\":\"swerror\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"StripeWebhook\",\"Outcome\",\"invalid_signature\",\"Service\",\"ssr\",{\"label\":\"StripeWebhook invalid_signature\",\"id\":\"swinvalid_signature\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"StripeWebhook\",\"Outcome\",\"paid_after_terminal\",\"Service\",\"ssr\",{\"label\":\"StripeWebhook paid_after_terminal\",\"id\":\"swpaid_after_terminal\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"StripeWebhook\",\"Outcome\",\"refund_mismatch\",\"Service\",\"ssr\",{\"label\":\"StripeWebhook refund_mismatch\",\"id\":\"swrefund_mismatch\",\"visible\":false,\"stat\":\"Sum\"}],[{\"label\":\"Checkout payment errors\",\"expression\":\"cpprovider_error+cperror\"}],[\"ThailandGiftshop/App\",\"CheckoutPayment\",\"Outcome\",\"error\",\"Service\",\"checkout\",{\"label\":\"CheckoutPayment error\",\"id\":\"cperror\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"CheckoutPayment\",\"Outcome\",\"provider_error\",\"Service\",\"checkout\",{\"label\":\"CheckoutPayment provider_error\",\"id\":\"cpprovider_error\",\"visible\":false,\"stat\":\"Sum\"}],[{\"label\":\"Checkout refund errors\",\"expression\":\"crffailed+crfprovider_error+crferror\"}],[\"ThailandGiftshop/App\",\"CheckoutRefund\",\"Outcome\",\"error\",\"Service\",\"checkout\",{\"label\":\"CheckoutRefund error\",\"id\":\"crferror\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"CheckoutRefund\",\"Outcome\",\"failed\",\"Service\",\"checkout\",{\"label\":\"CheckoutRefund failed\",\"id\":\"crffailed\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"CheckoutRefund\",\"Outcome\",\"provider_error\",\"Service\",\"checkout\",{\"label\":\"CheckoutRefund provider_error\",\"id\":\"crfprovider_error\",\"visible\":false,\"stat\":\"Sum\"}],[\"ThailandGiftshop/App\",\"StockAdjust\",\"Outcome\",\"rollback_error\",\"Service\",\"catalog\",{\"label\":\"Stock adjust rollback errors\",\"stat\":\"Sum\"}]]}}]}"
+            ]
+          ]
+        },
+        "DashboardName": "ThailandGiftshop-Operations",
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ]
+      },
+      "Type": "AWS::CloudWatch::Dashboard"
+    },
+    "ProductImagesBucket03BDA4C8": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256"
+              }
+            }
+          ]
+        },
+        "CorsConfiguration": {
+          "CorsRules": [
+            {
+              "AllowedHeaders": [
+                "*"
+              ],
+              "AllowedMethods": [
+                "POST"
+              ],
+              "AllowedOrigins": [
+                "https://thailandgiftshop.com",
+                "https://www.thailandgiftshop.com"
+              ],
+              "MaxAge": 300
+            }
+          ]
+        },
+        "OwnershipControls": {
+          "Rules": [
+            {
+              "ObjectOwnership": "BucketOwnerEnforced"
+            }
+          ]
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        },
+        "Tags": [
+          {
+            "Key": "aws-cdk:cr-owned:images:55b19655",
+            "Value": "true"
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ]
+      },
+      "Type": "AWS::S3::Bucket",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "ProductImagesBucketPolicyA2B0CBED": {
+      "Properties": {
+        "Bucket": {
+          "Ref": "ProductImagesBucket03BDA4C8"
+        },
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "s3:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*"
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "ProductImagesBucket03BDA4C8",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "ProductImagesBucket03BDA4C8",
+                          "Arn"
+                        ]
+                      },
+                      "/*"
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "Action": "s3:GetObject",
+              "Condition": {
+                "StringEquals": {
+                  "AWS:SourceArn": {
+                    "Fn::Join": [
+                      "",
+                      [
+                        "arn:",
+                        {
+                          "Ref": "AWS::Partition"
+                        },
+                        ":cloudfront::",
+                        {
+                          "Ref": "AWS::AccountId"
+                        },
+                        ":distribution/",
+                        {
+                          "Ref": "SiteDistribution3FF9535D"
+                        }
+                      ]
+                    ]
+                  }
+                }
+              },
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "cloudfront.amazonaws.com"
+              },
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Fn::GetAtt": [
+                        "ProductImagesBucket03BDA4C8",
+                        "Arn"
+                      ]
+                    },
+                    "/*"
+                  ]
+                ]
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        }
+      },
+      "Type": "AWS::S3::BucketPolicy"
+    },
+    "ProductImagesDeploymentAwsCliLayerAABEBD19": {
+      "Properties": {
+        "Content": {
+          "S3Bucket": {
+            "Fn::Sub": "cdk-hnb659fds-assets-${AWS::AccountId}-${AWS::Region}"
+          },
+          "S3Key": "<asset-hash>.zip"
+        },
+        "Description": "/opt/awscli/aws"
+      },
+      "Type": "AWS::Lambda::LayerVersion"
+    },
+    "ProductImagesDeploymentCustomResource96CCA63A": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "DestinationBucketKeyPrefix": "images",
+        "DestinationBucketName": {
+          "Ref": "ProductImagesBucket03BDA4C8"
+        },
+        "DistributionId": {
+          "Ref": "SiteDistribution3FF9535D"
+        },
+        "DistributionPaths": [
+          "/images/*"
+        ],
+        "OutputObjectKeys": true,
+        "Prune": false,
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C81C01536",
+            "Arn"
+          ]
+        },
+        "SourceBucketNames": [
+          {
+            "Fn::Sub": "cdk-hnb659fds-assets-${AWS::AccountId}-${AWS::Region}"
+          }
+        ],
+        "SourceObjectKeys": [
+          "<asset-hash>.zip"
+        ],
+        "SystemMetadata": {
+          "cache-control": "max-age=3600"
+        },
+        "WaitForDistributionInvalidation": true
+      },
+      "Type": "Custom::CDKBucketDeployment",
+      "UpdateReplacePolicy": "Delete"
+    },
+    "SiteAAAARecord0A6D0F5B": {
+      "Properties": {
+        "AliasTarget": {
+          "DNSName": {
+            "Fn::GetAtt": [
+              "SiteDistribution3FF9535D",
+              "DomainName"
+            ]
+          },
+          "HostedZoneId": {
+            "Fn::FindInMap": [
+              "AWSCloudFrontPartitionHostedZoneIdMap",
+              {
+                "Ref": "AWS::Partition"
+              },
+              "zoneId"
+            ]
+          }
+        },
+        "HostedZoneId": {
+          "Ref": "HostedZoneId"
+        },
+        "Name": "thailandgiftshop.com.",
+        "Type": "AAAA"
+      },
+      "Type": "AWS::Route53::RecordSet"
+    },
+    "SiteARecord078DA7E7": {
+      "Properties": {
+        "AliasTarget": {
+          "DNSName": {
+            "Fn::GetAtt": [
+              "SiteDistribution3FF9535D",
+              "DomainName"
+            ]
+          },
+          "HostedZoneId": {
+            "Fn::FindInMap": [
+              "AWSCloudFrontPartitionHostedZoneIdMap",
+              {
+                "Ref": "AWS::Partition"
+              },
+              "zoneId"
+            ]
+          }
+        },
+        "HostedZoneId": {
+          "Ref": "HostedZoneId"
+        },
+        "Name": "thailandgiftshop.com.",
+        "Type": "A"
+      },
+      "Type": "AWS::Route53::RecordSet"
+    },
+    "SiteCertificate38C247F6": {
+      "Properties": {
+        "DomainName": "thailandgiftshop.com",
+        "DomainValidationOptions": [
+          {
+            "DomainName": "thailandgiftshop.com",
+            "HostedZoneId": {
+              "Ref": "HostedZoneId"
+            }
+          },
+          {
+            "DomainName": "www.thailandgiftshop.com",
+            "HostedZoneId": {
+              "Ref": "HostedZoneId"
+            }
+          }
+        ],
+        "SubjectAlternativeNames": [
+          "www.thailandgiftshop.com"
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Name",
+            "Value": "TestStack/SiteCertificate"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "ValidationMethod": "DNS"
+      },
+      "Type": "AWS::CertificateManager::Certificate"
+    },
+    "SiteDistribution3FF9535D": {
+      "Properties": {
+        "DistributionConfig": {
+          "Aliases": [
+            "thailandgiftshop.com",
+            "www.thailandgiftshop.com"
+          ],
+          "CacheBehaviors": [
+            {
+              "AllowedMethods": [
+                "GET",
+                "HEAD"
+              ],
+              "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6",
+              "Compress": true,
+              "FunctionAssociations": [
+                {
+                  "EventType": "viewer-request",
+                  "FunctionARN": {
+                    "Fn::GetAtt": [
+                      "CanonicalHostRedirectFunction16A899A8",
+                      "FunctionARN"
+                    ]
+                  }
+                }
+              ],
+              "PathPattern": "images/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "SiteSecurityHeadersPolicyB32ED7B0"
+              },
+              "TargetOriginId": "TestStackSiteDistributionOrigin2A651AAE6",
+              "ViewerProtocolPolicy": "redirect-to-https"
+            },
+            {
+              "AllowedMethods": [
+                "GET",
+                "HEAD"
+              ],
+              "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6",
+              "Compress": true,
+              "FunctionAssociations": [
+                {
+                  "EventType": "viewer-request",
+                  "FunctionARN": {
+                    "Fn::GetAtt": [
+                      "CanonicalHostRedirectFunction16A899A8",
+                      "FunctionARN"
+                    ]
+                  }
+                }
+              ],
+              "PathPattern": "static/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "SiteSecurityHeadersPolicyB32ED7B0"
+              },
+              "TargetOriginId": "TestStackSiteDistributionOrigin3B10B7480",
+              "ViewerProtocolPolicy": "redirect-to-https"
+            }
+          ],
+          "Comment": "CloudFront distribution for thailandgiftshop.com SSR and static assets",
+          "DefaultCacheBehavior": {
+            "AllowedMethods": [
+              "GET",
+              "HEAD",
+              "OPTIONS",
+              "PUT",
+              "PATCH",
+              "POST",
+              "DELETE"
+            ],
+            "CachePolicyId": {
+              "Ref": "SsrCachePolicyB8FFAB22"
+            },
+            "Compress": true,
+            "FunctionAssociations": [
+              {
+                "EventType": "viewer-request",
+                "FunctionARN": {
+                  "Fn::GetAtt": [
+                    "CanonicalHostRedirectFunction16A899A8",
+                    "FunctionARN"
+                  ]
+                }
+              }
+            ],
+            "OriginRequestPolicyId": {
+              "Ref": "SsrOriginRequestPolicyA1001E9B"
+            },
+            "ResponseHeadersPolicyId": {
+              "Ref": "SiteSecurityHeadersPolicyB32ED7B0"
+            },
+            "TargetOriginId": "TestStackSiteDistributionOrigin178A33869",
+            "ViewerProtocolPolicy": "redirect-to-https"
+          },
+          "Enabled": true,
+          "HttpVersion": "http2",
+          "IPV6Enabled": true,
+          "Origins": [
+            {
+              "CustomOriginConfig": {
+                "OriginProtocolPolicy": "https-only",
+                "OriginSSLProtocols": [
+                  "TLSv1.2"
+                ]
+              },
+              "DomainName": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Ref": "SsrHttpApi76D079D6"
+                    },
+                    ".execute-api.",
+                    {
+                      "Ref": "AWS::Region"
+                    },
+                    ".",
+                    {
+                      "Ref": "AWS::URLSuffix"
+                    }
+                  ]
+                ]
+              },
+              "Id": "TestStackSiteDistributionOrigin178A33869",
+              "OriginCustomHeaders": [
+                {
+                  "HeaderName": "X-TGS-Origin-Secret",
+                  "HeaderValue": {
+                    "Fn::Join": [
+                      "",
+                      [
+                        "{{resolve:secretsmanager:",
+                        {
+                          "Ref": "AdminOriginHeaderSecretD1A227E9"
+                        },
+                        ":SecretString:::}}"
+                      ]
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "DomainName": {
+                "Fn::GetAtt": [
+                  "ProductImagesBucket03BDA4C8",
+                  "RegionalDomainName"
+                ]
+              },
+              "Id": "TestStackSiteDistributionOrigin2A651AAE6",
+              "OriginAccessControlId": {
+                "Fn::GetAtt": [
+                  "SiteDistributionOrigin2S3OriginAccessControlE0FE6FAA",
+                  "Id"
+                ]
+              },
+              "S3OriginConfig": {
+                "OriginAccessIdentity": ""
+              }
+            },
+            {
+              "DomainName": {
+                "Fn::GetAtt": [
+                  "StaticAssetsBucketC3095769",
+                  "RegionalDomainName"
+                ]
+              },
+              "Id": "TestStackSiteDistributionOrigin3B10B7480",
+              "OriginAccessControlId": {
+                "Fn::GetAtt": [
+                  "SiteDistributionOrigin3S3OriginAccessControl4BE73D82",
+                  "Id"
+                ]
+              },
+              "S3OriginConfig": {
+                "OriginAccessIdentity": ""
+              }
+            }
+          ],
+          "ViewerCertificate": {
+            "AcmCertificateArn": {
+              "Ref": "SiteCertificate38C247F6"
+            },
+            "MinimumProtocolVersion": "TLSv1.2_2021",
+            "SslSupportMethod": "sni-only"
+          },
+          "WebACLId": {
+            "Fn::GetAtt": [
+              "AdminCloudFrontWebACL",
+              "Arn"
+            ]
+          }
+        },
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ]
+      },
+      "Type": "AWS::CloudFront::Distribution"
+    },
+    "SiteDistributionOrigin2S3OriginAccessControlE0FE6FAA": {
+      "Properties": {
+        "OriginAccessControlConfig": {
+          "Name": "TestStackSiteDistributionOrigin2S3OriginAccessControl44DFEC0A",
+          "OriginAccessControlOriginType": "s3",
+          "SigningBehavior": "always",
+          "SigningProtocol": "sigv4"
+        }
+      },
+      "Type": "AWS::CloudFront::OriginAccessControl"
+    },
+    "SiteDistributionOrigin3S3OriginAccessControl4BE73D82": {
+      "Properties": {
+        "OriginAccessControlConfig": {
+          "Name": "TestStackSiteDistributionOrigin3S3OriginAccessControl18CF0021",
+          "OriginAccessControlOriginType": "s3",
+          "SigningBehavior": "always",
+          "SigningProtocol": "sigv4"
+        }
+      },
+      "Type": "AWS::CloudFront::OriginAccessControl"
+    },
+    "SiteEmailIdentity10D37221": {
+      "Properties": {
+        "DkimSigningAttributes": {
+          "NextSigningKeyLength": "RSA_2048_BIT"
+        },
+        "EmailIdentity": "thailandgiftshop.com",
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ]
+      },
+      "Type": "AWS::SES::EmailIdentity"
+    },
+    "SiteEmailIdentityDkimDnsToken12BA0FCCF": {
+      "Properties": {
+        "HostedZoneId": {
+          "Ref": "HostedZoneId"
+        },
+        "Name": {
+          "Fn::GetAtt": [
+            "SiteEmailIdentity10D37221",
+            "DkimDNSTokenName1"
+          ]
+        },
+        "ResourceRecords": [
+          {
+            "Fn::GetAtt": [
+              "SiteEmailIdentity10D37221",
+              "DkimDNSTokenValue1"
+            ]
+          }
+        ],
+        "TTL": "1800",
+        "Type": "CNAME"
+      },
+      "Type": "AWS::Route53::RecordSet"
+    },
+    "SiteEmailIdentityDkimDnsToken292B7055D": {
+      "Properties": {
+        "HostedZoneId": {
+          "Ref": "HostedZoneId"
+        },
+        "Name": {
+          "Fn::GetAtt": [
+            "SiteEmailIdentity10D37221",
+            "DkimDNSTokenName2"
+          ]
+        },
+        "ResourceRecords": [
+          {
+            "Fn::GetAtt": [
+              "SiteEmailIdentity10D37221",
+              "DkimDNSTokenValue2"
+            ]
+          }
+        ],
+        "TTL": "1800",
+        "Type": "CNAME"
+      },
+      "Type": "AWS::Route53::RecordSet"
+    },
+    "SiteEmailIdentityDkimDnsToken39D235322": {
+      "Properties": {
+        "HostedZoneId": {
+          "Ref": "HostedZoneId"
+        },
+        "Name": {
+          "Fn::GetAtt": [
+            "SiteEmailIdentity10D37221",
+            "DkimDNSTokenName3"
+          ]
+        },
+        "ResourceRecords": [
+          {
+            "Fn::GetAtt": [
+              "SiteEmailIdentity10D37221",
+              "DkimDNSTokenValue3"
+            ]
+          }
+        ],
+        "TTL": "1800",
+        "Type": "CNAME"
+      },
+      "Type": "AWS::Route53::RecordSet"
+    },
+    "SiteSecurityHeadersPolicyB32ED7B0": {
+      "Properties": {
+        "ResponseHeadersPolicyConfig": {
+          "Comment": "Security headers for thailandgiftshop.com",
+          "Name": "TestStackSiteSecurityHeadersPolicy5BCC3F2A",
+          "SecurityHeadersConfig": {
+            "ContentSecurityPolicy": {
+              "ContentSecurityPolicy": "default-src 'self'; base-uri 'self'; connect-src 'self' https://*.s3.amazonaws.com https://*.s3.us-east-1.amazonaws.com; frame-ancestors 'none'; form-action 'self' https://*.s3.amazonaws.com https://*.s3.us-east-1.amazonaws.com https://checkout.stripe.com; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self' 'sha256-rE+bFBvY9ntOvyDDnI4OBE9+BdhsJpyJJWxGWylO5oY='; manifest-src 'self'",
+              "Override": true
+            },
+            "ContentTypeOptions": {
+              "Override": true
+            },
+            "FrameOptions": {
+              "FrameOption": "DENY",
+              "Override": true
+            },
+            "ReferrerPolicy": {
+              "Override": true,
+              "ReferrerPolicy": "strict-origin-when-cross-origin"
+            },
+            "StrictTransportSecurity": {
+              "AccessControlMaxAgeSec": 31536000,
+              "Override": true,
+              "Preload": false
+            }
+          }
+        }
+      },
+      "Type": "AWS::CloudFront::ResponseHeadersPolicy"
+    },
+    "SsrCachePolicyB8FFAB22": {
+      "Properties": {
+        "CachePolicyConfig": {
+          "Comment": "Cache opt-in SSR responses for thailandgiftshop.com with shared public cache keys",
+          "DefaultTTL": 0,
+          "MaxTTL": 86400,
+          "MinTTL": 0,
+          "Name": "thailandgiftshop-ssr-cache",
+          "ParametersInCacheKeyAndForwardedToOrigin": {
+            "CookiesConfig": {
+              "CookieBehavior": "none"
+            },
+            "EnableAcceptEncodingBrotli": true,
+            "EnableAcceptEncodingGzip": true,
+            "HeadersConfig": {
+              "HeaderBehavior": "none"
+            },
+            "QueryStringsConfig": {
+              "QueryStringBehavior": "none"
+            }
+          }
+        }
+      },
+      "Type": "AWS::CloudFront::CachePolicy"
+    },
+    "SsrDefaultRoute54BB98A6": {
+      "Properties": {
+        "ApiId": {
+          "Ref": "SsrHttpApi76D079D6"
+        },
+        "AuthorizationType": "NONE",
+        "RouteKey": "$default",
+        "Target": {
+          "Fn::Join": [
+            "",
+            [
+              "integrations/",
+              {
+                "Ref": "SsrDefaultRouteSsrLambdaIntegration8D812CA9"
+              }
+            ]
+          ]
+        }
+      },
+      "Type": "AWS::ApiGatewayV2::Route"
+    },
+    "SsrDefaultRouteSsrLambdaIntegration8D812CA9": {
+      "Properties": {
+        "ApiId": {
+          "Ref": "SsrHttpApi76D079D6"
+        },
+        "IntegrationType": "AWS_PROXY",
+        "IntegrationUri": {
+          "Fn::GetAtt": [
+            "SsrLambda06B7747A",
+            "Arn"
+          ]
+        },
+        "PayloadFormatVersion": "2.0",
+        "TimeoutInMillis": 10000
+      },
+      "Type": "AWS::ApiGatewayV2::Integration"
+    },
+    "SsrDefaultRouteSsrLambdaIntegrationPermission1DAC0BFE": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "SsrLambda06B7747A",
+            "Arn"
+          ]
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition"
+              },
+              ":execute-api:",
+              {
+                "Ref": "AWS::Region"
+              },
+              ":",
+              {
+                "Ref": "AWS::AccountId"
+              },
+              ":",
+              {
+                "Ref": "SsrHttpApi76D079D6"
+              },
+              "/*/*"
+            ]
+          ]
+        }
+      },
+      "Type": "AWS::Lambda::Permission"
+    },
+    "SsrHttpApi76D079D6": {
+      "Properties": {
+        "Description": "HTTP API for thailandgiftshop.com HTML rendering",
+        "Name": "thailandgiftshop-ssr",
+        "ProtocolType": "HTTP",
+        "Tags": {
+          "ManagedBy": "aws-cdk",
+          "Project": "thailandgiftshop"
+        }
+      },
+      "Type": "AWS::ApiGatewayV2::Api"
+    },
+    "SsrHttpApiAccessLogGroupBF3D21D3": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "LogGroupName": "/aws/apigateway/thailandgiftshop-ssr",
+        "RetentionInDays": 90,
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ]
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "SsrHttpApiDefaultStage": {
+      "DependsOn": [
+        "AdminProxyRouteAdminLambdaIntegrationPermissionE917385F",
+        "AdminProxyRouteA88DF6BF",
+        "AdminRouteAdminLambdaIntegrationPermission1E46B41B",
+        "AdminRouteAdminLambdaIntegration55154424",
+        "AdminRoute260CB1E1",
+        "SsrDefaultRoute54BB98A6",
+        "SsrDefaultRouteSsrLambdaIntegrationPermission1DAC0BFE",
+        "SsrDefaultRouteSsrLambdaIntegration8D812CA9"
+      ],
+      "Properties": {
+        "AccessLogSettings": {
+          "DestinationArn": {
+            "Fn::GetAtt": [
+              "SsrHttpApiAccessLogGroupBF3D21D3",
+              "Arn"
+            ]
+          },
+          "Format": "{\"requestId\":\"$context.requestId\",\"ip\":\"$context.identity.sourceIp\",\"requestTime\":\"$context.requestTime\",\"httpMethod\":\"$context.httpMethod\",\"routeKey\":\"$context.routeKey\",\"status\":\"$context.status\",\"protocol\":\"$context.protocol\",\"responseLength\":\"$context.responseLength\",\"extendedRequestId\":\"$context.extendedRequestId\",\"integrationError\":\"$context.integrationErrorMessage\"}"
+        },
+        "ApiId": {
+          "Ref": "SsrHttpApi76D079D6"
+        },
+        "AutoDeploy": true,
+        "DefaultRouteSettings": {
+          "DetailedMetricsEnabled": true
+        },
+        "Description": "Default stage for SSR HTTP API",
+        "StageName": "$default",
+        "Tags": {
+          "ManagedBy": "aws-cdk",
+          "Project": "thailandgiftshop"
+        }
+      },
+      "Type": "AWS::ApiGatewayV2::Stage"
+    },
+    "SsrLambda06B7747A": {
+      "DependsOn": [
+        "SsrLambdaServiceRoleDefaultPolicy7B257C54",
+        "SsrLambdaServiceRole46A57904"
+      ],
+      "Properties": {
+        "Architectures": [
+          "arm64"
+        ],
+        "Code": {
+          "S3Bucket": {
+            "Fn::Sub": "cdk-hnb659fds-assets-${AWS::AccountId}-${AWS::Region}"
+          },
+          "S3Key": "<asset-hash>.zip"
+        },
+        "Description": "Server-side HTML renderer for thailandgiftshop.com",
+        "Environment": {
+          "Variables": {
+            "ADMIN_ORIGIN_HEADER_PREVIOUS_SECRET": {
+              "Ref": "AdminOriginHeaderPreviousSecret"
+            },
+            "ADMIN_ORIGIN_HEADER_SECRET": {
+              "Fn::Join": [
+                "",
+                [
+                  "{{resolve:secretsmanager:",
+                  {
+                    "Ref": "AdminOriginHeaderSecretD1A227E9"
+                  },
+                  ":SecretString:::}}"
+                ]
+              ]
+            },
+            "APP_ENV": "production",
+            "CART_COOKIE_SECRET": {
+              "Fn::Join": [
+                "",
+                [
+                  "{{resolve:secretsmanager:",
+                  {
+                    "Ref": "CartCookieSecret4041D8EB"
+                  },
+                  ":SecretString:::}}"
+                ]
+              ]
+            },
+            "CATALOG_ENTITY_INDEX_NAME": "entity-index",
+            "CATALOG_PUBLIC_INDEX_NAME": "public-index",
+            "CATALOG_RECENT_INDEX_NAME": "recent-index",
+            "CATALOG_SLUG_INDEX_NAME": "slug-index",
+            "CATALOG_TABLE_NAME": {
+              "Ref": "CatalogTableF8EA09BD"
+            },
+            "COMMERCE_CUSTOMER_ORDERS_INDEX_NAME": "customer-orders-index",
+            "COMMERCE_ORDERS_INDEX_NAME": "orders-index",
+            "COMMERCE_TABLE_NAME": {
+              "Ref": "CommerceTable6CC80189"
+            },
+            "CUSTOMER_SESSION_SECRET": {
+              "Fn::Join": [
+                "",
+                [
+                  "{{resolve:secretsmanager:",
+                  {
+                    "Ref": "CustomerSessionSecret059A28A9"
+                  },
+                  ":SecretString:::}}"
+                ]
+              ]
+            },
+            "EMAIL_FROM_ADDRESS": "noreply@thailandgiftshop.com",
+            "EMAIL_SENDER_MODE": "ses",
+            "EMAIL_SES_REGION": "us-east-1",
+            "PRODUCT_IMAGE_PLACEHOLDER_URL": "/images/placeholder-product.jpg",
+            "PUBLIC_BASE_URL": "https://thailandgiftshop.com",
+            "STRIPE_CREDENTIALS_SECRET_NAME": "thailandgiftshop/stripe/credentials"
+          }
+        },
+        "FunctionName": "thailandgiftshop-ssr",
+        "Handler": "bootstrap",
+        "LoggingConfig": {
+          "LogGroup": {
+            "Ref": "SsrLambdaLogGroup5806F2F2"
+          }
+        },
+        "MemorySize": 512,
+        "Role": {
+          "Fn::GetAtt": [
+            "SsrLambdaServiceRole46A57904",
+            "Arn"
+          ]
+        },
+        "Runtime": "provided.al2023",
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "Timeout": 10,
+        "TracingConfig": {
+          "Mode": "Active"
+        }
+      },
+      "Type": "AWS::Lambda::Function"
+    },
+    "SsrLambdaErrorsAlarm62E5F5FB": {
+      "Properties": {
+        "ActionsEnabled": true,
+        "AlarmActions": [
+          {
+            "Ref": "OperationsAlarmTopic741F169B"
+          }
+        ],
+        "AlarmDescription": "SSR Lambda has errors.",
+        "AlarmName": "ThailandGiftshop-SsrLambda-Errors",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 2,
+        "Metrics": [
+          {
+            "Id": "m1",
+            "Label": "SSR errors",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "FunctionName",
+                    "Value": {
+                      "Ref": "SsrLambda06B7747A"
+                    }
+                  }
+                ],
+                "MetricName": "Errors",
+                "Namespace": "AWS/Lambda"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": true
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "SsrLambdaLogGroup5806F2F2": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "LogGroupName": "/aws/lambda/thailandgiftshop-ssr",
+        "RetentionInDays": 90,
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ]
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "SsrLambdaServiceRole46A57904": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition"
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+              ]
+            ]
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Role"
+    },
+    "SsrLambdaServiceRoleDefaultPolicy7B257C54": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "xray:PutTraceSegments",
+                "xray:PutTelemetryRecords"
+              ],
+              "Effect": "Allow",
+              "Resource": "*"
+            },
+            {
+              "Action": [
+                "dynamodb:BatchGetItem",
+                "dynamodb:Query",
+                "dynamodb:GetItem",
+                "dynamodb:Scan",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:BatchWriteItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:DescribeTable"
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "CatalogTableF8EA09BD",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "CatalogTableF8EA09BD",
+                          "Arn"
+                        ]
+                      },
+                      "/index/*"
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "Action": [
+                "dynamodb:GetRecords",
+                "dynamodb:GetShardIterator"
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "CatalogTableF8EA09BD",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "CatalogTableF8EA09BD",
+                          "Arn"
+                        ]
+                      },
+                      "/index/*"
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "Action": "dynamodb:TransactWriteItems",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "CatalogTableF8EA09BD",
+                  "Arn"
+                ]
+              }
+            },
+            {
+              "Action": [
+                "dynamodb:BatchGetItem",
+                "dynamodb:Query",
+                "dynamodb:GetItem",
+                "dynamodb:Scan",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:BatchWriteItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:DescribeTable"
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "CommerceTable6CC80189",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "CommerceTable6CC80189",
+                          "Arn"
+                        ]
+                      },
+                      "/index/*"
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "Action": [
+                "dynamodb:GetRecords",
+                "dynamodb:GetShardIterator"
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "CommerceTable6CC80189",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "CommerceTable6CC80189",
+                          "Arn"
+                        ]
+                      },
+                      "/index/*"
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "Action": [
+                "secretsmanager:GetSecretValue",
+                "secretsmanager:DescribeSecret"
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition"
+                    },
+                    ":secretsmanager:",
+                    {
+                      "Ref": "AWS::Region"
+                    },
+                    ":",
+                    {
+                      "Ref": "AWS::AccountId"
+                    },
+                    ":secret:thailandgiftshop/stripe/credentials-??????"
+                  ]
+                ]
+              }
+            },
+            {
+              "Action": "ses:SendEmail",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition"
+                    },
+                    ":ses:",
+                    {
+                      "Ref": "AWS::Region"
+                    },
+                    ":",
+                    {
+                      "Ref": "AWS::AccountId"
+                    },
+                    ":identity/",
+                    {
+                      "Ref": "SiteEmailIdentity10D37221"
+                    }
+                  ]
+                ]
+              }
+            },
+            {
+              "Action": "dynamodb:TransactWriteItems",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "CommerceTable6CC80189",
+                  "Arn"
+                ]
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "PolicyName": "SsrLambdaServiceRoleDefaultPolicy7B257C54",
+        "Roles": [
+          {
+            "Ref": "SsrLambdaServiceRole46A57904"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Policy"
+    },
+    "SsrLambdaThrottlesAlarm46A05325": {
+      "Properties": {
+        "ActionsEnabled": false,
+        "AlarmDescription": "SSR Lambda is throttling.",
+        "AlarmName": "ThailandGiftshop-SsrLambda-Throttles",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "Metrics": [
+          {
+            "Id": "m1",
+            "Label": "SSR throttles",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "FunctionName",
+                    "Value": {
+                      "Ref": "SsrLambda06B7747A"
+                    }
+                  }
+                ],
+                "MetricName": "Throttles",
+                "Namespace": "AWS/Lambda"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": true
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "SsrOriginRequestPolicyA1001E9B": {
+      "Properties": {
+        "OriginRequestPolicyConfig": {
+          "Comment": "Headers, cookies, and query strings for thailandgiftshop.com SSR origin",
+          "CookiesConfig": {
+            "CookieBehavior": "all"
+          },
+          "HeadersConfig": {
+            "HeaderBehavior": "whitelist",
+            "Headers": [
+              "CloudFront-Viewer-Address",
+              "CloudFront-Forwarded-Proto",
+              "Content-Type",
+              "HX-Request",
+              "X-CSRF-Token",
+              "Stripe-Signature"
+            ]
+          },
+          "Name": "thailandgiftshop-ssr-origin",
+          "QueryStringsConfig": {
+            "QueryStringBehavior": "all"
+          }
+        }
+      },
+      "Type": "AWS::CloudFront::OriginRequestPolicy"
+    },
+    "StaticAssetsBucketC3095769": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256"
+              }
+            }
+          ]
+        },
+        "OwnershipControls": {
+          "Rules": [
+            {
+              "ObjectOwnership": "BucketOwnerEnforced"
+            }
+          ]
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        },
+        "Tags": [
+          {
+            "Key": "aws-cdk:cr-owned:static:1a36bb84",
+            "Value": "true"
+          },
+          {
+            "Key": "aws-cdk:cr-owned:static/assets:8724f4e8",
+            "Value": "true"
+          },
+          {
+            "Key": "aws-cdk:cr-owned:static/fonts:1b74373a",
+            "Value": "true"
+          },
+          {
+            "Key": "aws-cdk:cr-owned:static/js:121abc53",
+            "Value": "true"
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ]
+      },
+      "Type": "AWS::S3::Bucket",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "StaticAssetsBucketPolicy3DFC5B6F": {
+      "Properties": {
+        "Bucket": {
+          "Ref": "StaticAssetsBucketC3095769"
+        },
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "s3:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*"
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "StaticAssetsBucketC3095769",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "StaticAssetsBucketC3095769",
+                          "Arn"
+                        ]
+                      },
+                      "/*"
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "Action": "s3:GetObject",
+              "Condition": {
+                "StringEquals": {
+                  "AWS:SourceArn": {
+                    "Fn::Join": [
+                      "",
+                      [
+                        "arn:",
+                        {
+                          "Ref": "AWS::Partition"
+                        },
+                        ":cloudfront::",
+                        {
+                          "Ref": "AWS::AccountId"
+                        },
+                        ":distribution/",
+                        {
+                          "Ref": "SiteDistribution3FF9535D"
+                        }
+                      ]
+                    ]
+                  }
+                }
+              },
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "cloudfront.amazonaws.com"
+              },
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Fn::GetAtt": [
+                        "StaticAssetsBucketC3095769",
+                        "Arn"
+                      ]
+                    },
+                    "/*"
+                  ]
+                ]
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        }
+      },
+      "Type": "AWS::S3::BucketPolicy"
+    },
+    "StaticAssetsDeploymentAwsCliLayer92D9AAF6": {
+      "Properties": {
+        "Content": {
+          "S3Bucket": {
+            "Fn::Sub": "cdk-hnb659fds-assets-${AWS::AccountId}-${AWS::Region}"
+          },
+          "S3Key": "<asset-hash>.zip"
+        },
+        "Description": "/opt/awscli/aws"
+      },
+      "Type": "AWS::Lambda::LayerVersion"
+    },
+    "StaticAssetsDeploymentCustomResource9F35A71C": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "DestinationBucketKeyPrefix": "static",
+        "DestinationBucketName": {
+          "Ref": "StaticAssetsBucketC3095769"
+        },
+        "DistributionId": {
+          "Ref": "SiteDistribution3FF9535D"
+        },
+        "DistributionPaths": [
+          "/static/*"
+        ],
+        "OutputObjectKeys": true,
+        "Prune": false,
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C81C01536",
+            "Arn"
+          ]
+        },
+        "SourceBucketNames": [
+          {
+            "Fn::Sub": "cdk-hnb659fds-assets-${AWS::AccountId}-${AWS::Region}"
+          }
+        ],
+        "SourceObjectKeys": [
+          "<asset-hash>.zip"
+        ],
+        "SystemMetadata": {
+          "cache-control": "max-age=3600"
+        },
+        "WaitForDistributionInvalidation": true
+      },
+      "Type": "Custom::CDKBucketDeployment",
+      "UpdateReplacePolicy": "Delete"
+    },
+    "StaticAssetsDeploymentLogGroup8946EE63": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "LogGroupName": "/aws/lambda/thailandgiftshop-static-assets-deployment",
+        "RetentionInDays": 90,
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ]
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "StockAdjustRollbackErrorsAlarm2B8B5A7D": {
+      "Properties": {
+        "ActionsEnabled": true,
+        "AlarmActions": [
+          {
+            "Ref": "OperationsAlarmTopic741F169B"
+          }
+        ],
+        "AlarmDescription": "A stock reservation rollback failed; product stock may need manual correction.",
+        "AlarmName": "ThailandGiftshop-StockAdjust-RollbackErrors",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "Metrics": [
+          {
+            "Id": "m1",
+            "Label": "Stock adjust rollback errors",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Outcome",
+                    "Value": "rollback_error"
+                  },
+                  {
+                    "Name": "Service",
+                    "Value": "catalog"
+                  }
+                ],
+                "MetricName": "StockAdjust",
+                "Namespace": "ThailandGiftshop/App"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": true
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "StripeWebhookErrorsAlarm0CAF9DD9": {
+      "Properties": {
+        "ActionsEnabled": true,
+        "AlarmActions": [
+          {
+            "Ref": "OperationsAlarmTopic741F169B"
+          }
+        ],
+        "AlarmDescription": "Stripe webhook signature failures, amount or refund mismatches, payments captured for terminal orders (auto-refund already issued — verify its legitimacy and settlement in Stripe), or processing errors occurred.",
+        "AlarmName": "ThailandGiftshop-StripeWebhook-Errors",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "Metrics": [
+          {
+            "Expression": "swinvalid_signature+swamount_mismatch+swrefund_mismatch+swpaid_after_terminal+swerror",
+            "Id": "expr_1",
+            "Label": "Stripe webhook errors",
+            "ReturnData": true
+          },
+          {
+            "Id": "swamount_mismatch",
+            "Label": "StripeWebhook amount_mismatch",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Outcome",
+                    "Value": "amount_mismatch"
+                  },
+                  {
+                    "Name": "Service",
+                    "Value": "ssr"
+                  }
+                ],
+                "MetricName": "StripeWebhook",
+                "Namespace": "ThailandGiftshop/App"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "swerror",
+            "Label": "StripeWebhook error",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Outcome",
+                    "Value": "error"
+                  },
+                  {
+                    "Name": "Service",
+                    "Value": "ssr"
+                  }
+                ],
+                "MetricName": "StripeWebhook",
+                "Namespace": "ThailandGiftshop/App"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "swinvalid_signature",
+            "Label": "StripeWebhook invalid_signature",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Outcome",
+                    "Value": "invalid_signature"
+                  },
+                  {
+                    "Name": "Service",
+                    "Value": "ssr"
+                  }
+                ],
+                "MetricName": "StripeWebhook",
+                "Namespace": "ThailandGiftshop/App"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "swpaid_after_terminal",
+            "Label": "StripeWebhook paid_after_terminal",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Outcome",
+                    "Value": "paid_after_terminal"
+                  },
+                  {
+                    "Name": "Service",
+                    "Value": "ssr"
+                  }
+                ],
+                "MetricName": "StripeWebhook",
+                "Namespace": "ThailandGiftshop/App"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          },
+          {
+            "Id": "swrefund_mismatch",
+            "Label": "StripeWebhook refund_mismatch",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Outcome",
+                    "Value": "refund_mismatch"
+                  },
+                  {
+                    "Name": "Service",
+                    "Value": "ssr"
+                  }
+                ],
+                "MetricName": "StripeWebhook",
+                "Namespace": "ThailandGiftshop/App"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": false
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "WafAdminBlocksAlarm6177071E": {
+      "Properties": {
+        "ActionsEnabled": false,
+        "AlarmDescription": "WAF blocked requests across all edge rules (admin login, admin path, and customer auth) exceeded the normal operating threshold.",
+        "AlarmName": "ThailandGiftshop-WAF-AdminBlocks",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "Metrics": [
+          {
+            "Id": "m1",
+            "Label": "WAF blocked requests",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "Region",
+                    "Value": "Global"
+                  },
+                  {
+                    "Name": "Rule",
+                    "Value": "ALL"
+                  },
+                  {
+                    "Name": "WebACL",
+                    "Value": "ThailandGiftshopAdminCloudFront"
+                  }
+                ],
+                "MetricName": "BlockedRequests",
+                "Namespace": "AWS/WAFV2"
+              },
+              "Period": 300,
+              "Stat": "Sum",
+              "Unit": "Count"
+            },
+            "ReturnData": true
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "aws-cdk"
+          },
+          {
+            "Key": "Project",
+            "Value": "thailandgiftshop"
+          }
+        ],
+        "Threshold": 10,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "WwwAAAARecordB7886117": {
+      "Properties": {
+        "AliasTarget": {
+          "DNSName": {
+            "Fn::GetAtt": [
+              "SiteDistribution3FF9535D",
+              "DomainName"
+            ]
+          },
+          "HostedZoneId": {
+            "Fn::FindInMap": [
+              "AWSCloudFrontPartitionHostedZoneIdMap",
+              {
+                "Ref": "AWS::Partition"
+              },
+              "zoneId"
+            ]
+          }
+        },
+        "HostedZoneId": {
+          "Ref": "HostedZoneId"
+        },
+        "Name": "www.thailandgiftshop.com.",
+        "Type": "AAAA"
+      },
+      "Type": "AWS::Route53::RecordSet"
+    },
+    "WwwARecord21A54661": {
+      "Properties": {
+        "AliasTarget": {
+          "DNSName": {
+            "Fn::GetAtt": [
+              "SiteDistribution3FF9535D",
+              "DomainName"
+            ]
+          },
+          "HostedZoneId": {
+            "Fn::FindInMap": [
+              "AWSCloudFrontPartitionHostedZoneIdMap",
+              {
+                "Ref": "AWS::Partition"
+              },
+              "zoneId"
+            ]
+          }
+        },
+        "HostedZoneId": {
+          "Ref": "HostedZoneId"
+        },
+        "Name": "www.thailandgiftshop.com.",
+        "Type": "A"
+      },
+      "Type": "AWS::Route53::RecordSet"
+    }
+  },
+  "Rules": {
+    "CheckBootstrapVersion": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Contains": [
+                  [
+                    "1",
+                    "2",
+                    "3",
+                    "4",
+                    "5"
+                  ],
+                  {
+                    "Ref": "BootstrapVersion"
+                  }
+                ]
+              }
+            ]
+          },
+          "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI."
+        }
+      ]
+    }
+  }
+}

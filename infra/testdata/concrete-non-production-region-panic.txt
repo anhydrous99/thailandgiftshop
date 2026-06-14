@@ -1,0 +1,1 @@
+ThailandGiftshopStack must be synthesized in us-east-1 when a concrete region is configured, got us-east-2

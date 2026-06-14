@@ -1,0 +1,2 @@
+ssr: mkdir -p cdk.out/ssr-lambda && GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -tags lambda.norpc -ldflags "-s -w" -o cdk.out/ssr-lambda/bootstrap ../cmd/ssr
+admin: mkdir -p cdk.out/admin-lambda && GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -tags lambda.norpc -ldflags "-s -w" -o cdk.out/admin-lambda/bootstrap ../cmd/admin
