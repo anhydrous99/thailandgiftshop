@@ -582,6 +582,113 @@ func TestListOrdersNewestFirstWithLimit(t *testing.T) {
 	}
 }
 
+func TestListOrdersInRangeFiltersByCreatedAtWindow(t *testing.T) {
+	for _, fixture := range storeFixtures(t) {
+		t.Run(fixture.name, func(t *testing.T) {
+			ctx := context.Background()
+			customer := createTestCustomer(t, fixture.store, "shopper@example.test")
+
+			// Five orders one day apart: 2026-06-08..2026-06-12 at 12:00:00Z.
+			created := make([]Order, 0, 5)
+			for i := 0; i < 5; i++ {
+				order, err := fixture.store.CreateOrder(ctx, testOrder(customer.ID, 1000+i))
+				if err != nil {
+					t.Fatalf("CreateOrder %d returned error: %v", i, err)
+				}
+				created = append(created, order)
+				fixture.clock.Advance(24 * time.Hour)
+			}
+
+			ids := func(page OrderPage) []string {
+				out := make([]string, 0, len(page.Orders))
+				for _, order := range page.Orders {
+					out = append(out, order.ID)
+				}
+				return out
+			}
+			eq := func(got []string, want ...string) bool {
+				if len(got) != len(want) {
+					return false
+				}
+				for i := range got {
+					if got[i] != want[i] {
+						return false
+					}
+				}
+				return true
+			}
+
+			// Inclusive window spanning the middle three days (boundaries land
+			// exactly on stored orders, exercising second-precision inclusion).
+			mid, err := fixture.store.ListOrdersInRange(ctx, created[1].CreatedAt, created[3].CreatedAt, 0, OrderCursor{})
+			if err != nil {
+				t.Fatalf("ListOrdersInRange (mid) returned error: %v", err)
+			}
+			if got := ids(mid); !eq(got, created[3].ID, created[2].ID, created[1].ID) {
+				t.Fatalf("mid window = %v, want orders 3,2,1 newest first", got)
+			}
+			if !mid.NextCursor.IsZero() {
+				t.Fatalf("mid window NextCursor = %#v, want zero", mid.NextCursor)
+			}
+
+			// Open-bottom window: everything up to and including day 2.
+			upTo, err := fixture.store.ListOrdersInRange(ctx, time.Time{}, created[1].CreatedAt, 0, OrderCursor{})
+			if err != nil {
+				t.Fatalf("ListOrdersInRange (open bottom) returned error: %v", err)
+			}
+			if got := ids(upTo); !eq(got, created[1].ID, created[0].ID) {
+				t.Fatalf("open-bottom window = %v, want orders 1,0", got)
+			}
+
+			// Open-top window: everything from day 4 onward.
+			from, err := fixture.store.ListOrdersInRange(ctx, created[3].CreatedAt, time.Time{}, 0, OrderCursor{})
+			if err != nil {
+				t.Fatalf("ListOrdersInRange (open top) returned error: %v", err)
+			}
+			if got := ids(from); !eq(got, created[4].ID, created[3].ID) {
+				t.Fatalf("open-top window = %v, want orders 4,3", got)
+			}
+
+			// Fully open window matches ListOrders.
+			all, err := fixture.store.ListOrdersInRange(ctx, time.Time{}, time.Time{}, 0, OrderCursor{})
+			if err != nil {
+				t.Fatalf("ListOrdersInRange (open) returned error: %v", err)
+			}
+			if got := ids(all); !eq(got, created[4].ID, created[3].ID, created[2].ID, created[1].ID, created[0].ID) {
+				t.Fatalf("open window = %v, want all five newest first", got)
+			}
+
+			// A window entirely after every order is empty.
+			none, err := fixture.store.ListOrdersInRange(ctx, created[4].CreatedAt.Add(24*time.Hour), created[4].CreatedAt.Add(48*time.Hour), 0, OrderCursor{})
+			if err != nil {
+				t.Fatalf("ListOrdersInRange (empty) returned error: %v", err)
+			}
+			if len(none.Orders) != 0 || !none.NextCursor.IsZero() {
+				t.Fatalf("empty window = %#v, want no orders and zero cursor", none)
+			}
+
+			// Limit + cursor paging stays within the window (days 1..4).
+			pageOne, err := fixture.store.ListOrdersInRange(ctx, created[0].CreatedAt, created[3].CreatedAt, 2, OrderCursor{})
+			if err != nil || len(pageOne.Orders) != 2 || pageOne.NextCursor.IsZero() {
+				t.Fatalf("paged window page 1 = %d orders cursor %#v err %v, want 2 with a cursor", len(pageOne.Orders), pageOne.NextCursor, err)
+			}
+			if got := ids(pageOne); !eq(got, created[3].ID, created[2].ID) {
+				t.Fatalf("paged window page 1 = %v, want orders 3,2", got)
+			}
+			pageTwo, err := fixture.store.ListOrdersInRange(ctx, created[0].CreatedAt, created[3].CreatedAt, 2, pageOne.NextCursor)
+			if err != nil {
+				t.Fatalf("paged window page 2 returned error: %v", err)
+			}
+			if got := ids(pageTwo); !eq(got, created[1].ID, created[0].ID) {
+				t.Fatalf("paged window page 2 = %v, want orders 1,0", got)
+			}
+			if !pageTwo.NextCursor.IsZero() {
+				t.Fatalf("paged window page 2 NextCursor = %#v, want zero", pageTwo.NextCursor)
+			}
+		})
+	}
+}
+
 // TestGuestOrderListing pins the guest-order (CustomerID == "") listing
 // contract on both stores: guests never form a pseudo-customer in the
 // customer-orders index, while the admin listing (gsi2) sees every order. The

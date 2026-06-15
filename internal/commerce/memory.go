@@ -428,6 +428,30 @@ func (s *MemoryStore) ListOrders(ctx context.Context, limit int, cursor OrderCur
 	return orderPageFromProbe(ordersAfterCursor(orders, cursor), limit), nil
 }
 
+func (s *MemoryStore) ListOrdersInRange(ctx context.Context, start time.Time, end time.Time, limit int, cursor OrderCursor) (OrderPage, error) {
+	_ = ctx
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Filter on the formatted gsi2 sort key so the inclusive second-precision
+	// window matches the Dynamo BETWEEN bounds exactly, even when in-memory
+	// CreatedAt values carry sub-second precision.
+	lower, upper := ordersIndexRangeBounds(start, end)
+	orders := make([]Order, 0, len(s.orders))
+	for _, order := range s.orders {
+		sortKey := ordersIndexSK(order)
+		if lower != "" && sortKey < lower {
+			continue
+		}
+		if upper != "" && sortKey > upper {
+			continue
+		}
+		orders = append(orders, cloneOrder(order))
+	}
+	sortOrdersNewestFirst(orders)
+	return orderPageFromProbe(ordersAfterCursor(orders, cursor), limit), nil
+}
+
 func (s *MemoryStore) TransitionOrder(ctx context.Context, orderID string, from OrderStatus, to OrderStatus, patch OrderPatch) (Order, error) {
 	_ = ctx
 	s.mu.Lock()

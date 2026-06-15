@@ -207,6 +207,9 @@ func (h *Handler) adminMetricRoute(request events.APIGatewayV2HTTPRequest) strin
 	if path == "/admin/logout" {
 		return "logout"
 	}
+	if isAdminAnalyticsPath(path) {
+		return "analytics"
+	}
 	if isAdminProductPath(path) {
 		return "products"
 	}
@@ -332,6 +335,9 @@ func (h *Handler) handleProtectedAdmin(ctx context.Context, request events.APIGa
 	method := httpapi.Method(request)
 	if method == http.MethodPost && !h.validCSRF(ctx, request, session) {
 		return adminHTMLResponse(http.StatusForbidden, "Forbidden", nil, nil)
+	}
+	if isAdminAnalyticsPath(path) {
+		return h.handleAdminAnalytics(ctx, request, session)
 	}
 	if isAdminProductPath(path) {
 		return h.handleAdminProducts(ctx, path, request, session)

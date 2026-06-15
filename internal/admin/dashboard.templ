@@ -34,34 +34,53 @@ templ adminFlagBand(heightClass string) {
 	</div>
 }
 
+// adminNavLink renders one admin navigation link. The active link carries the
+// filled style and aria-current="page"; inactive links keep the outlined hover
+// style. data-testid hooks stay stable for Playwright.
+templ adminNavLink(href string, label string, testid string, active bool) {
+	if active {
+		<a data-testid={ testid } aria-current="page" href={ templ.SafeURL(href) } class="inline-flex h-10 items-center justify-center bg-flag-blue px-4 text-white transition hover:bg-ink">{ label }</a>
+	} else {
+		<a data-testid={ testid } href={ templ.SafeURL(href) } class="inline-flex h-10 items-center justify-center border border-flag-blue/20 bg-paper px-4 transition hover:border-flag-red hover:text-flag-red">{ label }</a>
+	}
+}
+
+// adminHeader is the shared sticky chrome for every admin page. current selects
+// the active nav item ("dashboard", "analytics", "products", "categories",
+// "orders"); pass "" for pages with no active section.
+templ adminHeader(csrfValue string, current string) {
+	<header class="sticky top-0 z-30 border-b-2 border-ink bg-paper">
+		@adminFlagBand("h-1.5")
+		<div class="mx-auto flex min-h-16 w-full max-w-7xl flex-col gap-4 px-5 py-4 sm:px-8 md:flex-row md:items-center md:justify-between">
+			<a href="/admin" aria-label="Thailand Gift Shop admin dashboard" class="flex min-w-0 items-center gap-3">
+				<img class="h-8 w-8 shrink-0 sm:h-9 sm:w-9" src="/static/logo.svg" alt=""/>
+				<span class="truncate font-display text-lg font-bold tracking-tight text-ink">Thailand Gift Shop</span>
+				<span class="hidden border border-flag-blue/20 bg-flag-white px-2 py-0.5 text-xs font-semibold uppercase tracking-eyebrow text-flag-blue sm:inline">Admin</span>
+			</a>
+			<div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+				<nav data-testid="admin-nav" aria-label="Admin navigation" class="flex flex-wrap gap-2 text-sm font-medium text-flag-blue">
+					@adminNavLink("/admin", "Dashboard", "admin-nav-dashboard", current == "dashboard")
+					@adminNavLink("/admin/analytics", "Analytics", "admin-nav-analytics", current == "analytics")
+					@adminNavLink("/admin/products", "Products", "admin-nav-products", current == "products")
+					@adminNavLink("/admin/categories", "Categories", "admin-nav-categories", current == "categories")
+					@adminNavLink("/admin/orders", "Orders", "admin-nav-orders", current == "orders")
+				</nav>
+				<form method="post" action="/admin/logout" class="flex">
+					<input type="hidden" name="csrf_token" value={ csrfValue }/>
+					<button data-testid="admin-logout-button" type="submit" class="inline-flex h-10 items-center justify-center bg-flag-red px-4 text-sm font-bold text-white transition hover:bg-flag-red-deep">Logout</button>
+				</form>
+			</div>
+		</div>
+	</header>
+}
+
 templ adminDashboardPage(vm adminDashboardViewModel) {
 	<!DOCTYPE html>
 	<html lang="en" class="scroll-smooth">
 		@adminHead("Admin dashboard | Thailand Gift Shop")
 		<body class="min-h-screen bg-paper text-ink antialiased">
 			<div data-testid="admin-shell" class="min-h-screen">
-				<header class="sticky top-0 z-30 border-b-2 border-ink bg-paper">
-					@adminFlagBand("h-1.5")
-					<div class="mx-auto flex min-h-16 w-full max-w-7xl flex-col gap-4 px-5 pb-4 pt-7 sm:px-8 md:flex-row md:items-center md:justify-between">
-						<a href="/admin" aria-label="Thailand Gift Shop admin dashboard" class="flex min-w-0 items-center gap-3">
-							<img class="h-8 w-8 shrink-0 sm:h-9 sm:w-9" src="/static/logo.svg" alt=""/>
-							<span class="truncate font-display text-lg font-bold tracking-tight text-ink">Thailand Gift Shop</span>
-							<span class="hidden border border-flag-blue/20 bg-flag-white px-2 py-0.5 text-xs font-semibold uppercase tracking-eyebrow text-flag-blue sm:inline">Admin</span>
-						</a>
-						<div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-							<nav data-testid="admin-nav" aria-label="Admin navigation" class="flex flex-wrap gap-2 text-sm font-medium text-flag-blue">
-								<a data-testid="admin-nav-dashboard" aria-current="page" href="/admin" class="inline-flex h-10 items-center justify-center bg-flag-blue px-4 text-white transition hover:bg-ink">Dashboard</a>
-								<a data-testid="admin-nav-products" href="/admin/products" class="inline-flex h-10 items-center justify-center border border-flag-blue/20 bg-paper px-4 transition hover:border-flag-red hover:text-flag-red">Products</a>
-								<a data-testid="admin-nav-categories" href="/admin/categories" class="inline-flex h-10 items-center justify-center border border-flag-blue/20 bg-paper px-4 transition hover:border-flag-red hover:text-flag-red">Categories</a>
-								<a data-testid="admin-nav-orders" href="/admin/orders" class="inline-flex h-10 items-center justify-center border border-flag-blue/20 bg-paper px-4 transition hover:border-flag-red hover:text-flag-red">Orders</a>
-							</nav>
-							<form method="post" action="/admin/logout" class="flex">
-								<input type="hidden" name="csrf_token" value={ vm.CSRFValue }/>
-								<button data-testid="admin-logout-button" type="submit" class="inline-flex h-10 items-center justify-center bg-flag-red px-4 text-sm font-bold text-white transition hover:bg-flag-red-deep">Logout</button>
-							</form>
-						</div>
-					</div>
-				</header>
+				@adminHeader(vm.CSRFValue, "dashboard")
 				<main id="admin-main" class="mx-auto w-full max-w-7xl px-5 py-10 sm:px-8 lg:py-14">
 					<section aria-labelledby="admin-dashboard-title" class="border border-flag-blue bg-flag-blue text-white">
 						@adminFlagBand("h-1.5")

@@ -3,7 +3,7 @@
 package staticassets
 
 const (
-	AppCSSPath               = "/static/assets/app.b2b385f2d753.css"
+	AppCSSPath               = "/static/assets/app.cfb2831886ad.css"
 	EnhanceJSPath            = "/static/js/enhance.34c4fd7943a3.js"
 	AdminProductUploadJSPath = "/static/js/admin-product-upload.ab33936fdb98.js"
 	AdminDashboardJSPath     = "/static/js/admin-dashboard.5735b0da2bbd.js"

@@ -12,7 +12,7 @@ templ adminOrderDetailPage(vm adminOrderDetailViewModel) {
 		@adminHead("Order " + vm.Order.ID + " | Thailand Gift Shop Admin")
 		<body class="min-h-screen bg-paper text-ink antialiased">
 			<div data-testid="admin-shell" class="min-h-screen">
-				@adminOrdersHeader(vm.CSRFValue)
+				@adminHeader(vm.CSRFValue, "orders")
 				<main id="admin-main" class="mx-auto w-full max-w-7xl px-5 py-10 sm:px-8 lg:py-14">
 					<a href="/admin/orders" class="text-sm font-bold text-flag-red transition hover:text-flag-red-deep hover:underline hover:underline-offset-4">Back to orders</a>
 					if vm.Flash != "" {

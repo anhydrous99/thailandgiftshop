@@ -108,6 +108,22 @@ func customerOrdersStartKey(customerID string, cursor OrderCursor) map[string]ty
 	}
 }
 
+// ordersIndexRangeBounds builds the inclusive gsi2 sort-key bounds for a
+// CreatedAt window. An empty return value means that side is unbounded. The
+// lower bound is the formatted second, so an order created in that exact second
+// (sort key "<second>#<id>") still sorts at or after it. The upper bound
+// appends a "#~" sentinel: order IDs are [a-z0-9]{26}, so "~" (0x7e) is greater
+// than any "<second>#<id>" sort key and the entire end second is included.
+func ordersIndexRangeBounds(start time.Time, end time.Time) (lower string, upper string) {
+	if !start.IsZero() {
+		lower = formatCommerceTime(start)
+	}
+	if !end.IsZero() {
+		upper = formatCommerceTime(end) + "#~"
+	}
+	return lower, upper
+}
+
 // ordersStartKey rebuilds the gsi2 ExclusiveStartKey position for a cursor.
 func ordersStartKey(cursor OrderCursor) map[string]types.AttributeValue {
 	marker := Order{ID: cursor.OrderID, CreatedAt: cursor.CreatedAt}
@@ -827,6 +843,51 @@ func (s *DynamoStore) ListOrders(ctx context.Context, limit int, cursor OrderCur
 		input.ExclusiveStartKey = ordersStartKey(cursor)
 	}
 	items, err := s.queryItems(ctx, input, probeLimit(limit), "ListOrders")
+	if err != nil {
+		return OrderPage{}, err
+	}
+	orders, err := ordersFromItems(items)
+	if err != nil {
+		return OrderPage{}, err
+	}
+	return orderPageFromProbe(orders, limit), nil
+}
+
+func (s *DynamoStore) ListOrdersInRange(ctx context.Context, start time.Time, end time.Time, limit int, cursor OrderCursor) (OrderPage, error) {
+	lower, upper := ordersIndexRangeBounds(start, end)
+	keyCondition := "#gsi2pk = :pk"
+	names := map[string]string{"#gsi2pk": "gsi2pk"}
+	values := map[string]types.AttributeValue{
+		":pk": &types.AttributeValueMemberS{Value: ordersIndexPK},
+	}
+	switch {
+	case lower != "" && upper != "":
+		keyCondition += " AND #gsi2sk BETWEEN :start AND :end"
+		names["#gsi2sk"] = "gsi2sk"
+		values[":start"] = &types.AttributeValueMemberS{Value: lower}
+		values[":end"] = &types.AttributeValueMemberS{Value: upper}
+	case lower != "":
+		keyCondition += " AND #gsi2sk >= :start"
+		names["#gsi2sk"] = "gsi2sk"
+		values[":start"] = &types.AttributeValueMemberS{Value: lower}
+	case upper != "":
+		keyCondition += " AND #gsi2sk <= :end"
+		names["#gsi2sk"] = "gsi2sk"
+		values[":end"] = &types.AttributeValueMemberS{Value: upper}
+	}
+
+	input := dynamodb.QueryInput{
+		TableName:                 aws.String(s.tableName),
+		IndexName:                 aws.String(s.ordersIndexName),
+		KeyConditionExpression:    aws.String(keyCondition),
+		ExpressionAttributeNames:  names,
+		ExpressionAttributeValues: values,
+		ScanIndexForward:          aws.Bool(false),
+	}
+	if !cursor.IsZero() {
+		input.ExclusiveStartKey = ordersStartKey(cursor)
+	}
+	items, err := s.queryItems(ctx, input, probeLimit(limit), "ListOrdersInRange")
 	if err != nil {
 		return OrderPage{}, err
 	}

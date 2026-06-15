@@ -677,6 +677,10 @@ func (f *fakeCommerceClient) Query(ctx context.Context, input *dynamodb.QueryInp
 	}
 	wantPK := stringAttribute(input.ExpressionAttributeValues, ":pk")
 	skPrefix := stringAttribute(input.ExpressionAttributeValues, ":sk_prefix")
+	// Sort-key range bounds model the BETWEEN / >= / <= key conditions used by
+	// ListOrdersInRange. An absent placeholder leaves that side unbounded.
+	skLower := stringAttribute(input.ExpressionAttributeValues, ":start")
+	skUpper := stringAttribute(input.ExpressionAttributeValues, ":end")
 
 	type sortableItem struct {
 		sortKey string
@@ -689,6 +693,12 @@ func (f *fakeCommerceClient) Query(ctx context.Context, input *dynamodb.QueryInp
 		}
 		sortKey := stringAttribute(item, skAttribute)
 		if skPrefix != "" && !strings.HasPrefix(sortKey, skPrefix) {
+			continue
+		}
+		if skLower != "" && sortKey < skLower {
+			continue
+		}
+		if skUpper != "" && sortKey > skUpper {
 			continue
 		}
 		matches = append(matches, sortableItem{sortKey: sortKey, item: cloneAttributeMap(item)})

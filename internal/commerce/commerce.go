@@ -432,6 +432,13 @@ type Store interface {
 	// desk, gsi2 — includes guest orders), resuming after cursor. limit <= 0
 	// returns the full listing.
 	ListOrders(ctx context.Context, limit int, cursor OrderCursor) (OrderPage, error)
+	// ListOrdersInRange returns one newest-first page of all orders whose
+	// CreatedAt falls within the inclusive [start, end] window (admin
+	// analytics, gsi2 — includes guest orders), resuming after cursor. A zero
+	// start leaves the window open at the bottom; a zero end leaves it open at
+	// the top. The window is inclusive at RFC3339 second precision, matching
+	// the gsi2 sort key. limit <= 0 returns the full matching range.
+	ListOrdersInRange(ctx context.Context, start time.Time, end time.Time, limit int, cursor OrderCursor) (OrderPage, error)
 	TransitionOrder(ctx context.Context, orderID string, from OrderStatus, to OrderStatus, patch OrderPatch) (Order, error)
 	PatchOrder(ctx context.Context, orderID string, expectedStatus OrderStatus, expectedVersion int, patch OrderPatch) (Order, error)
 
