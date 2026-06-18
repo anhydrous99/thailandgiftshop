@@ -22,6 +22,14 @@ import (
 	"github.com/aws/jsii-runtime-go"
 )
 
+// ssrAccessLogFormat is the API Gateway HTTP API access-log format for the SSR
+// stage. It MUST NOT include any raw path or query-string context variable
+// (e.g. $context.path, $context.requestPath, or query fields) because guest
+// order access tokens appear in URLs; $context.routeKey resolves to the route
+// key (e.g. $default), not the requested URL. TestSsrAccessLogFormatExcludesRawPath
+// guards this invariant.
+const ssrAccessLogFormat = `{"requestId":"$context.requestId","ip":"$context.identity.sourceIp","requestTime":"$context.requestTime","httpMethod":"$context.httpMethod","routeKey":"$context.routeKey","status":"$context.status","protocol":"$context.protocol","responseLength":"$context.responseLength","extendedRequestId":"$context.extendedRequestId","integrationError":"$context.integrationErrorMessage"}`
+
 func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable awsdynamodb.ITable, productImagesBucket awss3.IBucket, adminLoginAttemptsTable awsdynamodb.ITable, adminOriginHeaderSecret awssecretsmanager.ISecret, adminPreviousOriginHeaderSecret *string, adminOriginHeaderVersion *string, emailIdentity awsses.IEmailIdentity) ssrResources {
 	lambdaLogGroup := awslogs.NewLogGroup(stack, jsii.String("SsrLambdaLogGroup"), &awslogs.LogGroupProps{
 		LogGroupName: jsii.String(ssrLambdaLogGroupName),
@@ -130,7 +138,7 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable a
 	stage := awsapigatewayv2.NewCfnStage(stack, jsii.String("SsrHttpApiDefaultStage"), &awsapigatewayv2.CfnStageProps{
 		AccessLogSettings: &awsapigatewayv2.CfnStage_AccessLogSettingsProperty{
 			DestinationArn: accessLogGroup.LogGroupArn(),
-			Format:         jsii.String(`{"requestId":"$context.requestId","ip":"$context.identity.sourceIp","requestTime":"$context.requestTime","httpMethod":"$context.httpMethod","routeKey":"$context.routeKey","status":"$context.status","protocol":"$context.protocol","responseLength":"$context.responseLength","extendedRequestId":"$context.extendedRequestId","integrationError":"$context.integrationErrorMessage"}`),
+			Format:         jsii.String(ssrAccessLogFormat),
 		},
 		ApiId:      httpAPI.HttpApiId(),
 		AutoDeploy: jsii.Bool(true),

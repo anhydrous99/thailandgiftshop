@@ -118,6 +118,23 @@ func TestConcreteNonProductionRegionPanicSnapshot(t *testing.T) {
 	assertSnapshot(t, "concrete-non-production-region-panic.txt", []byte(fmt.Sprint(panicValue)))
 }
 
+func TestSsrAccessLogFormatExcludesRawPath(t *testing.T) {
+	// Guests' order access tokens ride in URLs, so the API Gateway access log
+	// must never capture the raw path or query string. routeKey resolves to the
+	// route key ($default), not the requested URL.
+	lower := strings.ToLower(ssrAccessLogFormat)
+	for _, forbidden := range []string{"path", "query", "uri", "url", "$input"} {
+		if strings.Contains(lower, forbidden) {
+			t.Fatalf("ssrAccessLogFormat contains URL-bearing token %q; access logs must omit raw paths/query strings: %s", forbidden, ssrAccessLogFormat)
+		}
+	}
+	for _, want := range []string{"$context.routeKey", "$context.httpMethod", "$context.status"} {
+		if !strings.Contains(ssrAccessLogFormat, want) {
+			t.Fatalf("ssrAccessLogFormat missing expected field %q", want)
+		}
+	}
+}
+
 func capturePanic(fn func()) (panicValue any) {
 	defer func() {
 		panicValue = recover()
