@@ -3,9 +3,11 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"maps"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -13,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/anhydrous99/thailandgiftshop/internal/appenv"
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
 	"github.com/anhydrous99/thailandgiftshop/internal/commerce"
 	"github.com/anhydrous99/thailandgiftshop/internal/email"
@@ -38,6 +41,13 @@ const passwordFieldName = "password"
 const csrfFieldName = "csrf_token"
 
 const dummyBcryptHash = "$2a$04$Vn0nSllZrX4bNwFaMifZAuS4xCZ9oE4DngJ02k8pYDz7zlXzpOfgK"
+
+var allowedAdminLoginHosts = map[string]struct{}{
+	"thailandgiftshop.com":     {},
+	"www.thailandgiftshop.com": {},
+	"localhost":                {},
+	"127.0.0.1":                {},
+}
 
 // adminCredentialsTTL bounds how long a warm Lambda reuses cached credentials
 // before reloading them from the environment (and, in production, re-reading
@@ -140,19 +150,25 @@ func NewHandlerFromEnvironment(ctx context.Context) (*Handler, error) {
 	if stockStore, ok := adminStore.(catalog.StockStore); ok {
 		handler.stock = stockStore
 	}
-	// Best-effort payments wiring: the CDK stack grants the admin Lambda the
-	// Stripe credentials, but a missing provider (for example a local run
-	// without the env var) must not fail admin startup. Without one, the
-	// pending-order cancel flow skips the session-expiry guard instead of
-	// refusing to cancel.
-	if provider, providerErr := payments.NewProviderFromEnvironment(ctx); providerErr != nil {
-		logAdminError("orders: payments provider unavailable; cancel skips session expiry", providerErr)
-	} else {
-		handler.payments = provider
+	if err := handler.configurePaymentsFromEnvironment(ctx); err != nil {
+		return nil, err
 	}
 	handler.loginThrottle = loginThrottle
 	handler.metrics = metrics
 	return handler, nil
+}
+
+func (h *Handler) configurePaymentsFromEnvironment(ctx context.Context) error {
+	provider, providerErr := payments.NewProviderFromEnvironment(ctx)
+	if providerErr != nil {
+		if appenv.IsProduction() {
+			return fmt.Errorf("orders payments provider: %w", providerErr)
+		}
+		logAdminError("orders: payments provider unavailable; cancel skips session expiry", providerErr)
+		return nil
+	}
+	h.payments = provider
+	return nil
 }
 
 var defaultHandler = NewHandler()
@@ -257,6 +273,9 @@ func (h *Handler) handleLogin(ctx context.Context, request events.APIGatewayV2HT
 		}
 		return adminHTMLResponse(http.StatusOK, body, nil, nil)
 	}
+	if !validAdminLoginOrigin(request) {
+		return adminHTMLResponse(http.StatusForbidden, "Forbidden", nil, nil)
+	}
 
 	credentials := h.credentialsForRequest(ctx)
 	client := adminLoginClient(request)
@@ -304,6 +323,25 @@ func (h *Handler) handleLogin(ctx context.Context, request events.APIGatewayV2HT
 		adminSessionCookie(sessionValue, session.ExpiresAt).String(),
 		adminCSRFCookie(csrfValue, session.ExpiresAt).String(),
 	})
+}
+
+func validAdminLoginOrigin(request events.APIGatewayV2HTTPRequest) bool {
+	if origin := strings.TrimSpace(httpapi.HeaderValue(request.Headers, "Origin")); origin != "" {
+		return adminLoginHostAllowed(origin)
+	}
+	if referer := strings.TrimSpace(httpapi.HeaderValue(request.Headers, "Referer")); referer != "" {
+		return adminLoginHostAllowed(referer)
+	}
+	return !appenv.IsProduction()
+}
+
+func adminLoginHostAllowed(rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+	_, ok := allowedAdminLoginHosts[strings.ToLower(parsed.Hostname())]
+	return ok
 }
 
 func (h *Handler) handleLogout(ctx context.Context, request events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {

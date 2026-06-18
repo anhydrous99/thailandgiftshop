@@ -13,6 +13,7 @@ import (
 
 	"github.com/anhydrous99/thailandgiftshop/internal/appenv"
 	"github.com/anhydrous99/thailandgiftshop/internal/httpapi"
+	"github.com/anhydrous99/thailandgiftshop/internal/payments"
 	"github.com/aws/aws-lambda-go/events"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -42,6 +43,67 @@ func TestLoginWrongPasswordUsesGenericErrorAndDoesNotSetSessionCookie(t *testing
 		t.Fatalf("response cookies = %#v, want no admin session cookie", response.Cookies)
 	}
 	assertNoStore(t, response)
+}
+
+func TestLoginRejectsForeignOrMissingOriginBeforeThrottleInProduction(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		headers map[string]string
+	}{
+		{name: "foreign origin", headers: map[string]string{"Origin": "https://evil.example.com"}},
+		{name: "missing origin and referer", headers: nil},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv(appenv.EnvAppEnvironment, appenv.EnvironmentProduction)
+			t.Setenv(EnvAdminOriginHeaderSecret, "origin-secret")
+			handler, _ := newAuthTestHandler(t)
+			throttle := newTestAdminLoginThrottle()
+			handler.loginThrottle = throttle
+
+			request := adminFormRequest(http.MethodPost, "/admin/login", url.Values{"password": {string(testWrongPassword(t))}})
+			request.Headers[adminOriginHeaderName] = "origin-secret"
+			for name, value := range test.headers {
+				request.Headers[name] = value
+			}
+
+			response, err := handler.Handle(context.Background(), request)
+			if err != nil {
+				t.Fatalf("Handle returned error: %v", err)
+			}
+			if response.StatusCode != http.StatusForbidden {
+				t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusForbidden)
+			}
+			if throttle.reserveCalls != 0 {
+				t.Fatalf("reserveCalls = %d, want 0 when origin guard rejects before throttle", throttle.reserveCalls)
+			}
+			if _, found := responseCookieValue(response, adminSessionCookieName); found {
+				t.Fatalf("response cookies = %#v, want no admin session cookie", response.Cookies)
+			}
+		})
+	}
+}
+
+func TestLoginAllowsSiteRefererInProduction(t *testing.T) {
+	t.Setenv(appenv.EnvAppEnvironment, appenv.EnvironmentProduction)
+	t.Setenv(EnvAdminOriginHeaderSecret, "origin-secret")
+	handler, _ := newAuthTestHandler(t)
+	throttle := newTestAdminLoginThrottle()
+	handler.loginThrottle = throttle
+
+	request := adminFormRequest(http.MethodPost, "/admin/login", url.Values{"password": {string(testPassword(t))}})
+	request.Headers[adminOriginHeaderName] = "origin-secret"
+	request.Headers["Referer"] = "https://thailandgiftshop.com/admin/login"
+
+	response, err := handler.Handle(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusSeeOther {
+		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusSeeOther)
+	}
+	if throttle.reserveCalls != 1 {
+		t.Fatalf("reserveCalls = %d, want 1 for same-site login", throttle.reserveCalls)
+	}
 }
 
 func TestLoginCorrectPasswordSetsAdminSessionAndCSRFTokenCookies(t *testing.T) {
@@ -712,6 +774,37 @@ func TestNewHandlerFromEnvironmentProductionFailsWithoutLoginThrottleTable(t *te
 	_, err := NewHandlerFromEnvironment(context.Background())
 	if !errors.Is(err, ErrAdminLoginThrottleNotConfigured) {
 		t.Fatalf("NewHandlerFromEnvironment error = %v, want %v", err, ErrAdminLoginThrottleNotConfigured)
+	}
+}
+
+func TestConfigurePaymentsFromEnvironmentFailsClosedInProduction(t *testing.T) {
+	t.Setenv(appenv.EnvAppEnvironment, appenv.EnvironmentProduction)
+	t.Setenv(payments.EnvPaymentsProvider, "")
+	t.Setenv(payments.EnvStripeCredentialsSecretJSON, "")
+	t.Setenv(payments.EnvStripeCredentialsSecretName, "")
+
+	handler := NewHandler()
+	err := handler.configurePaymentsFromEnvironment(context.Background())
+	if !errors.Is(err, payments.ErrPaymentsProviderNotConfigured) {
+		t.Fatalf("configurePaymentsFromEnvironment error = %v, want %v", err, payments.ErrPaymentsProviderNotConfigured)
+	}
+	if handler.payments != nil {
+		t.Fatalf("payments = %#v, want nil after production startup failure", handler.payments)
+	}
+}
+
+func TestConfigurePaymentsFromEnvironmentAllowsUnavailableProviderOutsideProduction(t *testing.T) {
+	t.Setenv(appenv.EnvAppEnvironment, "development")
+	t.Setenv(payments.EnvPaymentsProvider, payments.KindStripe)
+	t.Setenv(payments.EnvStripeCredentialsSecretJSON, "")
+	t.Setenv(payments.EnvStripeCredentialsSecretName, "")
+
+	handler := NewHandler()
+	if err := handler.configurePaymentsFromEnvironment(context.Background()); err != nil {
+		t.Fatalf("configurePaymentsFromEnvironment returned error outside production: %v", err)
+	}
+	if handler.payments != nil {
+		t.Fatalf("payments = %#v, want nil when provider is unavailable outside production", handler.payments)
 	}
 }
 

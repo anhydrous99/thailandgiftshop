@@ -134,22 +134,34 @@ func NewHandlerFromEnvironment(ctx context.Context) (*Handler, error) {
 	if stockStore, ok := catalogStore.(catalog.StockStore); ok {
 		handler.stock = stockStore
 	}
-	if paymentsProvider, providerErr := payments.NewProviderFromEnvironmentWithAWSConfigLoader(ctx, awsConfigLoader); providerErr != nil {
-		logAccountError("checkout: payments provider unavailable", providerErr)
-	} else {
-		handler.payments = paymentsProvider
-		handler.checkout = &checkout.Service{
-			Commerce:            commerceStore,
-			Payments:            paymentsProvider,
-			Stock:               handler.stock,
-			Metrics:             metrics,
-			EmailSender:         emailSender,
-			BaseURL:             payments.PublicBaseURLFromEnvironment(),
-			GuestOrderAccessURL: handler.guestOrderAccessURL(payments.PublicBaseURLFromEnvironment()),
-			CancelReturnURL:     handler.checkoutCancelReturnURL(payments.PublicBaseURLFromEnvironment()),
-		}
+	if err := handler.configureCheckoutFromEnvironment(ctx, commerceStore, emailSender, metrics, awsConfigLoader); err != nil {
+		return nil, err
 	}
 	return handler, nil
+}
+
+func (h *Handler) configureCheckoutFromEnvironment(ctx context.Context, commerceStore commerce.Store, emailSender email.Sender, metrics observability.Recorder, awsConfigLoader awsconfig.Loader) error {
+	paymentsProvider, providerErr := payments.NewProviderFromEnvironmentWithAWSConfigLoader(ctx, awsConfigLoader)
+	if providerErr != nil {
+		if appenv.IsProduction() {
+			return fmt.Errorf("checkout payments provider: %w", providerErr)
+		}
+		logAccountError("checkout: payments provider unavailable", providerErr)
+		return nil
+	}
+	h.payments = paymentsProvider
+	baseURL := payments.PublicBaseURLFromEnvironment()
+	h.checkout = &checkout.Service{
+		Commerce:            commerceStore,
+		Payments:            paymentsProvider,
+		Stock:               h.stock,
+		Metrics:             metrics,
+		EmailSender:         emailSender,
+		BaseURL:             baseURL,
+		GuestOrderAccessURL: h.guestOrderAccessURL(baseURL),
+		CancelReturnURL:     h.checkoutCancelReturnURL(baseURL),
+	}
+	return nil
 }
 
 func validateProductionSigningSecrets() error {

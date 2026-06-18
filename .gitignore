@@ -20,6 +20,12 @@ web/test-results/
 .env
 .env.*
 !.env.example
+secrets.local/
+*admin-secret*.json
+*admin-credentials*.json
+*stripe-credentials*.json
+*tgs-admin-secret*.json
+*thailandgiftshop-admin-secret*.json
 
 # AI environment
 .omo

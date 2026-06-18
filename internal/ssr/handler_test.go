@@ -756,6 +756,24 @@ func TestCartMutationRejectsForeignOrigin(t *testing.T) {
 	}
 }
 
+func TestCartMutationRejectsMissingOriginInProduction(t *testing.T) {
+	t.Setenv(appenv.EnvAppEnvironment, appenv.EnvironmentProduction)
+	request := formPostRequest("/cart/items", "slug=mango-sticky-rice-kit&quantity=1")
+
+	if validCartMutationOrigin(request) {
+		t.Fatal("validCartMutationOrigin = true, want false for missing Origin/Referer in production")
+	}
+}
+
+func TestCartMutationAllowsMissingOriginOutsideProduction(t *testing.T) {
+	t.Setenv(appenv.EnvAppEnvironment, "development")
+	request := formPostRequest("/cart/items", "slug=mango-sticky-rice-kit&quantity=1")
+
+	if !validCartMutationOrigin(request) {
+		t.Fatal("validCartMutationOrigin = false, want true for local requests without Origin/Referer")
+	}
+}
+
 func TestCartMutationAllowsSiteOrigin(t *testing.T) {
 	t.Setenv(cart.EnvCookieSecret, ssrTestCartSecret)
 	handler := NewHandler(cartRouteStore())
@@ -768,6 +786,16 @@ func TestCartMutationAllowsSiteOrigin(t *testing.T) {
 	}
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("status code = %d, want %d for a same-site cart mutation", response.StatusCode, http.StatusSeeOther)
+	}
+}
+
+func TestCartMutationAllowsSiteReferer(t *testing.T) {
+	t.Setenv(appenv.EnvAppEnvironment, appenv.EnvironmentProduction)
+	request := formPostRequest("/cart/items", "slug=mango-sticky-rice-kit&quantity=1")
+	request.Headers["referer"] = "https://www.thailandgiftshop.com/products/mango-sticky-rice-kit"
+
+	if !validCartMutationOrigin(request) {
+		t.Fatal("validCartMutationOrigin = false, want true for same-site Referer")
 	}
 }
 

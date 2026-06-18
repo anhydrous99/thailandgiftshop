@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/anhydrous99/thailandgiftshop/internal/appenv"
 	"github.com/anhydrous99/thailandgiftshop/internal/cart"
 	"github.com/anhydrous99/thailandgiftshop/internal/catalog"
 	"github.com/anhydrous99/thailandgiftshop/internal/checkout"
@@ -30,7 +31,7 @@ type cartLineView struct {
 // allowedCartMutationHosts is the set of hosts a cart-mutation POST may
 // originate from. Add-to-cart submits from edge-cached pages that cannot carry
 // a per-session CSRF token, so cart mutations are protected by an Origin /
-// Referer host check instead (plus the SameSite=Lax, POST-only baseline).
+// Referer host check instead.
 var allowedCartMutationHosts = map[string]struct{}{
 	"thailandgiftshop.com":     {},
 	"www.thailandgiftshop.com": {},
@@ -40,8 +41,7 @@ var allowedCartMutationHosts = map[string]struct{}{
 
 // validCartMutationOrigin rejects cross-site cart mutations. It checks the
 // Origin header (then Referer) host against the site's own hosts. A present
-// but foreign host is rejected; absent headers fall back to the SameSite=Lax +
-// POST-only baseline (a forged cross-site request carries neither cookie).
+// but foreign host is rejected; absent headers are rejected in production.
 func validCartMutationOrigin(request events.APIGatewayV2HTTPRequest) bool {
 	if origin := strings.TrimSpace(httpapi.HeaderValue(request.Headers, "Origin")); origin != "" {
 		return cartMutationHostAllowed(origin)
@@ -49,7 +49,7 @@ func validCartMutationOrigin(request events.APIGatewayV2HTTPRequest) bool {
 	if referer := strings.TrimSpace(httpapi.HeaderValue(request.Headers, "Referer")); referer != "" {
 		return cartMutationHostAllowed(referer)
 	}
-	return true
+	return !appenv.IsProduction()
 }
 
 func cartMutationHostAllowed(rawURL string) bool {

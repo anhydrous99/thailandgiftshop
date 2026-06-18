@@ -200,7 +200,7 @@ gofmt -l $(git ls-files '*.go')
 
 The CDK stack provisions the SSR Lambda with its own CloudWatch Logs group at `/aws/lambda/thailandgiftshop-ssr` and 3-month retention. The HTTP API stage writes access logs to `/aws/apigateway/thailandgiftshop-ssr`, also with 3-month retention. Static and product image deployment helper logs are written to `/aws/lambda/thailandgiftshop-static-assets-deployment` with the same 3-month retention policy.
 
-Three edge-log invariants protect the guest order access tokens, which ride in URL query strings: the API Gateway access-log **format string** (in `infra/main.go`) emits `$context.routeKey` and contains no raw path or query field — it must never gain `$context.path`, `$context.requestPath`, or any raw-query field; CloudFront standard logging is off and must stay off (or strip query strings) for the same reason; and WAF sampled requests are disabled because sampled-request inspection can expose request URLs. Application code likewise never logs request paths or query strings (`logAccountError`/`logHandlerError`/`logHandlerWarn` carry no query data).
+Three edge-log invariants protect the guest order access tokens, which ride in URL query strings: the API Gateway access-log **format string** (in `infra/runtime.go`) emits `$context.routeKey` and contains no raw path or query field — it must never gain `$context.path`, `$context.requestPath`, or any raw-query field; CloudFront standard logging is off and must stay off (or strip query strings) for the same reason; and WAF sampled requests are disabled because sampled-request inspection can expose request URLs. Application code likewise never logs request paths or query strings (`logAccountError`/`logHandlerError`/`logHandlerWarn` carry no query data).
 
 Lambda emits AWS-managed CloudWatch metrics automatically, and the HTTP API default stage has detailed metrics enabled. Lambda X-Ray tracing is active and the Lambda role includes the X-Ray write permissions required to publish trace data. CloudFront, WAF, S3, DynamoDB, API Gateway, Lambda, and app EMF metrics are collected into a CloudWatch dashboard named `ThailandGiftshop-Operations`.
 
@@ -276,7 +276,7 @@ aws secretsmanager put-secret-value \
   --secret-string '{"secret_key":"<sk-live-or-test-key>","webhook_signing_secret":"<whsec>"}'
 ```
 
-The CDK stack passes the secret name to both the SSR and admin Lambdas as `STRIPE_CREDENTIALS_SECRET_NAME` and grants `secretsmanager:GetSecretValue` on that name. Deployments do not resolve the secret value, so a missing Stripe secret will not roll back CloudFormation; checkout remains unavailable until the secret exists and contains valid JSON.
+The CDK stack passes the secret name to both the SSR and admin Lambdas as `STRIPE_CREDENTIALS_SECRET_NAME` and grants `secretsmanager:GetSecretValue` on that name. Deployments do not resolve the secret value, so a missing Stripe secret will not roll back CloudFormation; production SSR and admin startup fail closed until the secret exists and contains valid JSON.
 
 ### Transactional email
 

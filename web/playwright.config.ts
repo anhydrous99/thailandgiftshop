@@ -1,4 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
+import { randomBytes } from 'node:crypto';
+
+const testSecret = (name: string) => `${name}-${randomBytes(32).toString('base64url')}`;
 
 export default defineConfig({
   testDir: './tests',
@@ -19,11 +22,11 @@ export default defineConfig({
     env: {
       CATALOG_DEMO_STORE: '1',
       EMAIL_SENDER_MODE: 'fake',
-      CART_COOKIE_SECRET: 'playwright-cart-cookie-secret',
-      CUSTOMER_SESSION_SECRET: 'playwright-customer-session-secret-with-enough-entropy',
+      CART_COOKIE_SECRET: testSecret('playwright-cart-cookie-secret'),
+      CUSTOMER_SESSION_SECRET: testSecret('playwright-customer-session-secret'),
       PUBLIC_BASE_URL: 'http://127.0.0.1:8080',
       ADMIN_PASSWORD_HASH: '$2a$04$RweyV8hL8/jLlHcngOnoDeMY96aEfS2xL7EI1hQG8CpcIxvzR05Cy',
-      ADMIN_SESSION_SECRET: 'playwright-admin-session-secret-with-enough-entropy',
+      ADMIN_SESSION_SECRET: testSecret('playwright-admin-session-secret'),
     },
     url: 'http://127.0.0.1:8080/',
     reuseExistingServer: !process.env.CI,
