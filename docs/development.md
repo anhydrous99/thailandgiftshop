@@ -4,7 +4,7 @@ Local development workflow for `thailandgiftshop.com`: setup, running the devser
 
 ## Prerequisites
 
-- Go 1.25 or newer
+- Go 1.27.1 or newer (see `go.mod`)
 - Node.js 24 LTS (`.nvmrc` pins `24`) for frontend asset builds, browser tests, and CDK commands
 - AWS credentials only if you intend to read deployed data or deploy
 
@@ -124,7 +124,7 @@ go test $(sh scripts/go-packages.sh)
 npm --prefix web test
 ```
 
-`npm --prefix web test` builds assets, starts the devserver in demo mode, and runs Playwright (no Stripe keys, no network). Playwright manages its own devserver through `web/playwright.config.ts`. Browser specs live in `web/tests/*.spec.ts`.
+`npm --prefix web test` builds assets, starts a fresh demo devserver on `http://127.0.0.1:18080`, and runs Playwright (no production credentials or external payment/email services). Playwright manages its own devserver through `web/playwright.config.ts` and never reuses an existing server: an occupied test port fails explicitly rather than testing an unrelated process. The managed environment overrides production mode, secret-name/inline credential overrides, origin protection headers, and service selection with local demo/fake settings. Use Node 24 LTS and a credential-free shell for validation. Browser specs live in `web/tests/*.spec.ts`; stock-sensitive checkout and paging specs create their own products via the local admin flow.
 
 Run a single Go package or test:
 
@@ -133,10 +133,10 @@ go test ./internal/ssr/...
 go test ./internal/ssr/ -run TestName
 ```
 
-Run a single browser spec:
+Run a single browser spec from `web/` so Playwright loads its managed-server configuration:
 
 ```sh
-npm --prefix web exec playwright test tests/pages.spec.ts
+(cd web && npm exec -- playwright test tests/pages.spec.ts)
 ```
 
 CDK infrastructure tests compare the synthesized stack against snapshots in `infra/testdata/`. When an intended infrastructure change alters the synthesized CloudFormation template, update the fixtures and review the snapshot diff before committing:

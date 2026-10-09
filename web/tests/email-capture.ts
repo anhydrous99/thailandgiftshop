@@ -1,4 +1,5 @@
 import { expect, type APIRequestContext } from '@playwright/test';
+import { testServerURL } from '../test-server';
 
 export type CapturedEmailMessage = {
   id: string;
@@ -22,7 +23,7 @@ export type ClearCapturedEmailOptions = {
 };
 
 export async function clearCapturedEmails(request: APIRequestContext, options: ClearCapturedEmailOptions = {}): Promise<void> {
-  const path = new URL('/__test/emails/clear', 'http://127.0.0.1:8080');
+  const path = new URL('/__test/emails/clear', testServerURL);
   if (options.to !== undefined) {
     path.searchParams.set('to', options.to);
   }
@@ -47,7 +48,7 @@ export function findCapturedEmail(
   return messages.find((message) => matchesCapturedEmail(message, criteria)) ?? null;
 }
 
-export function extractResetLink(message: CapturedEmailMessage, baseURL = 'http://127.0.0.1:8080'): string {
+export function extractResetLink(message: CapturedEmailMessage, baseURL = testServerURL): string {
   const base = new URL(baseURL);
   const candidates = `${message.text}\n${message.html}`.match(/(?:https?:\/\/[^\s"'<>]+|\/account\/password-reset[^\s"'<>]*)/g) ?? [];
 

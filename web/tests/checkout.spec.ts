@@ -1,4 +1,5 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
+import { createTestProduct } from './product-fixtures';
 
 const password = 'playwright-demo-password';
 
@@ -140,7 +141,8 @@ test.describe('without JavaScript', () => {
     await expect(page.getByTestId('cart-line-item').filter({ hasText: 'Ceramic Tuk Tuk Magnets' })).toBeVisible();
   });
 
-  test('a canceled last-unit reservation is released by the pending-order cleanup and is purchasable again', async ({ page }, testInfo) => {
+  test('a canceled last-unit reservation is released by the pending-order cleanup and is purchasable again', async ({ page, browser }, testInfo) => {
+    const product = await createTestProduct(browser, testInfo, { stock: 1, variantLabel: 'S', price: '45.99' });
     const email = uniqueEmail(testInfo, 'lastunit');
     await signUp(page, email);
     await expect(page).toHaveURL(/\/account$/);
@@ -149,8 +151,8 @@ test.describe('without JavaScript', () => {
     await saveAddress(page, 'Last Unit Tester');
     await expect(page).toHaveURL(/\/account\/addresses$/);
 
-    // The demo scarf has exactly one S in stock; placing the order reserves it.
-    await addProductToCart(page, 'handwoven-indigo-scarf', { variantLabel: 'S' });
+    // This test owns exactly one S in stock; placing the order reserves it.
+    await addProductToCart(page, product.slug, { variantLabel: 'S' });
     await page.getByRole('link', { name: 'Check out', exact: true }).click();
     await expect(page).toHaveURL(/\/checkout$/);
     await page.getByTestId('place-order-button').click();
@@ -160,10 +162,10 @@ test.describe('without JavaScript', () => {
     await page.getByTestId('fake-pay-cancel').click();
     await expect(page).toHaveURL(/\/checkout\?canceled=1&cancel_token=[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)?$/);
     await expect(page.getByTestId('checkout-canceled-notice')).toContainText('Your cart is unchanged');
-    await expect(page.getByTestId('checkout-line-item').filter({ hasText: 'Handwoven Indigo Scarf' })).toBeVisible();
+    await expect(page.getByTestId('checkout-line-item').filter({ hasText: product.name })).toBeVisible();
 
-    await page.goto('/products/handwoven-indigo-scarf');
-    await expect(page.getByTestId('variant-select').locator('option[value="var_005_s"]')).toHaveText('S');
+    await page.goto(`/products/${product.slug}`);
+    await expect(page.getByTestId('variant-select').getByRole('option', { name: 'S', exact: true })).toBeEnabled();
 
     await page.goto('/checkout');
     await page.getByTestId('place-order-button').click();
@@ -171,7 +173,7 @@ test.describe('without JavaScript', () => {
     await page.getByTestId('fake-pay-button').click();
     await expect(page).toHaveURL(/\/orders\/[a-z0-9]{26}\?placed=1$/);
     await expect(page.getByTestId('order-status')).toHaveText('Paid');
-    await expect(page.getByTestId('order-line-item').filter({ hasText: 'Handwoven Indigo Scarf' })).toBeVisible();
+    await expect(page.getByTestId('order-line-item').filter({ hasText: product.name })).toBeVisible();
   });
 });
 

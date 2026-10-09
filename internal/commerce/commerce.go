@@ -50,27 +50,31 @@ func NormalizeEmail(email string) string {
 }
 
 type Customer struct {
-	ID               string
-	Email            string
-	EmailNormalized  string
-	PasswordHash     string
-	EmailVerified    bool
-	StripeCustomerID string
-	DefaultAddressID string
-	Version          int
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	ID              string
+	Email           string
+	EmailNormalized string
+	PasswordHash    string
+	// CredentialRevision advances only on password updates. Missing legacy
+	// customer/session revisions are zero and remain valid until the next update.
+	CredentialRevision int
+	EmailVerified      bool
+	StripeCustomerID   string
+	DefaultAddressID   string
+	Version            int
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 // Session is a server-side customer session row. TokenHash is the lowercase
 // hex SHA-256 of the raw cookie token; the raw token is never stored. DynamoDB
 // TTL expiry is lazy, so readers must re-check ExpiresAt against the clock.
 type Session struct {
-	CustomerID string
-	TokenHash  string
-	Nonce      string
-	CreatedAt  time.Time
-	ExpiresAt  time.Time
+	CredentialRevision int
+	CustomerID         string
+	TokenHash          string
+	Nonce              string
+	CreatedAt          time.Time
+	ExpiresAt          time.Time
 }
 
 // PasswordResetToken is the server-side customer password reset row. TokenHash
@@ -268,6 +272,13 @@ type Order struct {
 // pointer to the zero value clears the field. Actor labels the status-history
 // entry appended by TransitionOrder and defaults to "system".
 type OrderPatch struct {
+	// ExpectedVersion is a transient TransitionOrder precondition, checked
+	// atomically before replay handling. Nil retains unguarded replay semantics;
+	// nonnil (including zero) requires this call to mutate the verified version.
+	// A guarded replay returns ErrOrderTransitionConflict, not nil: callers must
+	// verify outcome equivalence before acknowledging it or emitting effects.
+	// Never persisted; PatchOrder uses its explicit expectedVersion instead.
+	ExpectedVersion         *int
 	Actor                   string
 	StripeCheckoutSessionID *string
 	StripePaymentIntentID   *string

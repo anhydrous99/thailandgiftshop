@@ -229,7 +229,7 @@ func (h *Handler) handleSignUpSubmit(ctx context.Context, request events.APIGate
 		return accountHTMLResponse(http.StatusInternalServerError, "Internal server error", pageAccountSignUp, nil)
 	}
 
-	return h.finishCustomerAuth(ctx, request, pageAccountSignUp, authOperationSignUp, customer.ID, returnTo)
+	return h.finishCustomerAuth(ctx, request, pageAccountSignUp, authOperationSignUp, customer, returnTo)
 }
 
 // createCustomerRetryingTransientConflicts re-attempts CreateCustomer when the
@@ -341,7 +341,7 @@ func (h *Handler) handleSignInSubmit(ctx context.Context, request events.APIGate
 		return accountHTMLResponse(http.StatusInternalServerError, "Internal server error", pageAccountSignIn, nil)
 	}
 
-	return h.finishCustomerAuth(ctx, request, pageAccountSignIn, authOperationSignIn, customer.ID, returnTo)
+	return h.finishCustomerAuth(ctx, request, pageAccountSignIn, authOperationSignIn, customer, returnTo)
 }
 
 // passwordResetRequestFloor is the minimum wall-clock duration of a reset
@@ -599,14 +599,14 @@ func (h *Handler) resetBaseURL() string {
 // guest order-pointer clear (meaningless once signed in; any stranded guest
 // pending order self-heals via the 30-minute expiry webhook), and the
 // rewritten cart mirror.
-func (h *Handler) finishCustomerAuth(ctx context.Context, request events.APIGatewayV2HTTPRequest, kind pageKind, operation string, customerID string, returnTo string) events.APIGatewayV2HTTPResponse {
-	minted, err := h.mintCustomerSession(ctx, customerID)
+func (h *Handler) finishCustomerAuth(ctx context.Context, request events.APIGatewayV2HTTPRequest, kind pageKind, operation string, customer commerce.Customer, returnTo string) events.APIGatewayV2HTTPResponse {
+	minted, err := h.mintCustomerSession(ctx, customer)
 	if err != nil {
 		logAccountError(operation+": mint session", err)
 		h.recordCustomerAuth(operation, authOutcomeError)
 		return accountHTMLResponse(http.StatusInternalServerError, "Internal server error", kind, nil)
 	}
-	mirrorCookie, err := h.mergeCartOnLogin(ctx, request, customerID)
+	mirrorCookie, err := h.mergeCartOnLogin(ctx, request, customer.ID)
 	if err != nil {
 		logAccountError(operation+": merge cart", err)
 		h.recordCustomerAuth(operation, authOutcomeError)
@@ -756,8 +756,10 @@ func (h *Handler) handlePasswordChange(ctx context.Context, request events.APIGa
 		return accountHTMLResponse(http.StatusInternalServerError, "Internal server error", pageAccountPassword, nil)
 	}
 
-	// Keep this browser signed in on a fresh token.
-	minted, err := h.mintCustomerSession(ctx, customer.ID)
+	// Keep this browser signed in on the revision committed by UpdatePassword.
+	// A subsequent concurrent password update must invalidate this token too.
+	customer.CredentialRevision++
+	minted, err := h.mintCustomerSession(ctx, customer)
 	if err != nil {
 		logAccountError("password change: mint session", err)
 		h.recordCustomerAuth(authOperationPasswordChange, authOutcomeError)
