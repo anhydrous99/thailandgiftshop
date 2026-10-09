@@ -16,7 +16,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.50.1
 	github.com/aws/aws-sdk-go-v2/service/sesv2 v1.77.0
 	github.com/aws/constructs-go/constructs/v10 v10.8.1
-	github.com/aws/jsii-runtime-go v1.140.0
+	github.com/aws/jsii-runtime-go v1.141.0
 	github.com/stripe/stripe-go/v82 v82.5.1
 	golang.org/x/crypto v0.57.0
 )
