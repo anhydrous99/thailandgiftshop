@@ -30,6 +30,23 @@ func TestThailandGiftshopStackTemplateSnapshot(t *testing.T) {
 	assertJSONSnapshot(t, "thailandgiftshop-stack.template.json", normalizeTemplate(t, template.ToJSON()))
 }
 
+func TestAdminMetricFilterWaitsForLogGroupCreation(t *testing.T) {
+	defer jsii.Close()
+
+	app := awscdk.NewApp(nil)
+	stack := NewThailandGiftshopStack(app, "TestStack", nil)
+	template := assertions.Template_FromStack(stack, nil)
+	retentionID := template.GetResourceId(jsii.String("Custom::LogRetention"), map[string]any{
+		"Properties": map[string]any{"LogGroupName": adminLambdaLogGroupName},
+	})
+	template.HasResourceProperties(jsii.String("AWS::Logs::MetricFilter"), map[string]any{
+		"FilterName": "AdminLambdaMaxMemoryUsedMB",
+		"LogGroupName": map[string]any{
+			"Fn::GetAtt": []any{*retentionID, "LogGroupName"},
+		},
+	})
+}
+
 func TestOnlyCriticalOperationsAlarmsNotify(t *testing.T) {
 	defer jsii.Close()
 
