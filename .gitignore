@@ -20,12 +20,25 @@ web/test-results/
 .env
 .env.*
 !.env.example
+.aws/
 secrets.local/
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.asc
+*.gpg
 *admin-secret*.json
 *admin-credentials*.json
 *stripe-credentials*.json
 *tgs-admin-secret*.json
 *thailandgiftshop-admin-secret*.json
+
+# Local reports and traces
+playwright-report/
+*.trace.zip
 
 # AI environment
 .omo

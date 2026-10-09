@@ -21,7 +21,14 @@ concurrency:
 jobs:
   deploy:
     name: Deploy Production
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        github.event.workflow_run.head_repository.full_name == github.repository
+      )
     runs-on: ubuntu-latest
     environment: production
     env:
@@ -61,19 +68,35 @@ jobs:
           exit "$missing"
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
+      - name: Validate workflow run source SHA
+        if: github.event_name == 'workflow_run'
+        env:
+          DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          remote_main_ref="$(git ls-remote origin refs/heads/main)"
+          remote_main_sha="${remote_main_ref%%[[:space:]]*}"
+          if [ -z "$remote_main_sha" ]; then
+            echo "::error title=Missing main ref::Could not resolve origin/main."
+            exit 1
+          fi
+          if [ "$DEPLOY_SHA" != "$remote_main_sha" ]; then
+            echo "::error title=Stale deploy source::CI completed for '$DEPLOY_SHA', but origin/main is '$remote_main_sha'."
+            exit 1
+          fi
+
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
           cache: true
           cache-dependency-path: go.sum
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -146,7 +169,7 @@ jobs:
         run: npm --prefix infra run synth
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v6.1.0
+        uses: aws-actions/configure-aws-credentials@ec61189d14ec14c8efccab744f656cffd0e33f37 # v6.1.0
         with:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
