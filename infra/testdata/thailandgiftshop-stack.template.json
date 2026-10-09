@@ -586,7 +586,12 @@
         "FunctionName": "thailandgiftshop-admin",
         "Handler": "bootstrap",
         "LoggingConfig": {
-          "LogGroup": "/aws/lambda/thailandgiftshop-admin"
+          "LogGroup": {
+            "Fn::GetAtt": [
+              "AdminLambdaLogRetentionFEF35F77",
+              "LogGroupName"
+            ]
+          }
         },
         "MemorySize": 128,
         "Role": {
@@ -728,7 +733,12 @@
       "Properties": {
         "FilterName": "AdminLambdaMaxMemoryUsedMB",
         "FilterPattern": "[report = \"REPORT\", requestIdLabel, requestId, durationLabel, duration, durationUnit, billedLabel, billedDurationLabel, billedDuration, billedDurationUnit, memoryLabel, sizeLabel, memorySize, memorySizeUnit, maxLabel, maxMemoryLabel, usedLabel, maxMemoryUsed, maxMemoryUsedUnit = \"MB\", ...]",
-        "LogGroupName": "/aws/lambda/thailandgiftshop-admin",
+        "LogGroupName": {
+          "Fn::GetAtt": [
+            "AdminLambdaLogRetentionFEF35F77",
+            "LogGroupName"
+          ]
+        },
         "MetricTransformations": [
           {
             "MetricName": "AdminLambdaMaxMemoryUsedMB",

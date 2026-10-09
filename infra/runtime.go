@@ -162,12 +162,13 @@ func addSSR(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable a
 }
 
 func addAdmin(stack awscdk.Stack, catalogTable awsdynamodb.ITable, commerceTable awsdynamodb.ITable, productImagesBucket awss3.IBucket, adminLoginAttemptsTable awsdynamodb.ITable, adminOriginHeaderSecret awssecretsmanager.ISecret, adminPreviousOriginHeaderSecret *string, customerSessionSecret awssecretsmanager.ISecret, stripeSecret awssecretsmanager.ISecret, emailIdentity awsses.IEmailIdentity, httpAPI awsapigatewayv2.HttpApi) adminResources {
-	lambdaLogGroup := awslogs.LogGroup_FromLogGroupName(stack, jsii.String("AdminLambdaLogGroup"), jsii.String(adminLambdaLogGroupName))
-	awslogs.NewLogRetention(stack, jsii.String("AdminLambdaLogRetention"), &awslogs.LogRetentionProps{
+	logRetention := awslogs.NewLogRetention(stack, jsii.String("AdminLambdaLogRetention"), &awslogs.LogRetentionProps{
 		LogGroupName:  jsii.String(adminLambdaLogGroupName),
 		RemovalPolicy: awscdk.RemovalPolicy_RETAIN,
 		Retention:     awslogs.RetentionDays_THREE_MONTHS,
 	})
+	// The retention resource creates the group before Lambda and metric filters use it.
+	lambdaLogGroup := awslogs.LogGroup_FromLogGroupArn(stack, jsii.String("AdminLambdaLogGroup"), logRetention.LogGroupArn())
 
 	adminFunction := awslambda.NewFunction(stack, jsii.String("AdminLambda"), &awslambda.FunctionProps{
 		Architecture: awslambda.Architecture_ARM_64(),
