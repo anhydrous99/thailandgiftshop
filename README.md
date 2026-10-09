@@ -3,7 +3,7 @@
 > Server-rendered Bangkok-style online gift shop — snacks, souvenirs, textiles, pantry, decor, wellness, and small keepsakes.
 
 [![CI](https://github.com/anhydrous99/thailandgiftshop/actions/workflows/ci.yml/badge.svg)](https://github.com/anhydrous99/thailandgiftshop/actions/workflows/ci.yml)
-[![Go](https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go&logoColor=white)](go.mod)
+[![Go](https://img.shields.io/badge/Go-1.27.1%2B-00ADD8?logo=go&logoColor=white)](go.mod)
 [![Node](https://img.shields.io/badge/Node-24%20LTS-339933?logo=node.js&logoColor=white)](.nvmrc)
 [![AWS CDK](https://img.shields.io/badge/AWS%20CDK-v2-FF9900?logo=amazonaws&logoColor=white)](infra/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind%20CSS-v4-06B6D4?logo=tailwindcss&logoColor=white)](web/)
@@ -42,14 +42,14 @@ Monorepo for [`thailandgiftshop.com`](https://thailandgiftshop.com). Go Lambda b
 
 | Layer | Technology |
 | --- | --- |
-| Language | Go 1.25 |
+| Language | Go 1.27.1 |
 | Rendering | [`templ`](https://templ.guide) components compiled to `*_templ.go` |
 | Styling | Tailwind CSS v4 + progressive-enhancement JS |
 | Images | `sharp` responsive variants (`-320w`..`-1200w`, JPEG/WebP) |
 | Compute | AWS Lambda (`ssr`, `admin`) behind API Gateway HTTP API |
 | Edge | CloudFront + AWS WAF |
 | Data | DynamoDB (single-table catalog + commerce) |
-| Storage | S3 (`/static/` pruned, `/images/` retained) |
+| Storage | S3 (static fingerprints and product images retained across deploys) |
 | Payments | Stripe hosted checkout |
 | Email | AWS SES v2 |
 | Infrastructure | AWS CDK v2 (Go) |
@@ -91,7 +91,7 @@ CloudFront is the single public entry point: it serves assets from two private S
 
 ## Prerequisites
 
-- Go 1.25 or newer
+- Go 1.27.1 or newer (see `go.mod`)
 - Node.js 24 LTS (frontend asset builds, browser tests, CDK commands)
 - AWS credentials only if you intend to read deployed data or deploy
 
@@ -154,7 +154,7 @@ See [AGENTS.md](AGENTS.md) for the full repository guidelines.
 
 ## Security
 
-- No real secrets live in the repository. Production loads admin, Stripe, and signing secrets from AWS Secrets Manager at runtime; local/dev uses generated or inline overrides. Never commit plaintext passwords, bcrypt hashes, or session/cookie secrets.
+- No real secrets live in the repository. Production fetches admin and Stripe credentials from AWS Secrets Manager at runtime; CloudFormation resolves cart and customer-session signing secrets into Lambda environment variables at deployment. Signing-secret rotation requires a Lambda configuration and serving-version rollout; see [signing secrets](docs/configuration.md#signing-secrets). Local/dev uses generated or inline overrides. Never commit plaintext passwords, bcrypt hashes, or session/cookie secrets.
 - Card entry happens exclusively on Stripe's hosted checkout page; the site never sees or stores card numbers.
 - **Logging invariant:** access logs must never include raw paths or query strings, because guest order access tokens can appear in URLs. See [docs/operations.md](docs/operations.md#edge-log-invariants).
 

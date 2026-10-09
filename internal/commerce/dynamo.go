@@ -424,10 +424,12 @@ func (s *DynamoStore) UpdatePassword(ctx context.Context, customerID string, new
 		TableName:                aws.String(s.tableName),
 		Key:                      itemKey(customerPK(customerID), customerSK),
 		ConditionExpression:      aws.String("attribute_exists(pk) AND #version = :expected_version"),
-		UpdateExpression:         aws.String("SET password_hash = :password_hash, #version = :new_version, updated_at = :updated_at"),
+		UpdateExpression:         aws.String("SET password_hash = :password_hash, #version = :new_version, updated_at = :updated_at ADD credential_revision :one"),
 		ExpressionAttributeNames: map[string]string{"#version": "version"},
 		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":password_hash":    &types.AttributeValueMemberS{Value: newHash},
+			":password_hash": &types.AttributeValueMemberS{Value: newHash},
+			// ADD treats a missing legacy revision as zero.
+			":one":              numberValue(1),
 			":expected_version": numberValue(int64(expectedVersion)),
 			":new_version":      numberValue(int64(expectedVersion + 1)),
 			":updated_at":       &types.AttributeValueMemberS{Value: formatCommerceTime(s.clock())},
@@ -906,8 +908,11 @@ func (s *DynamoStore) TransitionOrder(ctx context.Context, orderID string, from 
 	if !found {
 		return Order{}, fmt.Errorf("commerce order %q not found", orderID)
 	}
+	if patch.ExpectedVersion != nil && (order.Version != *patch.ExpectedVersion || order.Status == to) {
+		return Order{}, fmt.Errorf("%w: verified order version changed or transition already applied", ErrOrderTransitionConflict)
+	}
 	if order.Status == to {
-		// Replayed transition (webhook retry, duplicate delivery): no-op success.
+		// Unguarded replay: no-op success.
 		return order, nil
 	}
 	if !AllowedOrderTransition(from, to) {
@@ -933,12 +938,24 @@ func (s *DynamoStore) TransitionOrder(ctx context.Context, orderID string, from 
 	builder.values[":history_event"] = eventValue
 	applyOrderPatchToBuilder(builder, patch)
 	builder.values[":from_status"] = &types.AttributeValueMemberS{Value: string(from)}
-	builder.values[":expected_version"] = numberValue(int64(order.Version))
+	expectedVersion := order.Version
+	if patch.ExpectedVersion != nil {
+		// The atomic write must use the caller's verified snapshot, never a
+		// newer version learned by this store's preflight read.
+		expectedVersion = *patch.ExpectedVersion
+	}
+	builder.values[":expected_version"] = numberValue(int64(expectedVersion))
+	condition := "#status = :from_status AND #version = :expected_version"
+	if patch.ExpectedVersion != nil && expectedVersion == 0 {
+		// Legacy missing version decodes to zero. Both OR arms remain status-
+		// bound (AND has precedence); positive expectations never use this.
+		condition += " OR #status = :from_status AND attribute_not_exists(#version)"
+	}
 
 	output, err := s.updateItem(ctx, &dynamodb.UpdateItemInput{
 		TableName:                 aws.String(s.tableName),
 		Key:                       itemKey(orderPK(orderID), orderSK),
-		ConditionExpression:       aws.String("#status = :from_status AND #version = :expected_version"),
+		ConditionExpression:       aws.String(condition),
 		UpdateExpression:          aws.String(builder.expression()),
 		ExpressionAttributeNames:  builder.names,
 		ExpressionAttributeValues: builder.values,
@@ -1144,6 +1161,9 @@ func (s *DynamoStore) getItem(ctx context.Context, pk string, sk string, method 
 	output, err := s.get.GetItem(ctx, &dynamodb.GetItemInput{
 		TableName: aws.String(s.tableName),
 		Key:       itemKey(pk, sk),
+		// Authorization and refund conflict classification need committed state.
+		// Strong reads complement, but do not replace, conditional order writes.
+		ConsistentRead: aws.Bool(sk == customerSK || sk == orderSK),
 	})
 	s.recordCommerceOperation("GetItem", method, time.Since(started))
 	if err != nil {
@@ -1396,19 +1416,20 @@ func applyOrderPatchToBuilder(builder *updateExpressionBuilder, patch OrderPatch
 // GSI attributes.
 
 type customerDynamoItem struct {
-	PK               string `dynamodbav:"pk"`
-	SK               string `dynamodbav:"sk"`
-	EntityType       string `dynamodbav:"entity_type"`
-	CustomerID       string `dynamodbav:"customer_id"`
-	Email            string `dynamodbav:"email"`
-	EmailNormalized  string `dynamodbav:"email_normalized"`
-	PasswordHash     string `dynamodbav:"password_hash"`
-	EmailVerified    bool   `dynamodbav:"email_verified"`
-	StripeCustomerID string `dynamodbav:"stripe_customer_id,omitempty"`
-	DefaultAddressID string `dynamodbav:"default_address_id,omitempty"`
-	Version          *int   `dynamodbav:"version,omitempty"`
-	CreatedAt        string `dynamodbav:"created_at,omitempty"`
-	UpdatedAt        string `dynamodbav:"updated_at,omitempty"`
+	PK                 string `dynamodbav:"pk"`
+	SK                 string `dynamodbav:"sk"`
+	EntityType         string `dynamodbav:"entity_type"`
+	CustomerID         string `dynamodbav:"customer_id"`
+	Email              string `dynamodbav:"email"`
+	EmailNormalized    string `dynamodbav:"email_normalized"`
+	PasswordHash       string `dynamodbav:"password_hash"`
+	CredentialRevision int    `dynamodbav:"credential_revision"`
+	EmailVerified      bool   `dynamodbav:"email_verified"`
+	StripeCustomerID   string `dynamodbav:"stripe_customer_id,omitempty"`
+	DefaultAddressID   string `dynamodbav:"default_address_id,omitempty"`
+	Version            *int   `dynamodbav:"version,omitempty"`
+	CreatedAt          string `dynamodbav:"created_at,omitempty"`
+	UpdatedAt          string `dynamodbav:"updated_at,omitempty"`
 }
 
 type emailLockDynamoItem struct {
@@ -1421,13 +1442,14 @@ type emailLockDynamoItem struct {
 }
 
 type sessionDynamoItem struct {
-	PK         string `dynamodbav:"pk"`
-	SK         string `dynamodbav:"sk"`
-	EntityType string `dynamodbav:"entity_type"`
-	CustomerID string `dynamodbav:"customer_id"`
-	Nonce      string `dynamodbav:"nonce"`
-	CreatedAt  string `dynamodbav:"created_at,omitempty"`
-	ExpiresAt  int64  `dynamodbav:"expires_at"`
+	CredentialRevision int    `dynamodbav:"credential_revision"`
+	PK                 string `dynamodbav:"pk"`
+	SK                 string `dynamodbav:"sk"`
+	EntityType         string `dynamodbav:"entity_type"`
+	CustomerID         string `dynamodbav:"customer_id"`
+	Nonce              string `dynamodbav:"nonce"`
+	CreatedAt          string `dynamodbav:"created_at,omitempty"`
+	ExpiresAt          int64  `dynamodbav:"expires_at"`
 }
 
 type passwordResetTokenDynamoItem struct {
@@ -1579,19 +1601,20 @@ type stripeEventDynamoItem struct {
 
 func customerItem(customer Customer) (map[string]types.AttributeValue, error) {
 	return attributevalue.MarshalMap(customerDynamoItem{
-		PK:               customerPK(customer.ID),
-		SK:               customerSK,
-		EntityType:       entityCustomer,
-		CustomerID:       customer.ID,
-		Email:            customer.Email,
-		EmailNormalized:  customer.EmailNormalized,
-		PasswordHash:     customer.PasswordHash,
-		EmailVerified:    customer.EmailVerified,
-		StripeCustomerID: customer.StripeCustomerID,
-		DefaultAddressID: customer.DefaultAddressID,
-		Version:          intPtr(customer.Version),
-		CreatedAt:        formatCommerceTime(customer.CreatedAt),
-		UpdatedAt:        formatCommerceTime(customer.UpdatedAt),
+		PK:                 customerPK(customer.ID),
+		SK:                 customerSK,
+		EntityType:         entityCustomer,
+		CustomerID:         customer.ID,
+		Email:              customer.Email,
+		EmailNormalized:    customer.EmailNormalized,
+		PasswordHash:       customer.PasswordHash,
+		CredentialRevision: customer.CredentialRevision,
+		EmailVerified:      customer.EmailVerified,
+		StripeCustomerID:   customer.StripeCustomerID,
+		DefaultAddressID:   customer.DefaultAddressID,
+		Version:            intPtr(customer.Version),
+		CreatedAt:          formatCommerceTime(customer.CreatedAt),
+		UpdatedAt:          formatCommerceTime(customer.UpdatedAt),
 	})
 }
 
@@ -1613,16 +1636,17 @@ func customerFromItem(item map[string]types.AttributeValue) (Customer, error) {
 	}
 
 	return Customer{
-		ID:               record.CustomerID,
-		Email:            record.Email,
-		EmailNormalized:  record.EmailNormalized,
-		PasswordHash:     record.PasswordHash,
-		EmailVerified:    record.EmailVerified,
-		StripeCustomerID: record.StripeCustomerID,
-		DefaultAddressID: record.DefaultAddressID,
-		Version:          intValue(record.Version),
-		CreatedAt:        createdAt,
-		UpdatedAt:        updatedAt,
+		ID:                 record.CustomerID,
+		Email:              record.Email,
+		EmailNormalized:    record.EmailNormalized,
+		PasswordHash:       record.PasswordHash,
+		CredentialRevision: record.CredentialRevision,
+		EmailVerified:      record.EmailVerified,
+		StripeCustomerID:   record.StripeCustomerID,
+		DefaultAddressID:   record.DefaultAddressID,
+		Version:            intValue(record.Version),
+		CreatedAt:          createdAt,
+		UpdatedAt:          updatedAt,
 	}, nil
 }
 
@@ -1650,13 +1674,14 @@ func emailLockFromItem(item map[string]types.AttributeValue) (emailLockDynamoIte
 
 func sessionItem(session Session) (map[string]types.AttributeValue, error) {
 	return attributevalue.MarshalMap(sessionDynamoItem{
-		PK:         customerPK(session.CustomerID),
-		SK:         sessionSK(session.TokenHash),
-		EntityType: entitySession,
-		CustomerID: session.CustomerID,
-		Nonce:      session.Nonce,
-		CreatedAt:  formatCommerceTime(session.CreatedAt),
-		ExpiresAt:  session.ExpiresAt.UTC().Unix(),
+		PK:                 customerPK(session.CustomerID),
+		SK:                 sessionSK(session.TokenHash),
+		CredentialRevision: session.CredentialRevision,
+		EntityType:         entitySession,
+		CustomerID:         session.CustomerID,
+		Nonce:              session.Nonce,
+		CreatedAt:          formatCommerceTime(session.CreatedAt),
+		ExpiresAt:          session.ExpiresAt.UTC().Unix(),
 	})
 }
 
@@ -1674,11 +1699,12 @@ func sessionFromItem(item map[string]types.AttributeValue) (Session, error) {
 	}
 
 	return Session{
-		CustomerID: record.CustomerID,
-		TokenHash:  strings.TrimPrefix(record.SK, sessionSKPrefix),
-		Nonce:      record.Nonce,
-		CreatedAt:  createdAt,
-		ExpiresAt:  time.Unix(record.ExpiresAt, 0).UTC(),
+		CustomerID:         record.CustomerID,
+		TokenHash:          strings.TrimPrefix(record.SK, sessionSKPrefix),
+		CredentialRevision: record.CredentialRevision,
+		Nonce:              record.Nonce,
+		CreatedAt:          createdAt,
+		ExpiresAt:          time.Unix(record.ExpiresAt, 0).UTC(),
 	}, nil
 }
 

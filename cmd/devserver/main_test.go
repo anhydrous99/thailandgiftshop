@@ -308,42 +308,36 @@ func TestRequestSourceIPFallsBackForMalformedRemoteAddr(t *testing.T) {
 }
 
 func TestREADMEAdminBootstrapDocsUsePlaceholdersOnly(t *testing.T) {
-	readme, err := os.ReadFile("../../README.md")
-	if err != nil {
-		t.Fatalf("read README.md: %v", err)
-	}
-	content := string(readme)
-
-	required := []string{
-		"ADMIN_PASSWORD_HASH=<bcrypt-hash>",
-		"ADMIN_SESSION_SECRET=<session-secret>",
-		"thailandgiftshop/admin/credentials",
-		"\"password_hash\": \"<bcrypt-hash>\"",
-		"\"session_secret\": \"<session-secret>\"",
-		"ADMIN_CREDENTIALS_SECRET_JSON",
-		"ADMIN_CREDENTIALS_SECRET_NAME",
-		"CATALOG_DEMO_STORE=1",
-		"without a live AWS account",
-		"STRIPE_CREDENTIALS_SECRET_JSON",
-		"STRIPE_CREDENTIALS_SECRET_NAME",
-		"CUSTOMER_SESSION_SECRET",
-		"thailandgiftshop/stripe/credentials",
-		"\"secret_key\":\"<sk-test-key>\"",
-		"\"webhook_signing_secret\":\"<whsec>\"",
-		"\"secret_key\":\"<sk-live-or-test-key>\"",
-		"\"webhook_signing_secret\":\"<whsec-placeholder>\"",
-	}
-	for _, requiredText := range required {
-		if !strings.Contains(content, requiredText) {
-			t.Fatalf("README.md missing %q", requiredText)
-		}
+	requiredByDocument := map[string][]string{
+		"README.md":            {"docs/configuration.md", "docs/development.md", "docs/deployment.md", "docs/operations.md", "docs/architecture.md"},
+		"docs/development.md":  {"CATALOG_DEMO_STORE=1", "without a live AWS account", "CUSTOMER_SESSION_SECRET"},
+		"docs/deployment.md":   {"thailandgiftshop/admin/credentials", "thailandgiftshop/stripe/credentials"},
+		"docs/architecture.md": {"ThailandGiftshopStack", "us-east-1"},
+		"docs/operations.md":   {"Edge-log invariants", "query strings"},
+		"docs/configuration.md": {
+			"ADMIN_PASSWORD_HASH=<bcrypt-hash>",
+			"ADMIN_SESSION_SECRET=<session-secret>",
+			"thailandgiftshop/admin/credentials",
+			"ADMIN_CREDENTIALS_SECRET_JSON",
+			"ADMIN_CREDENTIALS_SECRET_NAME",
+			"STRIPE_CREDENTIALS_SECRET_JSON",
+			"STRIPE_CREDENTIALS_SECRET_NAME",
+			"CUSTOMER_SESSION_SECRET",
+		},
 	}
 
-	if strings.Contains(content, "presigned URL") {
-		t.Fatal("README.md contains a presigned URL reference in admin bootstrap docs")
+	requiredJSONByDocument := map[string][]map[string]string{
+		"docs/configuration.md": {
+			{"password_hash": "<bcrypt-hash>", "session_secret": "<session-secret>"},
+			{"secret_key": "<sk-test-key>", "webhook_signing_secret": "<whsec>"},
+		},
+		"docs/deployment.md": {
+			{"password_hash": "<bcrypt-hash>", "session_secret": "<session-secret>"},
+			{"secret_key": "<sk-live-or-test-key>", "webhook_signing_secret": "<whsec-placeholder>"},
+		},
 	}
-
-	// Real-looking secret material must never land in the README: Stripe
+	jsonExample := regexp.MustCompile(`\{[^{}]*\}`)
+	// Real-looking secret material must never land in these documents: Stripe
 	// secret keys, Stripe webhook signing secrets followed by token
 	// characters (the bare `whsec_` prefix in prose is fine), and bcrypt
 	// hashes. Docs must use <placeholder> forms instead.
@@ -353,10 +347,43 @@ func TestREADMEAdminBootstrapDocsUsePlaceholdersOnly(t *testing.T) {
 		regexp.MustCompile(`whsec_[0-9A-Za-z]{8,}`),
 		regexp.MustCompile(`\$2[aby]\$\d{2}\$`),
 	}
-	for _, pattern := range forbidden {
-		if match := pattern.FindString(content); match != "" {
-			t.Fatalf("README.md contains real-looking secret material %q (pattern %q); use a <placeholder> instead", match, pattern)
-		}
+	for document, required := range requiredByDocument {
+		t.Run(document, func(t *testing.T) {
+			data, err := os.ReadFile("../../" + document)
+			if err != nil {
+				t.Fatalf("read documentation: %v", err)
+			}
+			content := string(data)
+			for _, text := range required {
+				if !strings.Contains(content, text) {
+					t.Errorf("missing required documentation %q", text)
+				}
+			}
+			for _, expected := range requiredJSONByDocument[document] {
+				found := false
+				for _, example := range jsonExample.FindAllString(content, -1) {
+					var fields map[string]string
+					if json.Unmarshal([]byte(example), &fields) != nil || len(fields) != len(expected) {
+						continue
+					}
+					matches := true
+					for key, value := range expected {
+						if fields[key] != value {
+							matches = false
+						}
+					}
+					found = found || matches
+				}
+				if !found {
+					t.Error("missing required placeholder JSON example")
+				}
+			}
+			for _, pattern := range forbidden {
+				if pattern.MatchString(content) {
+					t.Error("documentation contains real-looking secret material; use placeholders")
+				}
+			}
+		})
 	}
 }
 

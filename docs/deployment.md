@@ -171,7 +171,21 @@ CI runs on pull requests and pushes to `main`:
 - `go vet` for tracked Go package directories
 - `npx cdk synth`
 
-The CI workflow is path-aware and runs for Go, infrastructure, static asset, or workflow changes. The deployment workflow runs after the `CI` workflow completes successfully on `main`, and can also be run manually with workflow dispatch (which must run from `main`). The deploy job runs `cdk diff` then `cdk deploy ThailandGiftshopStack --require-approval never`.
+The CI workflow is path-aware and runs for Go, infrastructure, static asset, or workflow changes. The deployment workflow is triggered after the `CI` workflow completes successfully on `main`, and can also be run manually with workflow dispatch (which must run from `main`). Both triggers enter a deploy job targeting the `production` GitHub environment; its required-reviewer gate must be approved before any job steps run. After approval and validation, the job runs `cdk diff` then `cdk deploy ThailandGiftshopStack --require-approval never`. That CDK flag disables CDK's interactive confirmation, not GitHub's environment approval gate.
+
+### Production approval gate
+
+The approval gate is GitHub repository configuration under **Settings → Environments → production**, not a resource created by CDK or the workflow YAML. The workflow's existing `environment: production` declaration binds the deploy job to these settings:
+
+| Setting | Configuration |
+| --- | --- |
+| Required reviewer | `@anhydrous99` |
+| Administrator bypass | Disabled |
+| Prevent self-review | Disabled, so the designated reviewer can approve deployments from their own pushes |
+
+To approve a waiting deployment, open **Actions → Deploy → the waiting run → Review deployments**, verify the intended source commit, select `production`, and choose **Approve and deploy**. Reject the deployment if its source or validation is not acceptable. Configure another eligible reviewer before preventing self-review, otherwise the sole reviewer cannot approve their own deployment runs.
+
+Environment protection is effective as soon as the repository settings are saved and applies to both automatic and manually dispatched deploy jobs. It does not gate local `cdk deploy` commands made with direct AWS credentials; those remain subject to AWS permissions and operator procedures.
 
 Configure these GitHub settings before the first deployment:
 

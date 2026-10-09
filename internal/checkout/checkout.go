@@ -888,7 +888,7 @@ func (s *Service) RefundOrderAs(ctx context.Context, order commerce.Order, actor
 	// refund_failed -> refund_pending retry; on first issuance it is a
 	// harmless REMOVE of an absent attribute.
 	clearReason := ""
-	patch := commerce.OrderPatch{Actor: actor, StripeRefundID: &refund.ID, RefundAttempt: &attempt, RefundFailureReason: &clearReason}
+	patch := commerce.OrderPatch{ExpectedVersion: &order.Version, Actor: actor, StripeRefundID: &refund.ID, RefundAttempt: &attempt, RefundFailureReason: &clearReason}
 	updated, err := s.Commerce.TransitionOrder(ctx, order.ID, order.Status, commerce.OrderStatusRefundPending, patch)
 	switch {
 	case err == nil:
@@ -900,7 +900,10 @@ func (s *Service) RefundOrderAs(ctx context.Context, order commerce.Order, actor
 		// (for example a concurrent advance to shipped) is reported — the
 		// orphan refund converges on the next click or via its webhooks.
 		current, found, getErr := s.Commerce.GetOrder(ctx, order.ID)
-		if getErr != nil || !found || !orderIsRefundFamily(current.Status) {
+		if getErr != nil {
+			err = errors.Join(err, getErr)
+		}
+		if getErr != nil || !found || !orderIsRefundFamily(current.Status) || current.StripeRefundID != refund.ID || current.RefundAttempt != attempt {
 			s.recordCheckoutRefund(outcomeRefundError)
 			return order, err
 		}
@@ -910,7 +913,9 @@ func (s *Service) RefundOrderAs(ctx context.Context, order commerce.Order, actor
 		return order, err
 	}
 
-	updated = s.applyRefundOutcome(ctx, updated, refund)
+	// The provider refund is irreversible. Settlement is best-effort here;
+	// webhook redelivery or admin reconciliation retries persistence failures.
+	updated, _ = s.applyRefundOutcome(ctx, updated, refund)
 
 	if updated.ShippedAt.IsZero() {
 		if err := s.ClaimAndReleaseOrderStock(ctx, order.ID); err != nil {
@@ -927,9 +932,9 @@ func (s *Service) RefundOrderAs(ctx context.Context, order commerce.Order, actor
 // applyRefundOutcome moves a refund_pending order forward when the provider
 // reports a terminal refund status. Settlements are recorded with actor
 // "stripe" regardless of who initiated the refund. Idempotent; returns the
-// freshest order it knows. Store failures are logged and recorded
-// (outcome=error) but never unwind the issued refund.
-func (s *Service) applyRefundOutcome(ctx context.Context, order commerce.Order, refund payments.Refund) commerce.Order {
+// freshest order it knows and any persistence error. Callers decide whether
+// to retry delivery or retain best-effort behavior for an already-issued refund.
+func (s *Service) applyRefundOutcome(ctx context.Context, order commerce.Order, refund payments.Refund) (commerce.Order, error) {
 	if order.StripeRefundID != "" && refund.ID != order.StripeRefundID {
 		// By the time this runs, applyRefundEvent has already adopted any
 		// legitimately newer attempt, so everything dropped here really is an
@@ -939,13 +944,13 @@ func (s *Service) applyRefundOutcome(ctx context.Context, order commerce.Order, 
 			slog.String("order_refund_id", order.StripeRefundID),
 			slog.String("refund_id", refund.ID),
 		)
-		return order
+		return order, nil
 	}
 
 	switch refund.Status {
 	case payments.RefundStatusSucceeded:
 		if order.Status != commerce.OrderStatusRefundPending {
-			return order
+			return order, nil
 		}
 		if refund.AmountCents > 0 && refund.AmountCents != order.TotalCents {
 			// Warn, never block: a dashboard partial refund followed by our
@@ -958,19 +963,19 @@ func (s *Service) applyRefundOutcome(ctx context.Context, order commerce.Order, 
 			)
 		}
 		refundedAt := s.now()
-		updated, err := s.Commerce.TransitionOrder(ctx, order.ID, commerce.OrderStatusRefundPending, commerce.OrderStatusRefunded, commerce.OrderPatch{Actor: commerce.OrderActorStripe, RefundedAt: &refundedAt})
+		updated, err := s.Commerce.TransitionOrder(ctx, order.ID, commerce.OrderStatusRefundPending, commerce.OrderStatusRefunded, commerce.OrderPatch{ExpectedVersion: &order.Version, Actor: commerce.OrderActorStripe, RefundedAt: &refundedAt})
 		if err != nil {
 			return s.refundOutcomeTransitionFailed(ctx, order, refund, err)
 		}
 		s.sendOrderStatusChangedEmail(ctx, updated, commerce.OrderStatusRefundPending, commerce.OrderStatusRefunded)
 		s.recordCheckoutRefund(outcomeRefundSettled)
-		return updated
+		return updated, nil
 	case payments.RefundStatusFailed:
 		if order.Status != commerce.OrderStatusRefundPending {
-			return order
+			return order, nil
 		}
 		reason := refund.FailureReason
-		updated, err := s.Commerce.TransitionOrder(ctx, order.ID, commerce.OrderStatusRefundPending, commerce.OrderStatusRefundFailed, commerce.OrderPatch{Actor: commerce.OrderActorStripe, RefundFailureReason: &reason})
+		updated, err := s.Commerce.TransitionOrder(ctx, order.ID, commerce.OrderStatusRefundPending, commerce.OrderStatusRefundFailed, commerce.OrderPatch{ExpectedVersion: &order.Version, Actor: commerce.OrderActorStripe, RefundFailureReason: &reason})
 		if err != nil {
 			return s.refundOutcomeTransitionFailed(ctx, order, refund, err)
 		}
@@ -981,29 +986,38 @@ func (s *Service) applyRefundOutcome(ctx context.Context, order commerce.Order, 
 			slog.String("refund_id", refund.ID),
 			slog.String("failure_reason", refund.FailureReason),
 		)
-		return updated
+		return updated, nil
 	case payments.RefundStatusCanceled:
 		// Customer-balance-only state; cannot occur for our card refunds.
 		checkoutLogger.Warn("refund outcome canceled ignored",
 			slog.String("order_id", order.ID),
 			slog.String("refund_id", refund.ID),
 		)
-		return order
+		return order, nil
 	}
 
 	// pending / requires_action: still settling.
-	return order
+	return order, nil
 }
 
 // refundOutcomeTransitionFailed classifies a failed settlement transition:
 // losing the race to another settler is success (return the freshest order);
 // anything else is logged and recorded — the refund.* webhooks re-drive it.
-func (s *Service) refundOutcomeTransitionFailed(ctx context.Context, order commerce.Order, refund payments.Refund, err error) commerce.Order {
+func (s *Service) refundOutcomeTransitionFailed(ctx context.Context, order commerce.Order, refund payments.Refund, err error) (commerce.Order, error) {
 	if errors.Is(err, commerce.ErrOrderTransitionConflict) {
 		current, found, getErr := s.Commerce.GetOrder(ctx, order.ID)
+		if getErr != nil {
+			// Preserve the retryable read failure as well as the CAS conflict.
+			err = errors.Join(err, getErr)
+		}
 		if getErr == nil && found {
-			if orderIsRefundFamily(current.Status) && current.Status != commerce.OrderStatusRefundPending {
-				return current
+			expectedStatus := commerce.OrderStatusRefunded
+			if refund.Status == payments.RefundStatusFailed {
+				expectedStatus = commerce.OrderStatusRefundFailed
+			}
+			sameFailureReason := refund.Status != payments.RefundStatusFailed || current.RefundFailureReason == refund.FailureReason
+			if current.StripeRefundID == refund.ID && current.RefundAttempt == order.RefundAttempt && current.Status == expectedStatus && sameFailureReason {
+				return current, nil
 			}
 			order = current
 		}
@@ -1015,7 +1029,7 @@ func (s *Service) refundOutcomeTransitionFailed(ctx context.Context, order comme
 		slog.String("error", err.Error()),
 	)
 	s.recordCheckoutRefund(outcomeRefundError)
-	return order
+	return order, err
 }
 
 // refundMatchesOrder authenticates a refund event against the order it claims
@@ -1066,6 +1080,13 @@ func (s *Service) applyRefundEvent(ctx context.Context, order commerce.Order, ev
 			slog.String("refund_id", refund.ID),
 		)
 		return nil
+	case commerce.OrderStatusRefundPending, commerce.OrderStatusRefunded:
+		if order.StripeRefundID != "" && refund.ID != order.StripeRefundID {
+			// Freshly verified stale replay is safely ACKed, but must not drive
+			// stock or lifecycle effects for a different attempt. An inflight
+			// CAS loser instead returns an unresolved conflict (no event marker).
+			return nil
+		}
 	case commerce.OrderStatusRefundFailed:
 		switch {
 		case refund.ID == order.StripeRefundID:
@@ -1078,12 +1099,14 @@ func (s *Service) applyRefundEvent(ctx context.Context, order commerce.Order, ev
 			clearReason := ""
 			attempt := refund.Attempt
 			patch := commerce.OrderPatch{Actor: commerce.OrderActorStripe, StripeRefundID: &refund.ID, RefundAttempt: &attempt, RefundFailureReason: &clearReason}
-			updated, err := s.transitionAdoptingRefund(ctx, order, commerce.OrderStatusRefundFailed, patch)
+			updated, mutated, err := s.transitionAdoptingRefund(ctx, order, commerce.OrderStatusRefundFailed, patch)
 			if err != nil {
 				return err // transient: Stripe retries
 			}
-			s.sendOrderStatusChangedEmail(ctx, updated, commerce.OrderStatusRefundFailed, commerce.OrderStatusRefundPending)
-			s.recordCheckoutRefund(outcomeRefundIssued)
+			if mutated {
+				s.sendOrderStatusChangedEmail(ctx, updated, commerce.OrderStatusRefundFailed, commerce.OrderStatusRefundPending)
+				s.recordCheckoutRefund(outcomeRefundIssued)
+			}
 			order = updated
 		default:
 			// Older or unattributable (Attempt 0) refund: stale, drop.
@@ -1106,17 +1129,22 @@ func (s *Service) applyRefundEvent(ctx context.Context, order commerce.Order, ev
 			attempt = order.RefundAttempt + 1
 		}
 		patch := commerce.OrderPatch{Actor: commerce.OrderActorStripe, StripeRefundID: &refund.ID, RefundAttempt: &attempt}
-		updated, err := s.transitionAdoptingRefund(ctx, order, order.Status, patch)
+		updated, mutated, err := s.transitionAdoptingRefund(ctx, order, order.Status, patch)
 		if err != nil {
 			return err // transient: Stripe retries
 		}
-		s.sendOrderStatusChangedEmail(ctx, updated, order.Status, commerce.OrderStatusRefundPending)
-		s.recordCheckoutRefund(outcomeRefundIssued)
+		if mutated {
+			s.sendOrderStatusChangedEmail(ctx, updated, order.Status, commerce.OrderStatusRefundPending)
+			s.recordCheckoutRefund(outcomeRefundIssued)
+		}
 		order = updated
 	}
 
 	// order is now refund-family.
-	order = s.applyRefundOutcome(ctx, order, refund)
+	order, err := s.applyRefundOutcome(ctx, order, refund)
+	if err != nil {
+		return err // Do not acknowledge or mark the event processed; retry settlement.
+	}
 	if order.ShippedAt.IsZero() {
 		// ErrStockReleaseFailed -> 500 -> Stripe redelivery re-drives it.
 		return s.ClaimAndReleaseOrderStock(ctx, order.ID)
@@ -1200,20 +1228,25 @@ func (s *Service) patchTerminalRefundFailureReason(ctx context.Context, order co
 }
 
 // transitionAdoptingRefund wraps TransitionOrder(from -> refund_pending) with
-// the shared conflict recovery: on ErrOrderTransitionConflict re-read and
-// adopt a current refund-family status, otherwise propagate the error.
-func (s *Service) transitionAdoptingRefund(ctx context.Context, order commerce.Order, from commerce.OrderStatus, patch commerce.OrderPatch) (commerce.Order, error) {
+// the shared conflict recovery. Only the requested refund ID and attempt can
+// be equivalent. mutated distinguishes a write from a concurrent winner so
+// only the actual writer emits issuance notifications/metrics.
+func (s *Service) transitionAdoptingRefund(ctx context.Context, order commerce.Order, from commerce.OrderStatus, patch commerce.OrderPatch) (commerce.Order, bool, error) {
+	patch.ExpectedVersion = &order.Version
 	updated, err := s.Commerce.TransitionOrder(ctx, order.ID, from, commerce.OrderStatusRefundPending, patch)
 	if err != nil {
 		if errors.Is(err, commerce.ErrOrderTransitionConflict) {
 			current, found, getErr := s.Commerce.GetOrder(ctx, order.ID)
-			if getErr == nil && found && orderIsRefundFamily(current.Status) {
-				return current, nil
+			if getErr != nil {
+				err = errors.Join(err, getErr)
+			}
+			if getErr == nil && found && orderIsRefundFamily(current.Status) && patch.StripeRefundID != nil && patch.RefundAttempt != nil && current.StripeRefundID == *patch.StripeRefundID && current.RefundAttempt == *patch.RefundAttempt {
+				return current, false, nil
 			}
 		}
-		return order, err
+		return order, false, err
 	}
-	return updated, nil
+	return updated, true, nil
 }
 
 // autoRefundTerminalPayment returns a payment captured for an order already
@@ -1311,6 +1344,18 @@ func (s *Service) ReconcileRefund(ctx context.Context, order commerce.Order) com
 		return order
 	}
 
+	// The render caller may hold the pre-stock-claim version returned by
+	// issuance. Verify a whole fresh snapshot before selecting the provider
+	// refund, not a replacement version after a failed settlement CAS.
+	current, found, err := s.Commerce.GetOrder(ctx, order.ID)
+	if err != nil || !found {
+		return order // best-effort; no actions based on an unverified snapshot
+	}
+	order = current
+	if !orderIsRefundFamily(order.Status) {
+		return order
+	}
+
 	if order.Status == commerce.OrderStatusRefundPending && order.StripeRefundID != "" && s.Payments != nil {
 		refund, err := s.Payments.GetRefund(ctx, order.StripeRefundID)
 		if err != nil {
@@ -1320,7 +1365,8 @@ func (s *Service) ReconcileRefund(ctx context.Context, order commerce.Order) com
 				slog.String("error", err.Error()),
 			)
 		} else {
-			order = s.applyRefundOutcome(ctx, order, refund)
+			// Render reconciliation is explicitly best-effort; the helper logs failures.
+			order, _ = s.applyRefundOutcome(ctx, order, refund)
 		}
 	}
 

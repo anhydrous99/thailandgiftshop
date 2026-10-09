@@ -163,6 +163,7 @@ func (s *MemoryStore) UpdatePassword(ctx context.Context, customerID string, new
 		return fmt.Errorf("%w", ErrVersionConflict)
 	}
 	customer.PasswordHash = newHash
+	customer.CredentialRevision++
 	customer.Version = expectedVersion + 1
 	customer.UpdatedAt = s.clock()
 	s.customers[customerID] = customer
@@ -461,8 +462,11 @@ func (s *MemoryStore) TransitionOrder(ctx context.Context, orderID string, from 
 	if !found {
 		return Order{}, fmt.Errorf("commerce order %q not found", orderID)
 	}
+	if patch.ExpectedVersion != nil && (order.Version != *patch.ExpectedVersion || order.Status == to) {
+		return Order{}, fmt.Errorf("%w: verified order version changed or transition already applied", ErrOrderTransitionConflict)
+	}
 	if order.Status == to {
-		// Replayed transition: no-op success.
+		// Unguarded replay: no-op success.
 		return cloneOrder(order), nil
 	}
 	if !AllowedOrderTransition(from, to) {

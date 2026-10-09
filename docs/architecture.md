@@ -11,7 +11,7 @@ A server-rendered Bangkok-style online gift shop. Go Lambda backends render [`te
 ```mermaid
 flowchart TD
     User([Shopper / Admin]) --> CF[CloudFront + AWS WAF]
-    CF -->|/static/*| S3static[(S3 static bucket<br/>pruned each deploy)]
+    CF -->|/static/*| S3static[(S3 static bucket<br/>previous fingerprints retained)]
     CF -->|/images/*| S3img[(S3 product-images bucket<br/>retained)]
     CF -->|X-TGS-Origin-Secret| APIGW[API Gateway HTTP API]
     APIGW --> SSR[Lambda: cmd/ssr<br/>public storefront]
@@ -96,7 +96,7 @@ Customers, sessions, addresses, carts, and orders live in `internal/commerce`, b
 - CloudFront distribution + AWS WAF web ACL.
 - API Gateway HTTP API with two routes (ssr and admin).
 - DynamoDB catalog table and an admin-login-attempts table.
-- Two S3 buckets: `/static/` (pruned on every deploy) and `/images/` (retained so uploaded product images survive deploys).
+- Two S3 buckets: `/static/` and `/images/`, both deployed with pruning disabled so previous fingerprinted assets and uploaded product images survive deploys.
 - Secrets Manager references (cart secret, customer session secret, admin credentials, Stripe credentials).
 - Route53-backed SES identity with Easy DKIM.
 - SNS alarm topic and a CloudWatch operations dashboard.
@@ -105,7 +105,7 @@ The CDK stack imports Go `internal/*` constants so env var names and table/index
 
 ## Storage and assets
 
-- Static assets live in `web/static/` and are served under `/static/` (so `web/static/logo.svg` is available at `/static/logo.svg`). This bucket is pruned on each deploy.
+- Static assets live in `web/static/` and are served under `/static/` (so `web/static/logo.svg` is available at `/static/logo.svg`). Deployment does not prune this bucket; previous fingerprinted assets remain available to cached pages.
 - Product image seed assets live in `web/product-images/` and are served under `/images/` (so `web/product-images/products/mango-sticky-rice-kit.jpg` is available at `/images/products/mango-sticky-rice-kit.jpg`). This bucket is **retained and not pruned** so future uploaded product images are not removed by site deploys. `npm --prefix web run build` refreshes the generated `-320w` through `-1200w` JPEG/WebP variants used by storefront `srcset` markup.
 
 ## Payments and email selection

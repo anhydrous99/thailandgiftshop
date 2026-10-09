@@ -110,7 +110,7 @@ func (h *Handler) customerSessionWithStoreError(ctx context.Context, request eve
 		logAccountError("resolve customer", err)
 		return commerce.Session{}, commerce.Customer{}, false, nil, err
 	}
-	if !customerFound {
+	if !customerFound || session.CredentialRevision != customer.CredentialRevision {
 		return commerce.Session{}, commerce.Customer{}, false, clearing, nil
 	}
 
@@ -129,7 +129,9 @@ type mintedCustomerSession struct {
 // mintCustomerSession creates a fresh server-side session row and the signed
 // cookie pair for it. Tokens are exclusively server-minted here — no
 // pre-authentication identifier is ever upgraded (session-fixation defense).
-func (h *Handler) mintCustomerSession(ctx context.Context, customerID string) (mintedCustomerSession, error) {
+// The caller supplies the customer snapshot whose credential was verified;
+// re-reading the latest revision here would authorize a stale password.
+func (h *Handler) mintCustomerSession(ctx context.Context, customer commerce.Customer) (mintedCustomerSession, error) {
 	token, err := signedtoken.RandomToken(32)
 	if err != nil {
 		return mintedCustomerSession{}, err
@@ -141,11 +143,12 @@ func (h *Handler) mintCustomerSession(ctx context.Context, customerID string) (m
 
 	now := h.currentTime().UTC()
 	session := commerce.Session{
-		CustomerID: customerID,
-		TokenHash:  hashCustomerSessionToken(token),
-		Nonce:      nonce,
-		CreatedAt:  now,
-		ExpiresAt:  now.Add(customerSessionTTL),
+		CustomerID:         customer.ID,
+		CredentialRevision: customer.CredentialRevision,
+		TokenHash:          hashCustomerSessionToken(token),
+		Nonce:              nonce,
+		CreatedAt:          now,
+		ExpiresAt:          now.Add(customerSessionTTL),
 	}
 	if err := h.commerce.PutSession(ctx, session); err != nil {
 		return mintedCustomerSession{}, err
@@ -153,7 +156,7 @@ func (h *Handler) mintCustomerSession(ctx context.Context, customerID string) (m
 
 	sessionValue, err := signedtoken.Encode(customerSessionPayload{
 		Version:    customerSignedValueVersion,
-		CustomerID: customerID,
+		CustomerID: customer.ID,
 		Token:      token,
 		ExpiresAt:  session.ExpiresAt.Unix(),
 	}, h.customerSessionSecret, customerSessionPurpose)
